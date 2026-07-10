@@ -10,12 +10,14 @@ test("builds the CubeRanks product shell", async () => {
     readFile(new URL("../app/components/RankingsExplorer.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(layout, /CubeRanks — WCA rankings at your speed/);
+  assert.match(layout, /CubeRanks — WCA Rankings/);
   assert.match(layout, /images:\s*\[\{ url: "\/og\.png"/);
-  assert.match(component, /World rankings,/);
-  assert.match(component, /Every official result\. Zero digging\./);
-  assert.match(component, /Jump to WCA ID/);
-  assert.match(component, /Sign in with WCA/);
+  assert.match(component, /useWindowVirtualizer/);
+  assert.match(component, /const PAGE_SIZE = 100/);
+  assert.match(component, /paged: "1"/);
+  assert.match(component, /autoComplete="off"/);
+  assert.match(component, /className="header-controls"/);
+  assert.doesNotMatch(component, /className="hero"|site-footer|ranking-scroll/);
   assert.doesNotMatch(component, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 

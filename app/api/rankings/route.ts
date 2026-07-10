@@ -57,6 +57,7 @@ async function queryD1({
   cursorId,
   limit,
   locate,
+  paged,
 }: {
   eventId: string;
   type: RankingType;
@@ -67,6 +68,7 @@ async function queryD1({
   cursorId: string;
   limit: number;
   locate: string;
+  paged: boolean;
 }) {
   const database = env.DB;
   if (!database) throw new Error("D1 is not available");
@@ -90,20 +92,25 @@ async function queryD1({
     return { located: located ? toRankingEntry(located) : null, source: "wca" as const };
   }
 
-  const cursorClause = cursorRank
-    ? ` AND (${rankColumn} > ? OR (${rankColumn} = ? AND person_id > ?))`
-    : ` AND ${rankColumn} >= ?`;
-  const cursorBindings = cursorRank ? [cursorRank, cursorRank, cursorId] : [startRank];
-  const query = database
-    .prepare(
-      `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
-        country_iso2, continent_id, best
-      FROM ranking_entries
-      WHERE event_id = ? AND ranking_type = ?${regionClause}${cursorClause}
-      ORDER BY ${rankColumn}, person_id
-      LIMIT ?`,
-    )
-    .bind(eventId, type, ...regionBindings, ...cursorBindings, limit + 1);
+  const cursorClause = paged
+    ? ` AND ${rankColumn} >= ? AND ${rankColumn} < ?`
+    : cursorRank
+      ? ` AND (${rankColumn} > ? OR (${rankColumn} = ? AND person_id > ?))`
+      : ` AND ${rankColumn} >= ?`;
+  const cursorBindings = paged
+    ? [startRank, startRank + limit]
+    : cursorRank
+      ? [cursorRank, cursorRank, cursorId]
+      : [startRank];
+  const queryLimit = paged ? limit * 5 : limit + 1;
+  const query = database.prepare(
+    `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
+      country_iso2, continent_id, best
+    FROM ranking_entries
+    WHERE event_id = ? AND ranking_type = ?${regionClause}${cursorClause}
+    ORDER BY ${rankColumn}, person_id
+    LIMIT ?`,
+  ).bind(eventId, type, ...regionBindings, ...cursorBindings, queryLimit);
 
   const [result, countRow, exportDateRow] = await Promise.all([
     query.all<D1Row>(),
@@ -120,15 +127,16 @@ async function queryD1({
   ]);
 
   const rows = result.results.map(toRankingEntry);
-  const hasMore = rows.length > limit;
-  const entries = hasMore ? rows.slice(0, limit) : rows;
+  const total = Number(countRow?.count ?? 0);
+  const hasMore = paged ? rows.length > 0 && startRank + limit <= total : rows.length > limit;
+  const entries = paged ? rows : (hasMore ? rows.slice(0, limit) : rows);
   const last = entries.at(-1);
 
   return {
     entries,
     hasMore,
     nextCursor: last ? { rank: last.rank, personId: last.personId } : null,
-    total: Number(countRow?.count ?? 0),
+    total,
     exportDate: exportDateRow?.value ?? null,
     source: "wca" as const,
   };
@@ -143,10 +151,15 @@ export async function GET(request: Request) {
   const type = isRankingType(rawType) ? rawType : "single";
   const scope = isRegionScope(rawScope) ? rawScope : "world";
   const regionId = scope === "world" ? "" : (url.searchParams.get("region") ?? "");
-  const startRank = Math.max(1, Number(url.searchParams.get("start")) || 1);
+  const paged = url.searchParams.get("paged") === "1";
+  const requestedLimit = Number(url.searchParams.get("limit")) || (paged ? 100 : 80);
+  const limit = Math.min(MAX_PAGE_SIZE, Math.max(20, requestedLimit));
+  const requestedStartRank = Math.max(1, Number(url.searchParams.get("start")) || 1);
+  const startRank = paged
+    ? Math.floor((requestedStartRank - 1) / limit) * limit + 1
+    : requestedStartRank;
   const cursorRank = Number(url.searchParams.get("cursorRank")) || null;
   const cursorId = url.searchParams.get("cursorId") ?? "";
-  const limit = Math.min(MAX_PAGE_SIZE, Math.max(20, Number(url.searchParams.get("limit")) || 80));
   const locate = (url.searchParams.get("locate") ?? "").trim().toUpperCase();
 
   if (scope !== "world" && !regionId) {
@@ -164,10 +177,11 @@ export async function GET(request: Request) {
       cursorId,
       limit,
       locate,
+      paged,
     });
     return Response.json(data, { headers: { "Cache-Control": "public, max-age=60, s-maxage=3600" } });
   } catch {
-    const demoStartRank = cursorRank ? cursorRank + 1 : startRank;
+    const demoStartRank = paged ? startRank : (cursorRank ? cursorRank + 1 : startRank);
     const entries = makeDemoRankings({ eventId, type, scope, regionId, startRank: demoStartRank, limit });
     const located = locate
       ? entries.find((entry) => entry.personId === locate) ??
@@ -184,7 +198,7 @@ export async function GET(request: Request) {
     const last = entries.at(-1);
     return Response.json({
       entries,
-      hasMore: true,
+      hasMore: startRank + limit <= 248_392,
       nextCursor: last ? { rank: last.rank, personId: last.personId } : null,
       total: 248_392,
       exportDate: null,

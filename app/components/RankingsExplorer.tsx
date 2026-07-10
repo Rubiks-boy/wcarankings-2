@@ -34,17 +34,19 @@ function pageStartForRank(rank: number) {
   return Math.floor((Math.max(1, rank) - 1) / PAGE_SIZE) * PAGE_SIZE + 1;
 }
 
-function scrollToListIndex(list: HTMLDivElement | null, index: number) {
+function scrollToListIndex(list: HTMLDivElement | null, index: number, onSettled?: () => void) {
   window.requestAnimationFrame(() => {
     window.requestAnimationFrame(() => {
       const shell = list?.closest(".site-shell") ?? document.documentElement;
       const headerHeight = Number.parseFloat(
         window.getComputedStyle(shell).getPropertyValue("--header-height"),
       ) || 112;
+      const listTop = list ? list.getBoundingClientRect().top + window.scrollY : 0;
       window.scrollTo({
-        top: Math.max(0, (list?.offsetTop ?? 0) + Math.max(0, index) * ROW_HEIGHT - headerHeight),
+        top: Math.max(0, listTop + Math.max(0, index) * ROW_HEIGHT - headerHeight),
         behavior: "auto",
       });
+      if (onSettled) window.requestAnimationFrame(onSettled);
     });
   });
 }
@@ -143,6 +145,8 @@ export function RankingsExplorer() {
   const preservingScrollRef = useRef(false);
   const headerExpandedRef = useRef(true);
   const headerTransitionRef = useRef(false);
+  const preserveCollapsedJumpRef = useRef(false);
+  const initialLoadRef = useRef(true);
 
   const selectedEvent = WCA_EVENTS.find((event) => event.id === eventId) ?? WCA_EVENTS[0];
   const selectedRegion = regions.find((region) => region.id === regionId)?.name?.replace(/^_/, "");
@@ -169,6 +173,12 @@ export function RankingsExplorer() {
       });
     });
   }, []);
+
+  const finishPreservedJump = useCallback(() => {
+    if (!preserveCollapsedJumpRef.current) return;
+    setHeaderVisibility(false);
+    preserveCollapsedJumpRef.current = false;
+  }, [setHeaderVisibility]);
 
   useEffect(() => {
     fetch("/api/auth/wca/me", { cache: "no-store" })
@@ -213,7 +223,8 @@ export function RankingsExplorer() {
       frame = window.requestAnimationFrame(() => {
         frame = 0;
         const currentScrollY = window.scrollY;
-        if (preservingScrollRef.current || headerTransitionRef.current) {
+        if (preservingScrollRef.current || headerTransitionRef.current || preserveCollapsedJumpRef.current) {
+          if (preserveCollapsedJumpRef.current) setHeaderVisibility(false);
           lastScrollY = currentScrollY;
           directionDistance = 0;
           return;
@@ -257,17 +268,22 @@ export function RankingsExplorer() {
   useEffect(() => {
     if (scope !== "world" && !regionId) return;
     let active = true;
+    const preserveCurrentViewport = preserveCollapsedJumpRef.current;
 
+    if (!preserveCurrentViewport) {
+      setLoading(true);
+      setEntries([]);
+    }
     // This reset is intentionally coupled to the external page request below.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    setEntries([]);
     setNextPageStart(null);
     setPreviousPageStart(null);
     setHasMore(true);
     setError("");
     moreRequestRef.current = false;
-    window.scrollTo({ top: Math.max(0, (listRef.current?.offsetTop ?? 0) - 120), behavior: "auto" });
+    if (!preserveCurrentViewport) {
+      window.scrollTo({ top: Math.max(0, (listRef.current?.offsetTop ?? 0) - 120), behavior: "auto" });
+    }
 
     getRankingPage({ eventId, rankingType, scope, regionId, pageStart: startRank })
       .then((data) => {
@@ -281,17 +297,25 @@ export function RankingsExplorer() {
         const targetIndex = targetPersonId
           ? data.entries.findIndex((entry) => entry.personId === targetPersonId)
           : data.entries.findIndex((entry) => entry.rank >= targetRank);
-        scrollToListIndex(listRef.current, targetIndex);
+        if (initialLoadRef.current) {
+          initialLoadRef.current = false;
+          window.scrollTo({ top: 0, behavior: "auto" });
+        } else {
+          scrollToListIndex(listRef.current, targetIndex, finishPreservedJump);
+        }
       })
       .catch((requestError: Error) => {
-        if (active) setError(requestError.message);
+        if (active) {
+          setError(requestError.message);
+          finishPreservedJump();
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
       });
 
     return () => { active = false; };
-  }, [queryKey, eventId, rankingType, scope, regionId, startRank]);
+  }, [queryKey, eventId, finishPreservedJump, rankingType, scope, regionId, startRank]);
 
   const loadPrevious = useCallback(async () => {
     if (!previousPageStart || previousRequestRef.current || loading) return;
@@ -390,11 +414,11 @@ export function RankingsExplorer() {
       const targetIndex = highlightedId
         ? entries.findIndex((entry) => entry.personId === highlightedId)
         : entries.findIndex((entry) => entry.rank >= normalizedRank);
-      if (targetIndex >= 0) scrollToListIndex(listRef.current, targetIndex);
+      if (targetIndex >= 0) scrollToListIndex(listRef.current, targetIndex, finishPreservedJump);
       return;
     }
     setStartRank(nextPageStart);
-  }, [entries, startRank]);
+  }, [entries, finishPreservedJump, startRank]);
 
   const visibleRank = virtualRows.length && entries[virtualRows[0].index]
     ? entries[virtualRows[0].index].rank
@@ -403,6 +427,7 @@ export function RankingsExplorer() {
   const animateJump = (delta: number) => {
     const target = Math.max(1, visibleRank + delta);
     if (target === visibleRank) return;
+    preserveCollapsedJumpRef.current = !headerExpanded;
     setJumpAnimation({ from: visibleRank, to: target });
     window.setTimeout(() => {
       resetToRank(target);

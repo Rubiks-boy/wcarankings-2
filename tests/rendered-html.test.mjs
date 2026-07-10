@@ -25,6 +25,12 @@ test("builds the CubeRanks product shell", async () => {
   assert.match(component, /loadPrevious/);
   assert.match(component, /window\.scrollBy/);
   assert.match(component, /jump-scroll-track/);
+  assert.match(component, /preserveCollapsedJumpRef/);
+  assert.match(component, /finishPreservedJump/);
+  assert.match(component, /preserveCurrentViewport/);
+  assert.match(component, /initialLoadRef/);
+  assert.match(component, /window\.scrollTo\(\{ top: 0, behavior: "auto" \}\)/);
+  assert.match(component, /getBoundingClientRect\(\)\.top \+ window\.scrollY/);
   assert.match(component, /"\+10,000" : "-10,000"/);
   assert.doesNotMatch(component, /Scrolling down|Landing at|10,000 rows/);
   assert.match(component, /table-quick-jump-up/);

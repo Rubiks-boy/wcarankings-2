@@ -647,7 +647,10 @@ export function RankingsExplorer() {
                     <span className="rank-number"><small>#</small>{entry.rank.toLocaleString()}</span>
                     <span className="competitor-cell">
                       <strong>{entry.personName}</strong>
-                      <small>{entry.personId}</small>
+                      <small>
+                        <span>{entry.personId}</span>
+                        <span className="mobile-country">· {flagEmoji(entry.countryIso2)} {entry.countryName}</span>
+                      </small>
                     </span>
                     <span className="nation-cell"><b>{flagEmoji(entry.countryIso2)}</b><span>{entry.countryName}</span></span>
                     <span className="result-cell">{formatWcaResult(eventId, entry.best)}</span>

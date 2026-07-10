@@ -678,9 +678,7 @@ export function RankingsExplorer() {
             })}
           </div>
           <div className="jump-flight-badge">
-            <span>{jumpAnimation.to > jumpAnimation.from ? "Scrolling down" : "Scrolling up"}</span>
-            <strong>10,000 rows</strong>
-            <small>Landing at #{jumpAnimation.to.toLocaleString()}</small>
+            <strong>{jumpAnimation.to > jumpAnimation.from ? "+10,000" : "-10,000"}</strong>
           </div>
         </div>
       )}

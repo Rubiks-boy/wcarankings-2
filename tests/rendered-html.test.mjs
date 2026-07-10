@@ -25,6 +25,8 @@ test("builds the CubeRanks product shell", async () => {
   assert.match(component, /loadPrevious/);
   assert.match(component, /window\.scrollBy/);
   assert.match(component, /jump-scroll-track/);
+  assert.match(component, /"\+10,000" : "-10,000"/);
+  assert.doesNotMatch(component, /Scrolling down|Landing at|10,000 rows/);
   assert.match(component, /table-quick-jump-up/);
   assert.match(component, /table-quick-jump-down/);
   assert.match(component, /visibleRank > 10_000/);
@@ -62,10 +64,11 @@ test("removes starter artifacts and declares the real product", async () => {
   assert.doesNotMatch(tableHeadingRules, /position:\s*sticky/);
   assert.match(css, /\.app-header-expanded \.header-inner\s*\{[^}]*pointer-events:\s*auto/s);
   assert.match(css, /\.table-quick-jump\.is-visible/);
+  assert.match(css, /scale 150ms ease/);
   assert.match(css, /cubic-bezier\(0\.16, 1, 0\.3, 1\)/);
   assert.doesNotMatch(css, /\.app-header-expanded \.header-controls > \*:nth-child/);
   assert.match(css, /translate var\(--header-motion-duration\) var\(--header-motion-easing\)/);
-  assert.match(css, /height 600ms cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
+  assert.match(css, /height 500ms cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
   assert.match(css, /--header-motion-easing:\s*cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
   assert.doesNotMatch(layout, /codex-preview|_sites-preview|Starter Project/);
 

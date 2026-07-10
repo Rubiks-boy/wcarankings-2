@@ -167,7 +167,8 @@ export async function GET(request: Request) {
     });
     return Response.json(data, { headers: { "Cache-Control": "public, max-age=60, s-maxage=3600" } });
   } catch {
-    const entries = makeDemoRankings({ eventId, type, scope, regionId, startRank, limit });
+    const demoStartRank = cursorRank ? cursorRank + 1 : startRank;
+    const entries = makeDemoRankings({ eventId, type, scope, regionId, startRank: demoStartRank, limit });
     const located = locate
       ? entries.find((entry) => entry.personId === locate) ??
         makeDemoRankings({ eventId, type, scope, regionId, startRank: 1, limit: 40 }).find(
@@ -191,4 +192,3 @@ export async function GET(request: Request) {
     });
   }
 }
-

@@ -178,7 +178,11 @@ export function RankingsExplorer() {
       const response = await fetch(`/api/rankings?${parameters}`);
       if (!response.ok) throw new Error("Could not load more rankings.");
       const data = await response.json() as RankingsResponse;
-      setEntries((current) => [...current, ...data.entries]);
+      setEntries((current) => {
+        const merged = new Map(current.map((entry) => [entry.personId, entry]));
+        for (const entry of data.entries) merged.set(entry.personId, entry);
+        return [...merged.values()];
+      });
       setCursor(data.nextCursor);
       setHasMore(data.hasMore);
     } catch (requestError) {

@@ -1,0 +1,194 @@
+import { env } from "cloudflare:workers";
+import { makeDemoRankings } from "@/lib/demo-data";
+import {
+  isEventId,
+  isRankingType,
+  isRegionScope,
+  type RankingEntry,
+  type RankingType,
+  type RegionScope,
+} from "@/lib/wca";
+
+export const dynamic = "force-dynamic";
+
+const MAX_PAGE_SIZE = 120;
+
+type D1Row = {
+  rank: number;
+  person_id: string;
+  person_name: string;
+  country_id: string;
+  country_name: string;
+  country_iso2: string;
+  continent_id: string;
+  best: number;
+};
+
+function toRankingEntry(row: D1Row): RankingEntry {
+  return {
+    rank: Number(row.rank),
+    personId: row.person_id,
+    personName: row.person_name,
+    countryId: row.country_id,
+    countryName: row.country_name,
+    countryIso2: row.country_iso2,
+    continentId: row.continent_id,
+    best: Number(row.best),
+  };
+}
+
+function getQueryShape(scope: RegionScope) {
+  if (scope === "continent") {
+    return { rankColumn: "continent_rank", regionColumn: "continent_id" } as const;
+  }
+  if (scope === "country") {
+    return { rankColumn: "country_rank", regionColumn: "country_id" } as const;
+  }
+  return { rankColumn: "world_rank", regionColumn: null } as const;
+}
+
+async function queryD1({
+  eventId,
+  type,
+  scope,
+  regionId,
+  startRank,
+  cursorRank,
+  cursorId,
+  limit,
+  locate,
+}: {
+  eventId: string;
+  type: RankingType;
+  scope: RegionScope;
+  regionId: string;
+  startRank: number;
+  cursorRank: number | null;
+  cursorId: string;
+  limit: number;
+  locate: string;
+}) {
+  const database = env.DB;
+  if (!database) throw new Error("D1 is not available");
+
+  const { rankColumn, regionColumn } = getQueryShape(scope);
+  const regionClause = regionColumn ? ` AND ${regionColumn} = ?` : "";
+  const regionBindings = regionColumn ? [regionId] : [];
+
+  if (locate) {
+    const located = await database
+      .prepare(
+        `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
+          country_iso2, continent_id, best
+        FROM ranking_entries
+        WHERE event_id = ? AND ranking_type = ? AND person_id = ?${regionClause}
+        LIMIT 1`,
+      )
+      .bind(eventId, type, locate, ...regionBindings)
+      .first<D1Row>();
+
+    return { located: located ? toRankingEntry(located) : null, source: "wca" as const };
+  }
+
+  const cursorClause = cursorRank
+    ? ` AND (${rankColumn} > ? OR (${rankColumn} = ? AND person_id > ?))`
+    : ` AND ${rankColumn} >= ?`;
+  const cursorBindings = cursorRank ? [cursorRank, cursorRank, cursorId] : [startRank];
+  const query = database
+    .prepare(
+      `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
+        country_iso2, continent_id, best
+      FROM ranking_entries
+      WHERE event_id = ? AND ranking_type = ?${regionClause}${cursorClause}
+      ORDER BY ${rankColumn}, person_id
+      LIMIT ?`,
+    )
+    .bind(eventId, type, ...regionBindings, ...cursorBindings, limit + 1);
+
+  const [result, countRow, exportDateRow] = await Promise.all([
+    query.all<D1Row>(),
+    database
+      .prepare(
+        `SELECT count FROM ranking_counts
+         WHERE event_id = ? AND ranking_type = ? AND scope = ? AND region_id = ?`,
+      )
+      .bind(eventId, type, scope, regionId)
+      .first<{ count: number }>(),
+    database
+      .prepare("SELECT value FROM export_metadata WHERE key = 'export_date'")
+      .first<{ value: string }>(),
+  ]);
+
+  const rows = result.results.map(toRankingEntry);
+  const hasMore = rows.length > limit;
+  const entries = hasMore ? rows.slice(0, limit) : rows;
+  const last = entries.at(-1);
+
+  return {
+    entries,
+    hasMore,
+    nextCursor: last ? { rank: last.rank, personId: last.personId } : null,
+    total: Number(countRow?.count ?? 0),
+    exportDate: exportDateRow?.value ?? null,
+    source: "wca" as const,
+  };
+}
+
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const rawEventId = url.searchParams.get("event");
+  const rawType = url.searchParams.get("type");
+  const rawScope = url.searchParams.get("scope");
+  const eventId = isEventId(rawEventId) ? rawEventId : "333";
+  const type = isRankingType(rawType) ? rawType : "single";
+  const scope = isRegionScope(rawScope) ? rawScope : "world";
+  const regionId = scope === "world" ? "" : (url.searchParams.get("region") ?? "");
+  const startRank = Math.max(1, Number(url.searchParams.get("start")) || 1);
+  const cursorRank = Number(url.searchParams.get("cursorRank")) || null;
+  const cursorId = url.searchParams.get("cursorId") ?? "";
+  const limit = Math.min(MAX_PAGE_SIZE, Math.max(20, Number(url.searchParams.get("limit")) || 80));
+  const locate = (url.searchParams.get("locate") ?? "").trim().toUpperCase();
+
+  if (scope !== "world" && !regionId) {
+    return Response.json({ error: "Choose a region before loading rankings." }, { status: 400 });
+  }
+
+  try {
+    const data = await queryD1({
+      eventId,
+      type,
+      scope,
+      regionId,
+      startRank,
+      cursorRank,
+      cursorId,
+      limit,
+      locate,
+    });
+    return Response.json(data, { headers: { "Cache-Control": "public, max-age=60, s-maxage=3600" } });
+  } catch {
+    const entries = makeDemoRankings({ eventId, type, scope, regionId, startRank, limit });
+    const located = locate
+      ? entries.find((entry) => entry.personId === locate) ??
+        makeDemoRankings({ eventId, type, scope, regionId, startRank: 1, limit: 40 }).find(
+          (entry) => entry.personId === locate,
+        ) ??
+        null
+      : undefined;
+
+    if (locate) {
+      return Response.json({ located, source: "demo" });
+    }
+
+    const last = entries.at(-1);
+    return Response.json({
+      entries,
+      hasMore: true,
+      nextCursor: last ? { rank: last.rank, personId: last.personId } : null,
+      total: 248_392,
+      exportDate: null,
+      source: "demo",
+    });
+  }
+}
+

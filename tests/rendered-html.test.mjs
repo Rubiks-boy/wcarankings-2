@@ -27,6 +27,10 @@ test("builds the CubeRanks product shell", async () => {
   assert.match(component, /jump-scroll-track/);
   assert.match(component, /table-quick-jump-up/);
   assert.match(component, /table-quick-jump-down/);
+  assert.match(component, /visibleRank > 10_000/);
+  assert.match(component, /visibleRank >= 25 && hasMore/);
+  assert.match(component, /table-quick-jump-up\$\{visibleRank > 10_000 \? " is-visible"/);
+  assert.doesNotMatch(component, /className="list-summary"/);
   assert.match(rankingsRoute, /SELECT MIN\(\$\{rankColumn\}\) AS rank/);
   assert.match(rankingsRoute, /SELECT MAX\(\$\{rankColumn\}\) AS rank/);
   assert.match(rankingsRoute, /paged \? "" : " LIMIT \?"/);
@@ -54,6 +58,8 @@ test("removes starter artifacts and declares the real product", async () => {
   const tableHeadingRules = css.match(/\.table-heading\s*\{([^}]*)\}/s)?.[1] ?? "";
   assert.doesNotMatch(tableHeadingRules, /position:\s*sticky/);
   assert.match(css, /\.app-header-expanded \.header-inner\s*\{[^}]*pointer-events:\s*auto/s);
+  assert.match(css, /\.table-quick-jump\.is-visible/);
+  assert.match(css, /cubic-bezier\(0\.16, 1, 0\.3, 1\)/);
   assert.doesNotMatch(layout, /codex-preview|_sites-preview|Starter Project/);
 
   await assert.rejects(

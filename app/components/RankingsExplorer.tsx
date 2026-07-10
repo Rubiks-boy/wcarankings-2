@@ -1,7 +1,7 @@
 "use client";
 
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   FALLBACK_CONTINENTS,
   FALLBACK_COUNTRIES,
@@ -123,7 +123,6 @@ export function RankingsExplorer() {
   const [nextPageStart, setNextPageStart] = useState<number | null>(PAGE_SIZE + 1);
   const [previousPageStart, setPreviousPageStart] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(true);
-  const [total, setTotal] = useState(0);
   const [source, setSource] = useState<"wca" | "demo">("demo");
   const [startRank, setStartRank] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -278,7 +277,6 @@ export function RankingsExplorer() {
         setNextPageStart(data.nextPageStart);
         setPreviousPageStart(data.previousPageStart);
         setHasMore(data.hasMore);
-        setTotal(data.total);
         setSource(data.source);
         const targetRank = pendingRankRef.current;
         const targetPersonId = pendingPersonIdRef.current;
@@ -448,11 +446,6 @@ export function RankingsExplorer() {
     void locateWcaId(jumpId);
   };
 
-  const summary = useMemo(() => {
-    const formattedTotal = total ? new Intl.NumberFormat("en-US").format(total) : "—";
-    return `${resultTypeLabel} · ${scopeLabel} · ${formattedTotal}`;
-  }, [resultTypeLabel, scopeLabel, total]);
-
   return (
     <main className={`site-shell ${headerExpanded ? "header-expanded" : "header-collapsed"}`}>
       <header
@@ -589,37 +582,32 @@ export function RankingsExplorer() {
       </header>
 
       <section className="rankings-page" id="rankings" aria-label="WCA ranking explorer">
-        <header className="list-summary">
-          <div>
-            <h1>{selectedEvent.name}</h1>
-            <p>{summary}{startRank > 1 ? ` · from #${startRank.toLocaleString()}` : ""}</p>
-          </div>
-        </header>
-
         <div className="table-heading" aria-hidden="true">
           <span>Rank</span><span>Competitor</span><span>Nation</span><span>Result</span>
         </div>
 
-        {visibleRank > 1 && (
-          <button
-            className="table-quick-jump table-quick-jump-up"
-            type="button"
-            onClick={() => animateJump(-10_000)}
-            aria-label="Jump up 10,000 rankings"
-          >
-            ↑ −10k
-          </button>
-        )}
-        {hasMore && (
-          <button
-            className="table-quick-jump table-quick-jump-down"
-            type="button"
-            onClick={() => animateJump(10_000)}
-            aria-label="Jump down 10,000 rankings"
-          >
-            ↓ +10k
-          </button>
-        )}
+        <button
+          className={`table-quick-jump table-quick-jump-up${visibleRank > 10_000 ? " is-visible" : ""}`}
+          type="button"
+          onClick={() => animateJump(-10_000)}
+          aria-label="Jump up 10,000 rankings"
+          aria-hidden={visibleRank <= 10_000}
+          disabled={visibleRank <= 10_000}
+          tabIndex={visibleRank > 10_000 ? 0 : -1}
+        >
+          ↑ −10k
+        </button>
+        <button
+          className={`table-quick-jump table-quick-jump-down${visibleRank >= 25 && hasMore ? " is-visible" : ""}`}
+          type="button"
+          onClick={() => animateJump(10_000)}
+          aria-label="Jump down 10,000 rankings"
+          aria-hidden={visibleRank < 25 || !hasMore}
+          disabled={visibleRank < 25 || !hasMore}
+          tabIndex={visibleRank >= 25 && hasMore ? 0 : -1}
+        >
+          ↓ +10k
+        </button>
 
         <div className="ranking-window" ref={listRef} aria-label="Ranking results">
           {loadingPrevious && <div className="previous-page-loading" role="status">Loading earlier rankings…</div>}

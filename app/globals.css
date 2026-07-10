@@ -568,10 +568,10 @@ a {
   transform: translate(-50%, var(--jump-hidden-y));
   scale: 1;
   transition:
-    opacity 150ms cubic-bezier(0.7, 0, 0.84, 0),
-    transform 150ms cubic-bezier(0.7, 0, 0.84, 0),
+    opacity 300ms cubic-bezier(0.7, 0, 0.84, 0),
+    transform 300ms cubic-bezier(0.7, 0, 0.84, 0),
     translate var(--header-motion-duration) var(--header-motion-easing),
-    visibility 0s linear 150ms,
+    visibility 0s linear 300ms,
     color 150ms ease,
     background 150ms ease,
     box-shadow 150ms ease,
@@ -584,8 +584,8 @@ a {
   pointer-events: auto;
   transform: translate(-50%, 0);
   transition:
-    opacity 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 440ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 440ms cubic-bezier(0.16, 1, 0.3, 1),
     translate var(--header-motion-duration) var(--header-motion-easing),
     visibility 0s,
     color 150ms ease,

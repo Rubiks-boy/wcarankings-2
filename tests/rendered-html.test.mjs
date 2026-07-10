@@ -68,6 +68,7 @@ test("removes starter artifacts and declares the real product", async () => {
   assert.match(css, /scale 150ms ease/);
   assert.match(css, /--jump-hidden-y:\s*-8px/);
   assert.match(css, /--jump-hidden-y:\s*8px/);
+  assert.match(css, /opacity 440ms cubic-bezier\(0\.16, 1, 0\.3, 1\)/);
   assert.match(css, /cubic-bezier\(0\.16, 1, 0\.3, 1\)/);
   assert.doesNotMatch(css, /\.app-header-expanded \.header-controls > \*:nth-child/);
   assert.match(css, /translate var\(--header-motion-duration\) var\(--header-motion-easing\)/);

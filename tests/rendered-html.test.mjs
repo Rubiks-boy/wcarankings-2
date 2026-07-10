@@ -61,6 +61,7 @@ test("removes starter artifacts and declares the real product", async () => {
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /\.jump-overlay/);
   assert.doesNotMatch(css, /html\s*\{[^}]*scroll-behavior:\s*smooth/s);
+  assert.doesNotMatch(css, /app-header-collapsed \.brand > span:last-child/);
   const tableHeadingRules = css.match(/\.table-heading\s*\{([^}]*)\}/s)?.[1] ?? "";
   assert.doesNotMatch(tableHeadingRules, /position:\s*sticky/);
   assert.match(css, /\.app-header-expanded \.header-inner\s*\{[^}]*pointer-events:\s*auto/s);

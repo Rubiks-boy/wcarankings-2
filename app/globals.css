@@ -1005,17 +1005,6 @@ a {
   }
 }
 
-@media (max-width: 430px) {
-  .app-header-collapsed .brand > span:last-child {
-    display: none;
-  }
-
-  .app-header-collapsed .collapsed-filter-summary {
-    left: 51px;
-    padding-left: 10px;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

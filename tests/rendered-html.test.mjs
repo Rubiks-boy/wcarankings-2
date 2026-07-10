@@ -19,12 +19,18 @@ test("builds the CubeRanks product shell", async () => {
   assert.match(component, /autoComplete="off"/);
   assert.match(component, /className="header-controls"/);
   assert.match(component, /collapsed-filter-summary/);
+  assert.match(component, /Math\.sign\(delta\)/);
+  assert.match(component, /directionDistance >= 10/);
+  assert.match(component, /scrollToTableTop/);
   assert.match(component, /loadPrevious/);
   assert.match(component, /window\.scrollBy/);
   assert.match(component, /jump-scroll-track/);
+  assert.match(component, /table-quick-jump-up/);
+  assert.match(component, /table-quick-jump-down/);
   assert.match(rankingsRoute, /SELECT MIN\(\$\{rankColumn\}\) AS rank/);
   assert.match(rankingsRoute, /SELECT MAX\(\$\{rankColumn\}\) AS rank/);
   assert.match(rankingsRoute, /paged \? "" : " LIMIT \?"/);
+  assert.doesNotMatch(component, /header-done|collapsed-filter-action|manualHeaderOpen/);
   assert.doesNotMatch(component, /className="hero"|site-footer|ranking-scroll/);
   assert.doesNotMatch(component, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
@@ -45,6 +51,9 @@ test("removes starter artifacts and declares the real product", async () => {
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /\.jump-overlay/);
   assert.doesNotMatch(css, /html\s*\{[^}]*scroll-behavior:\s*smooth/s);
+  const tableHeadingRules = css.match(/\.table-heading\s*\{([^}]*)\}/s)?.[1] ?? "";
+  assert.doesNotMatch(tableHeadingRules, /position:\s*sticky/);
+  assert.match(css, /\.app-header-expanded \.header-inner\s*\{[^}]*pointer-events:\s*auto/s);
   assert.doesNotMatch(layout, /codex-preview|_sites-preview|Starter Project/);
 
   await assert.rejects(

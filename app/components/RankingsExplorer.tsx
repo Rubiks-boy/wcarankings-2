@@ -49,6 +49,18 @@ function scrollToListIndex(list: HTMLDivElement | null, index: number) {
   });
 }
 
+function scrollToTableTop() {
+  const table = document.getElementById("rankings");
+  const shell = table?.closest(".site-shell") ?? document.documentElement;
+  const headerHeight = Number.parseFloat(
+    window.getComputedStyle(shell).getPropertyValue("--header-height"),
+  ) || 112;
+  window.scrollTo({
+    top: Math.max(0, (table?.offsetTop ?? 0) - headerHeight),
+    behavior: "auto",
+  });
+}
+
 function getRankingPage({
   eventId,
   rankingType,
@@ -124,19 +136,20 @@ export function RankingsExplorer() {
   const [jumpAnimation, setJumpAnimation] = useState<{ from: number; to: number } | null>(null);
   const [profile, setProfile] = useState<WcaProfile | null>(null);
   const [listOffset, setListOffset] = useState(0);
-  const [hasScrolled, setHasScrolled] = useState(false);
-  const [manualHeaderOpen, setManualHeaderOpen] = useState(false);
+  const [headerExpanded, setHeaderExpanded] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
   const pendingRankRef = useRef(1);
   const pendingPersonIdRef = useRef("");
   const moreRequestRef = useRef(false);
   const previousRequestRef = useRef(false);
+  const preservingScrollRef = useRef(false);
+  const headerExpandedRef = useRef(true);
+  const headerTransitionRef = useRef(false);
 
   const selectedEvent = WCA_EVENTS.find((event) => event.id === eventId) ?? WCA_EVENTS[0];
   const selectedRegion = regions.find((region) => region.id === regionId)?.name?.replace(/^_/, "");
   const scopeLabel = scope === "world" ? "World" : (selectedRegion ?? scope);
   const resultTypeLabel = rankingType === "average" && eventId === "333fm" ? "Mean" : rankingType === "single" ? "Single" : "Average";
-  const headerExpanded = !hasScrolled || manualHeaderOpen;
   const queryKey = `${eventId}:${rankingType}:${scope}:${regionId}:${startRank}`;
 
   const rowVirtualizer = useWindowVirtualizer({
@@ -146,6 +159,18 @@ export function RankingsExplorer() {
     scrollMargin: listOffset,
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
+
+  const setHeaderVisibility = useCallback((expanded: boolean) => {
+    if (headerExpandedRef.current === expanded) return;
+    headerExpandedRef.current = expanded;
+    headerTransitionRef.current = true;
+    setHeaderExpanded(expanded);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        headerTransitionRef.current = false;
+      });
+    });
+  }, []);
 
   useEffect(() => {
     fetch("/api/auth/wca/me", { cache: "no-store" })
@@ -177,17 +202,41 @@ export function RankingsExplorer() {
   }, [scope]);
 
   useEffect(() => {
+    let lastScrollY = window.scrollY;
+    let scrollDirection = 0;
+    let directionDistance = 0;
     let frame = window.requestAnimationFrame(() => {
-      const nextScrolled = window.scrollY > 40;
-      setHasScrolled(nextScrolled);
-      if (!nextScrolled) setManualHeaderOpen(false);
+      frame = 0;
+      lastScrollY = window.scrollY;
+      setHeaderVisibility(lastScrollY <= 40);
     });
     const handleScroll = () => {
-      window.cancelAnimationFrame(frame);
+      if (frame) return;
       frame = window.requestAnimationFrame(() => {
-        const nextScrolled = window.scrollY > 40;
-        setHasScrolled(nextScrolled);
-        if (!nextScrolled) setManualHeaderOpen(false);
+        frame = 0;
+        const currentScrollY = window.scrollY;
+        if (preservingScrollRef.current || headerTransitionRef.current) {
+          lastScrollY = currentScrollY;
+          directionDistance = 0;
+          return;
+        }
+        if (currentScrollY <= 24) {
+          setHeaderVisibility(true);
+          directionDistance = 0;
+        } else {
+          const delta = currentScrollY - lastScrollY;
+          const nextDirection = Math.sign(delta);
+          if (nextDirection && nextDirection !== scrollDirection) {
+            scrollDirection = nextDirection;
+            directionDistance = 0;
+          }
+          directionDistance += Math.abs(delta);
+          if (directionDistance >= 10) {
+            setHeaderVisibility(scrollDirection < 0);
+            directionDistance = 0;
+          }
+        }
+        lastScrollY = currentScrollY;
       });
     };
     window.addEventListener("scroll", handleScroll, { passive: true });
@@ -195,7 +244,7 @@ export function RankingsExplorer() {
       window.cancelAnimationFrame(frame);
       window.removeEventListener("scroll", handleScroll);
     };
-  }, []);
+  }, [setHeaderVisibility]);
 
   useEffect(() => {
     const measure = () => setListOffset(listRef.current?.offsetTop ?? 0);
@@ -268,9 +317,13 @@ export function RankingsExplorer() {
         return [...data.entries.filter((entry) => !existing.has(entry.personId)), ...current];
       });
       setPreviousPageStart(data.previousPageStart);
+      preservingScrollRef.current = true;
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
           window.scrollBy({ top: addedCount * ROW_HEIGHT, behavior: "auto" });
+          window.requestAnimationFrame(() => {
+            preservingScrollRef.current = false;
+          });
         });
       });
     } catch (requestError) {
@@ -402,7 +455,21 @@ export function RankingsExplorer() {
 
   return (
     <main className={`site-shell ${headerExpanded ? "header-expanded" : "header-collapsed"}`}>
-      <header className={`app-header ${headerExpanded ? "app-header-expanded" : "app-header-collapsed"}`} id="top">
+      <header
+        className={`app-header ${headerExpanded ? "app-header-expanded" : "app-header-collapsed"}`}
+        id="top"
+        onClick={(event) => {
+          if (!headerExpanded) {
+            event.preventDefault();
+            setHeaderVisibility(true);
+            return;
+          }
+          const target = event.target as HTMLElement;
+          if (target.closest(".header-controls, .profile-menu, .signin-link")) return;
+          event.preventDefault();
+          scrollToTableTop();
+        }}
+      >
         <div className="header-inner">
           <div className="header-brand-row">
             <a className="brand" href="#top" aria-label="CubeRanks rankings">
@@ -426,11 +493,6 @@ export function RankingsExplorer() {
                   </div>
                 ) : (
                   <a className="signin-link" href="/api/auth/wca">WCA sign in</a>
-                )}
-                {hasScrolled && (
-                  <button className="header-done" type="button" onClick={() => setManualHeaderOpen(false)}>
-                    Done <span aria-hidden="true">↑</span>
-                  </button>
                 )}
               </>
             )}
@@ -507,13 +569,6 @@ export function RankingsExplorer() {
                 </form>
               </div>
 
-              <div className="header-control-group">
-                <span className="control-label">Quick jump</span>
-                <div className="rank-jumps" aria-label="Quick ranking jumps">
-                  <button type="button" onClick={() => animateJump(-10_000)} disabled={visibleRank <= 1}>−10k</button>
-                  <button type="button" onClick={() => animateJump(10_000)}>+10k</button>
-                </div>
-              </div>
             </div>
           ) : (
             <button
@@ -521,13 +576,12 @@ export function RankingsExplorer() {
               type="button"
               aria-expanded="false"
               aria-controls="header-controls"
-              onClick={() => setManualHeaderOpen(true)}
+              onClick={() => setHeaderVisibility(true)}
             >
               <span className="collapsed-filter-copy">
                 <strong>{selectedEvent.name}</strong>
                 <small>{resultTypeLabel} · {scopeLabel}</small>
               </span>
-              <span className="collapsed-filter-action" aria-hidden="true">Change <b>⌄</b></span>
             </button>
           )}
         </div>
@@ -545,6 +599,27 @@ export function RankingsExplorer() {
         <div className="table-heading" aria-hidden="true">
           <span>Rank</span><span>Competitor</span><span>Nation</span><span>Result</span>
         </div>
+
+        {visibleRank > 1 && (
+          <button
+            className="table-quick-jump table-quick-jump-up"
+            type="button"
+            onClick={() => animateJump(-10_000)}
+            aria-label="Jump up 10,000 rankings"
+          >
+            ↑ −10k
+          </button>
+        )}
+        {hasMore && (
+          <button
+            className="table-quick-jump table-quick-jump-down"
+            type="button"
+            onClick={() => animateJump(10_000)}
+            aria-label="Jump down 10,000 rankings"
+          >
+            ↓ +10k
+          </button>
+        )}
 
         <div className="ranking-window" ref={listRef} aria-label="Ranking results">
           {loadingPrevious && <div className="previous-page-loading" role="status">Loading earlier rankings…</div>}

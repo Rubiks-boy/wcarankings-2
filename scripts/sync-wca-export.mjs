@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { once } from "node:events";
@@ -9,8 +9,11 @@ import * as unzipper from "unzipper";
 
 const EXPORT_API = "https://www.worldcubeassociation.org/api/v0/export/public";
 const BATCH_SIZE = 300;
+const LOCAL_DATABASE_NAME = "site-creator-d1";
+const LOCAL_DATABASE_ID = "00000000-0000-4000-8000-000000000000";
 const dryRun = process.argv.includes("--dry-run");
 const force = process.argv.includes("--force");
+const local = process.argv.includes("--local");
 
 function requiredEnvironment(name) {
   const value = process.env[name];
@@ -66,10 +69,72 @@ async function d1Query(sql) {
   return body.result?.[0]?.results ?? [];
 }
 
-async function alreadyImported(exportDate) {
+async function runWrangler(args, { capture = false } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.platform === "win32" ? "npx.cmd" : "npx",
+      ["wrangler", ...args],
+      capture ? { env: process.env } : { stdio: "inherit", env: process.env },
+    );
+    let stdout = "";
+    let stderr = "";
+    if (capture) {
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => { stdout += chunk; });
+      child.stderr.on("data", (chunk) => { stderr += chunk; });
+    }
+    child.on("error", reject);
+    child.on("exit", (code) => {
+      if (code === 0) resolve({ stdout, stderr });
+      else reject(new Error(`Wrangler exited with ${code}.${stderr ? `\n${stderr.trim()}` : ""}`));
+    });
+  });
+}
+
+async function writeWranglerConfig(workingDirectory) {
+  const databaseId = local ? LOCAL_DATABASE_ID : requiredEnvironment("D1_DATABASE_ID");
+  const databaseName = local ? LOCAL_DATABASE_NAME : "wcarankings";
+  const configPath = join(workingDirectory, "wrangler.sync.jsonc");
+  const config = `{
+    "name": "wcarankings-sync",
+    "compatibility_date": "2026-07-01",
+    "d1_databases": [{
+      "binding": "DB",
+      "database_name": "${databaseName}",
+      "database_id": "${databaseId}"
+    }]
+  }`;
+  await writeFile(configPath, config);
+  return configPath;
+}
+
+function localWranglerArgs(configPath) {
+  return [
+    "d1",
+    "execute",
+    "DB",
+    "--local",
+    // Wrangler appends its own v3/d1 path beneath this persistence root.
+    `--persist-to=${join(process.cwd(), ".wrangler/state")}`,
+    `--config=${configPath}`,
+  ];
+}
+
+async function localD1Query(sql, configPath) {
+  const { stdout } = await runWrangler(
+    [...localWranglerArgs(configPath), `--command=${sql}`, "--json"],
+    { capture: true },
+  );
+  const payload = JSON.parse(stdout);
+  return payload?.[0]?.results ?? [];
+}
+
+async function alreadyImported(exportDate, configPath) {
   if (force || dryRun) return false;
   try {
-    const rows = await d1Query("SELECT value FROM export_metadata WHERE key = 'export_date' LIMIT 1");
+    const sql = "SELECT value FROM export_metadata WHERE key = 'export_date' LIMIT 1";
+    const rows = local ? await localD1Query(sql, configPath) : await d1Query(sql);
     return rows[0]?.value === exportDate;
   } catch {
     return false;
@@ -261,42 +326,29 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;
 }
 
 async function importWithWrangler(sqlPath, workingDirectory) {
-  const databaseId = requiredEnvironment("D1_DATABASE_ID");
-  const configPath = join(workingDirectory, "wrangler.sync.jsonc");
-  const config = `{
-    "name": "wcarankings-sync",
-    "compatibility_date": "2026-07-01",
-    "d1_databases": [{
-      "binding": "DB",
-      "database_name": "wcarankings",
-      "database_id": "${databaseId}"
-    }]
-  }`;
-  await import("node:fs/promises").then(({ writeFile }) => writeFile(configPath, config));
-
-  await new Promise((resolve, reject) => {
-    const child = spawn(
-      process.platform === "win32" ? "npx.cmd" : "npx",
-      ["wrangler", "d1", "execute", "DB", "--remote", `--file=${sqlPath}`, `--config=${configPath}`],
-      { stdio: "inherit", env: process.env },
-    );
-    child.on("error", reject);
-    child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`Wrangler exited with ${code}.`)));
-  });
+  const configPath = await writeWranglerConfig(workingDirectory);
+  const args = local
+    ? [...localWranglerArgs(configPath), `--file=${sqlPath}`]
+    : ["d1", "execute", "DB", "--remote", `--file=${sqlPath}`, `--config=${configPath}`];
+  // A local file import otherwise prints one JSON result per INSERT statement.
+  await runWrangler(args, { capture: local });
 }
 
 async function main() {
-  const latest = await getLatestExport();
-  process.stdout.write(`Latest WCA export: ${latest.exportDate} (v${latest.version})\n`);
-  if (await alreadyImported(latest.exportDate)) {
-    process.stdout.write("Database is already current. Nothing to do.\n");
-    return;
-  }
-
-  const workingDirectory = await mkdtemp(join(tmpdir(), "wcarankings-sync-"));
-  const zipPath = join(workingDirectory, basename(new URL(latest.tsvUrl).pathname) || "wca-export.tsv.zip");
-  const sqlPath = join(workingDirectory, "wcarankings-projection.sql");
+  const workingRoot = local ? join(process.cwd(), ".wrangler/work/tmp") : tmpdir();
+  await mkdir(workingRoot, { recursive: true });
+  const workingDirectory = await mkdtemp(join(workingRoot, "wcarankings-sync-"));
   try {
+    const latest = await getLatestExport();
+    process.stdout.write(`Latest WCA export: ${latest.exportDate} (v${latest.version})\n`);
+    const configPath = local ? await writeWranglerConfig(workingDirectory) : undefined;
+    if (await alreadyImported(latest.exportDate, configPath)) {
+      process.stdout.write("Database is already current. Nothing to do.\n");
+      return;
+    }
+
+    const zipPath = join(workingDirectory, basename(new URL(latest.tsvUrl).pathname) || "wca-export.tsv.zip");
+    const sqlPath = join(workingDirectory, "wcarankings-projection.sql");
     process.stdout.write("Downloading the WCA TSV export…\n");
     await download(latest.tsvUrl, zipPath);
     await generateProjectionSql(zipPath, sqlPath, latest);

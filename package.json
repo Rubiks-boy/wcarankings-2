@@ -12,7 +12,8 @@
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
-    "sync:wca": "node scripts/sync-wca-export.mjs"
+    "sync:wca": "node scripts/sync-wca-export.mjs",
+    "sync:wca:local": "node scripts/sync-wca-export.mjs --local"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.5",

@@ -6,7 +6,7 @@ A fast, mobile-first browser for official [World Cube Association rankings](http
 
 ## What is included
 
-- React 19 / Vinext UI with fixed-row virtualization and keyset-paginated ranking requests
+- React 19 / Vinext UI with window virtualization and cacheable 100-rank page requests
 - Cloudflare Worker API routes backed by an indexed D1 ranking projection
 - Preview data fallback, so the product is fully explorable before the first WCA import
 - Streaming WCA Results Export v2 importer that keeps only the data required for rankings
@@ -22,6 +22,14 @@ npm run dev
 ```
 
 Open `http://localhost:3000`. Without a populated D1 binding, the app intentionally shows clearly labeled preview rows. Copy `.env.example` to `.env.local` only if you want to exercise WCA OAuth locally.
+
+To download the latest official export and populate the same local D1 database used by the development server:
+
+```bash
+npm run sync:wca:local
+```
+
+The command compares export dates before downloading, so a second run exits immediately when the local database is current. The current projection occupies about 528 MB on disk.
 
 Useful checks:
 
@@ -40,7 +48,7 @@ The public WCA v2 TSV export is currently hundreds of megabytes, but most of it 
 - the current row for each `person`
 - `countries` and their continent mapping
 
-Those are flattened into `ranking_entries`, with separate covering indexes for world, continent, country, and WCA-ID lookups. Pages use `(rank, person_id)` keyset cursors, so scrolling deep into a ranking never pays the cost of a large SQL `OFFSET`.
+Those are flattened into `ranking_entries`, with separate covering indexes for world, continent, country, and WCA-ID lookups. The React client requests fixed 100-rank buckets (1, 101, 201, and so on), caches recent buckets in memory, and never pays the cost of a large SQL `OFFSET`. WCA ties can make a bucket contain more or fewer than 100 people while keeping every official rank intact.
 
 The importer builds `ranking_entries_next` beside the live table, creates its indexes and counts, and swaps it in only after the projection is complete. A failed download or transformation therefore leaves the currently published rankings intact.
 
@@ -97,4 +105,3 @@ scripts/sync-wca-export.mjs  Export checker, projection builder, D1 importer
 ```
 
 CubeRanks is an independent community project and is not affiliated with or endorsed by the World Cube Association.
-

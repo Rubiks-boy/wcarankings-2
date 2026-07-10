@@ -44,6 +44,7 @@ test("removes starter artifacts and declares the real product", async () => {
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /\.jump-overlay/);
+  assert.doesNotMatch(css, /html\s*\{[^}]*scroll-behavior:\s*smooth/s);
   assert.doesNotMatch(layout, /codex-preview|_sites-preview|Starter Project/);
 
   await assert.rejects(

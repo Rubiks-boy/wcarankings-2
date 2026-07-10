@@ -591,6 +591,17 @@ export function RankingsExplorer() {
           ↑ −10k
         </button>
         <button
+          className={`table-quick-jump table-quick-jump-up${visibleRank >= 25 && visibleRank <= 10_000 ? " is-visible" : ""}`}
+          type="button"
+          onClick={() => resetToRank(1)}
+          aria-label="Return to the top ranking"
+          aria-hidden={visibleRank < 25 || visibleRank > 10_000}
+          disabled={visibleRank < 25 || visibleRank > 10_000}
+          tabIndex={visibleRank >= 25 && visibleRank <= 10_000 ? 0 : -1}
+        >
+          ↑ Top
+        </button>
+        <button
           className={`table-quick-jump table-quick-jump-down${visibleRank >= 25 && hasMore ? " is-visible" : ""}`}
           type="button"
           onClick={() => animateJump(10_000)}

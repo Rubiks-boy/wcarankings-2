@@ -61,6 +61,7 @@ test("removes starter artifacts and declares the real product", async () => {
   assert.match(css, /\.app-header-expanded \.header-inner\s*\{[^}]*pointer-events:\s*auto/s);
   assert.match(css, /\.table-quick-jump\.is-visible/);
   assert.match(css, /cubic-bezier\(0\.16, 1, 0\.3, 1\)/);
+  assert.match(css, /\.app-header-expanded \.header-controls > \*:nth-child\(5\)/);
   assert.doesNotMatch(layout, /codex-preview|_sites-preview|Starter Project/);
 
   await assert.rejects(

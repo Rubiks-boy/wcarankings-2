@@ -31,6 +31,7 @@ test("builds the CubeRanks product shell", async () => {
   assert.match(component, /visibleRank >= 25 && hasMore/);
   assert.match(component, /table-quick-jump-up\$\{visibleRank > 10_000 \? " is-visible"/);
   assert.doesNotMatch(component, /className="list-summary"/);
+  assert.doesNotMatch(component, /data-status/);
   assert.match(rankingsRoute, /SELECT MIN\(\$\{rankColumn\}\) AS rank/);
   assert.match(rankingsRoute, /SELECT MAX\(\$\{rankColumn\}\) AS rank/);
   assert.match(rankingsRoute, /paged \? "" : " LIMIT \?"/);

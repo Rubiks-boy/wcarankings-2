@@ -87,7 +87,15 @@ a {
   border-bottom: 1px solid var(--line);
   background: rgba(251, 250, 246, 0.96);
   backdrop-filter: blur(14px);
-  transition: height 180ms ease, box-shadow 180ms ease;
+  transition:
+    height 170ms cubic-bezier(0.7, 0, 0.84, 0),
+    box-shadow 170ms cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+.app-header-expanded::before {
+  transition:
+    height 240ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .app-header-collapsed::before {
@@ -168,29 +176,6 @@ a {
 .cube-tile-cream { background: #fffdf5; }
 .cube-tile-orange { background: var(--orange); }
 
-.data-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-right: auto;
-  color: var(--muted);
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.data-status i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #79a900;
-}
-
-.data-status-demo i {
-  background: var(--orange);
-}
-
 .signin-link {
   flex: 0 0 auto;
   color: var(--muted);
@@ -202,6 +187,31 @@ a {
 
 .signin-link:hover {
   color: var(--ink);
+}
+
+.header-expanded-meta {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition:
+    opacity 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s;
+}
+
+.app-header-collapsed .header-expanded-meta {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-5px);
+  transition:
+    opacity 120ms cubic-bezier(0.7, 0, 0.84, 0),
+    transform 120ms cubic-bezier(0.7, 0, 0.84, 0),
+    visibility 0s linear 120ms;
 }
 
 .profile-menu,
@@ -268,6 +278,25 @@ a {
   border-left: 1px solid var(--line);
   background: transparent;
   cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition:
+    opacity 120ms cubic-bezier(0.7, 0, 0.84, 0),
+    transform 120ms cubic-bezier(0.7, 0, 0.84, 0),
+    visibility 0s linear 120ms;
+}
+
+.app-header-collapsed .collapsed-filter-summary {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition:
+    opacity 210ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 210ms cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s;
 }
 
 .collapsed-filter-copy {
@@ -313,10 +342,28 @@ a {
   overflow-x: auto;
   pointer-events: auto;
   scrollbar-width: none;
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition:
+    opacity 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s;
 }
 
 .header-controls::-webkit-scrollbar {
   display: none;
+}
+
+.app-header-collapsed .header-controls {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-8px);
+  transition:
+    opacity 130ms cubic-bezier(0.7, 0, 0.84, 0),
+    transform 130ms cubic-bezier(0.7, 0, 0.84, 0),
+    visibility 0s linear 130ms;
 }
 
 .compact-select {
@@ -888,10 +935,6 @@ a {
     left: 22px;
     justify-content: flex-start;
     overflow: visible;
-  }
-
-  .data-status {
-    margin-right: auto;
   }
 
   .signin-link {

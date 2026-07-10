@@ -123,7 +123,6 @@ export function RankingsExplorer() {
   const [nextPageStart, setNextPageStart] = useState<number | null>(PAGE_SIZE + 1);
   const [previousPageStart, setPreviousPageStart] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(true);
-  const [source, setSource] = useState<"wca" | "demo">("demo");
   const [startRank, setStartRank] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -277,7 +276,6 @@ export function RankingsExplorer() {
         setNextPageStart(data.nextPageStart);
         setPreviousPageStart(data.previousPageStart);
         setHasMore(data.hasMore);
-        setSource(data.source);
         const targetRank = pendingRankRef.current;
         const targetPersonId = pendingPersonIdRef.current;
         const targetIndex = targetPersonId
@@ -469,30 +467,24 @@ export function RankingsExplorer() {
               <CubeMark />
               <span>Cube<span>Ranks</span></span>
             </a>
-            {headerExpanded && (
-              <>
-                <span className={`data-status data-status-${source}`} title={source === "wca" ? "WCA data live" : "Preview data"}>
-                  <i />{source === "wca" ? "Live" : "Preview"}
-                </span>
-                {profile ? (
-                  <div className="profile-menu">
-                    <button type="button" onClick={() => void locateWcaId(profile.wcaId)} title={`Jump to ${profile.wcaId}`}>
-                      {/* The WCA avatar URL is user-specific and outside the static image optimizer allowlist. */}
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      {profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : <span>{profile.name.charAt(0)}</span>}
-                      <span className="profile-name">My rank</span>
-                    </button>
-                    <a href="/api/auth/wca/logout" aria-label="Sign out">↗</a>
-                  </div>
-                ) : (
-                  <a className="signin-link" href="/api/auth/wca">WCA sign in</a>
-                )}
-              </>
-            )}
+            <div className="header-expanded-meta" aria-hidden={!headerExpanded}>
+              {profile ? (
+                <div className="profile-menu">
+                  <button type="button" onClick={() => void locateWcaId(profile.wcaId)} title={`Jump to ${profile.wcaId}`}>
+                    {/* The WCA avatar URL is user-specific and outside the static image optimizer allowlist. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    {profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : <span>{profile.name.charAt(0)}</span>}
+                    <span className="profile-name">My rank</span>
+                  </button>
+                  <a href="/api/auth/wca/logout" aria-label="Sign out">↗</a>
+                </div>
+              ) : (
+                <a className="signin-link" href="/api/auth/wca">WCA sign in</a>
+              )}
+            </div>
           </div>
 
-          {headerExpanded ? (
-            <div className="header-controls" id="header-controls" aria-label="Ranking controls">
+          <div className="header-controls" id="header-controls" aria-label="Ranking controls" aria-hidden={!headerExpanded}>
               <label className="compact-select event-control">
                 <span className="control-label">Event</span>
                 <select value={eventId} onChange={(event) => { setEventId(event.target.value); resetToRank(1); }}>
@@ -561,22 +553,23 @@ export function RankingsExplorer() {
                   <button type="submit" aria-label="Find WCA ID">→</button>
                 </form>
               </div>
+          </div>
 
-            </div>
-          ) : (
-            <button
-              className="collapsed-filter-summary"
-              type="button"
-              aria-expanded="false"
-              aria-controls="header-controls"
-              onClick={() => setHeaderVisibility(true)}
-            >
-              <span className="collapsed-filter-copy">
-                <strong>{selectedEvent.name}</strong>
-                <small>{resultTypeLabel} · {scopeLabel}</small>
-              </span>
-            </button>
-          )}
+          <button
+            className="collapsed-filter-summary"
+            type="button"
+            aria-expanded="false"
+            aria-controls="header-controls"
+            aria-hidden={headerExpanded}
+            disabled={headerExpanded}
+            tabIndex={headerExpanded ? -1 : 0}
+            onClick={() => setHeaderVisibility(true)}
+          >
+            <span className="collapsed-filter-copy">
+              <strong>{selectedEvent.name}</strong>
+              <small>{resultTypeLabel} · {scopeLabel}</small>
+            </span>
+          </button>
         </div>
         {jumpMessage && <div className="header-message" role="status">{jumpMessage}</div>}
       </header>

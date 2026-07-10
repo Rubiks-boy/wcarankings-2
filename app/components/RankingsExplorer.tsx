@@ -17,6 +17,8 @@ import type { WcaProfile } from "@/lib/wca-auth";
 type RankingsResponse = {
   entries: RankingEntry[];
   hasMore: boolean;
+  nextPageStart: number | null;
+  previousPageStart: number | null;
   total: number;
   source: "wca" | "demo";
 };
@@ -35,8 +37,9 @@ function pageStartForRank(rank: number) {
 function scrollToListIndex(list: HTMLDivElement | null, index: number) {
   window.requestAnimationFrame(() => {
     window.requestAnimationFrame(() => {
+      const shell = list?.closest(".site-shell") ?? document.documentElement;
       const headerHeight = Number.parseFloat(
-        window.getComputedStyle(document.documentElement).getPropertyValue("--header-height"),
+        window.getComputedStyle(shell).getPropertyValue("--header-height"),
       ) || 112;
       window.scrollTo({
         top: Math.max(0, (list?.offsetTop ?? 0) + Math.max(0, index) * ROW_HEIGHT - headerHeight),
@@ -106,12 +109,14 @@ export function RankingsExplorer() {
   const [regions, setRegions] = useState<RegionOption[]>([]);
   const [entries, setEntries] = useState<RankingEntry[]>([]);
   const [nextPageStart, setNextPageStart] = useState<number | null>(PAGE_SIZE + 1);
+  const [previousPageStart, setPreviousPageStart] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [total, setTotal] = useState(0);
   const [source, setSource] = useState<"wca" | "demo">("demo");
   const [startRank, setStartRank] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingPrevious, setLoadingPrevious] = useState(false);
   const [error, setError] = useState("");
   const [jumpId, setJumpId] = useState("");
   const [jumpMessage, setJumpMessage] = useState("");
@@ -119,14 +124,19 @@ export function RankingsExplorer() {
   const [jumpAnimation, setJumpAnimation] = useState<{ from: number; to: number } | null>(null);
   const [profile, setProfile] = useState<WcaProfile | null>(null);
   const [listOffset, setListOffset] = useState(0);
+  const [hasScrolled, setHasScrolled] = useState(false);
+  const [manualHeaderOpen, setManualHeaderOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const pendingRankRef = useRef(1);
   const pendingPersonIdRef = useRef("");
   const moreRequestRef = useRef(false);
+  const previousRequestRef = useRef(false);
 
   const selectedEvent = WCA_EVENTS.find((event) => event.id === eventId) ?? WCA_EVENTS[0];
   const selectedRegion = regions.find((region) => region.id === regionId)?.name?.replace(/^_/, "");
   const scopeLabel = scope === "world" ? "World" : (selectedRegion ?? scope);
+  const resultTypeLabel = rankingType === "average" && eventId === "333fm" ? "Mean" : rankingType === "single" ? "Single" : "Average";
+  const headerExpanded = !hasScrolled || manualHeaderOpen;
   const queryKey = `${eventId}:${rankingType}:${scope}:${regionId}:${startRank}`;
 
   const rowVirtualizer = useWindowVirtualizer({
@@ -167,6 +177,27 @@ export function RankingsExplorer() {
   }, [scope]);
 
   useEffect(() => {
+    let frame = window.requestAnimationFrame(() => {
+      const nextScrolled = window.scrollY > 40;
+      setHasScrolled(nextScrolled);
+      if (!nextScrolled) setManualHeaderOpen(false);
+    });
+    const handleScroll = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const nextScrolled = window.scrollY > 40;
+        setHasScrolled(nextScrolled);
+        if (!nextScrolled) setManualHeaderOpen(false);
+      });
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
+  useEffect(() => {
     const measure = () => setListOffset(listRef.current?.offsetTop ?? 0);
     const frame = window.requestAnimationFrame(measure);
     window.addEventListener("resize", measure);
@@ -174,7 +205,7 @@ export function RankingsExplorer() {
       window.cancelAnimationFrame(frame);
       window.removeEventListener("resize", measure);
     };
-  }, [loading, queryKey]);
+  }, [headerExpanded, loading, queryKey]);
 
   useEffect(() => {
     if (scope !== "world" && !regionId) return;
@@ -185,6 +216,7 @@ export function RankingsExplorer() {
     setLoading(true);
     setEntries([]);
     setNextPageStart(null);
+    setPreviousPageStart(null);
     setHasMore(true);
     setError("");
     moreRequestRef.current = false;
@@ -194,7 +226,8 @@ export function RankingsExplorer() {
       .then((data) => {
         if (!active) return;
         setEntries(data.entries);
-        setNextPageStart(data.hasMore ? startRank + PAGE_SIZE : null);
+        setNextPageStart(data.nextPageStart);
+        setPreviousPageStart(data.previousPageStart);
         setHasMore(data.hasMore);
         setTotal(data.total);
         setSource(data.source);
@@ -215,6 +248,52 @@ export function RankingsExplorer() {
     return () => { active = false; };
   }, [queryKey, eventId, rankingType, scope, regionId, startRank]);
 
+  const loadPrevious = useCallback(async () => {
+    if (!previousPageStart || previousRequestRef.current || loading) return;
+    previousRequestRef.current = true;
+    setLoadingPrevious(true);
+    const requestedPageStart = previousPageStart;
+
+    try {
+      const data = await getRankingPage({
+        eventId,
+        rankingType,
+        scope,
+        regionId,
+        pageStart: requestedPageStart,
+      });
+      const addedCount = data.entries.length;
+      setEntries((current) => {
+        const existing = new Set(current.map((entry) => entry.personId));
+        return [...data.entries.filter((entry) => !existing.has(entry.personId)), ...current];
+      });
+      setPreviousPageStart(data.previousPageStart);
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          window.scrollBy({ top: addedCount * ROW_HEIGHT, behavior: "auto" });
+        });
+      });
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not load earlier rankings.");
+    } finally {
+      previousRequestRef.current = false;
+      setLoadingPrevious(false);
+    }
+  }, [eventId, loading, previousPageStart, rankingType, regionId, scope]);
+
+  useEffect(() => {
+    let lastScrollY = window.scrollY;
+    const handleUpwardScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (currentScrollY < lastScrollY && currentScrollY <= listOffset + ROW_HEIGHT * 14) {
+        void loadPrevious();
+      }
+      lastScrollY = currentScrollY;
+    };
+    window.addEventListener("scroll", handleUpwardScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleUpwardScroll);
+  }, [listOffset, loadPrevious]);
+
   const loadMore = useCallback(async () => {
     if (!nextPageStart || !hasMore || moreRequestRef.current || loading) return;
     moreRequestRef.current = true;
@@ -234,7 +313,7 @@ export function RankingsExplorer() {
         for (const entry of data.entries) merged.set(entry.personId, entry);
         return [...merged.values()];
       });
-      setNextPageStart(data.hasMore ? requestedPageStart + PAGE_SIZE : null);
+      setNextPageStart(data.nextPageStart);
       setHasMore(data.hasMore);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Could not load more rankings.");
@@ -318,106 +397,139 @@ export function RankingsExplorer() {
 
   const summary = useMemo(() => {
     const formattedTotal = total ? new Intl.NumberFormat("en-US").format(total) : "—";
-    return `${rankingType === "average" && eventId === "333fm" ? "Mean" : rankingType} · ${scopeLabel} · ${formattedTotal}`;
-  }, [eventId, rankingType, scopeLabel, total]);
+    return `${resultTypeLabel} · ${scopeLabel} · ${formattedTotal}`;
+  }, [resultTypeLabel, scopeLabel, total]);
 
   return (
-    <main className="site-shell">
-      <header className="app-header" id="top">
+    <main className={`site-shell ${headerExpanded ? "header-expanded" : "header-collapsed"}`}>
+      <header className={`app-header ${headerExpanded ? "app-header-expanded" : "app-header-collapsed"}`} id="top">
         <div className="header-inner">
           <div className="header-brand-row">
-            <a className="brand" href="#rankings" aria-label="CubeRanks rankings">
+            <a className="brand" href="#top" aria-label="CubeRanks rankings">
               <CubeMark />
               <span>Cube<span>Ranks</span></span>
             </a>
-            <span className={`data-status data-status-${source}`} title={source === "wca" ? "WCA data live" : "Preview data"}>
-              <i />{source === "wca" ? "Live" : "Preview"}
-            </span>
-            {profile ? (
-              <div className="profile-menu">
-                <button type="button" onClick={() => void locateWcaId(profile.wcaId)} title={`Jump to ${profile.wcaId}`}>
-                  {/* The WCA avatar URL is user-specific and outside the static image optimizer allowlist. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  {profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : <span>{profile.name.charAt(0)}</span>}
-                  <span className="profile-name">My rank</span>
-                </button>
-                <a href="/api/auth/wca/logout" aria-label="Sign out">↗</a>
-              </div>
-            ) : (
-              <a className="signin-link" href="/api/auth/wca">WCA sign in</a>
+            {headerExpanded && (
+              <>
+                <span className={`data-status data-status-${source}`} title={source === "wca" ? "WCA data live" : "Preview data"}>
+                  <i />{source === "wca" ? "Live" : "Preview"}
+                </span>
+                {profile ? (
+                  <div className="profile-menu">
+                    <button type="button" onClick={() => void locateWcaId(profile.wcaId)} title={`Jump to ${profile.wcaId}`}>
+                      {/* The WCA avatar URL is user-specific and outside the static image optimizer allowlist. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {profile.avatarUrl ? <img src={profile.avatarUrl} alt="" /> : <span>{profile.name.charAt(0)}</span>}
+                      <span className="profile-name">My rank</span>
+                    </button>
+                    <a href="/api/auth/wca/logout" aria-label="Sign out">↗</a>
+                  </div>
+                ) : (
+                  <a className="signin-link" href="/api/auth/wca">WCA sign in</a>
+                )}
+                {hasScrolled && (
+                  <button className="header-done" type="button" onClick={() => setManualHeaderOpen(false)}>
+                    Done <span aria-hidden="true">↑</span>
+                  </button>
+                )}
+              </>
             )}
           </div>
 
-          <div className="header-controls" aria-label="Ranking controls">
-            <label className="compact-select event-control">
-              <span className="sr-only">Event</span>
-              <select value={eventId} onChange={(event) => { setEventId(event.target.value); resetToRank(1); }}>
-                {WCA_EVENTS.map((event) => <option value={event.id} key={event.id}>{event.shortName}</option>)}
-              </select>
-            </label>
-
-            <div className="compact-toggle" role="group" aria-label="Result type">
-              {(["single", "average"] as RankingType[]).map((type) => (
-                <button
-                  className={rankingType === type ? "active" : ""}
-                  type="button"
-                  aria-pressed={rankingType === type}
-                  onClick={() => { setRankingType(type); resetToRank(1); }}
-                  key={type}
-                >
-                  {type === "single" ? "Single" : (eventId === "333fm" ? "Mean" : "Average")}
-                </button>
-              ))}
-            </div>
-
-            <label className="compact-select scope-control">
-              <span className="sr-only">Region type</span>
-              <select value={scope} onChange={(event) => {
-                const nextScope = event.target.value as RegionScope;
-                setScope(nextScope);
-                if (nextScope === "world") {
-                  setRegions([]);
-                  setRegionId("");
-                }
-                resetToRank(1);
-              }}>
-                <option value="world">World</option>
-                <option value="continent">Continent</option>
-                <option value="country">Country</option>
-              </select>
-            </label>
-
-            {scope !== "world" && (
-              <label className="compact-select place-control">
-                <span className="sr-only">Choose {scope}</span>
-                <select value={regionId} onChange={(event) => { setRegionId(event.target.value); resetToRank(1); }}>
-                  {regions.map((region) => <option value={region.id} key={region.id}>{region.name.replace(/^_/, "")}</option>)}
+          {headerExpanded ? (
+            <div className="header-controls" id="header-controls" aria-label="Ranking controls">
+              <label className="compact-select event-control">
+                <span className="control-label">Event</span>
+                <select value={eventId} onChange={(event) => { setEventId(event.target.value); resetToRank(1); }}>
+                  {WCA_EVENTS.map((event) => <option value={event.id} key={event.id}>{event.shortName}</option>)}
                 </select>
               </label>
-            )}
 
-            <form className="header-jump" onSubmit={handleJumpSubmit}>
-              <label className="sr-only" htmlFor="jump-id">Jump to WCA ID</label>
-              <input
-                id="jump-id"
-                value={jumpId}
-                onChange={(event) => setJumpId(event.target.value.toUpperCase())}
-                placeholder="WCA ID"
-                inputMode="text"
-                autoCapitalize="characters"
-                autoComplete="off"
-                autoCorrect="off"
-                spellCheck={false}
-                maxLength={10}
-              />
-              <button type="submit" aria-label="Find WCA ID">→</button>
-            </form>
+              <div className="header-control-group">
+                <span className="control-label">Result</span>
+                <div className="compact-toggle" role="group" aria-label="Result type">
+                  {(["single", "average"] as RankingType[]).map((type) => (
+                    <button
+                      className={rankingType === type ? "active" : ""}
+                      type="button"
+                      aria-pressed={rankingType === type}
+                      onClick={() => { setRankingType(type); resetToRank(1); }}
+                      key={type}
+                    >
+                      {type === "single" ? "Single" : (eventId === "333fm" ? "Mean" : "Average")}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            <div className="rank-jumps" aria-label="Quick ranking jumps">
-              <button type="button" onClick={() => animateJump(-10_000)} disabled={visibleRank <= 1}>−10k</button>
-              <button type="button" onClick={() => animateJump(10_000)}>+10k</button>
+              <label className="compact-select scope-control">
+                <span className="control-label">Region</span>
+                <select value={scope} onChange={(event) => {
+                  const nextScope = event.target.value as RegionScope;
+                  setScope(nextScope);
+                  if (nextScope === "world") {
+                    setRegions([]);
+                    setRegionId("");
+                  }
+                  resetToRank(1);
+                }}>
+                  <option value="world">World</option>
+                  <option value="continent">Continent</option>
+                  <option value="country">Country</option>
+                </select>
+              </label>
+
+              {scope !== "world" && (
+                <label className="compact-select place-control">
+                  <span className="control-label">{scope === "country" ? "Country" : "Continent"}</span>
+                  <select value={regionId} onChange={(event) => { setRegionId(event.target.value); resetToRank(1); }}>
+                    {regions.map((region) => <option value={region.id} key={region.id}>{region.name.replace(/^_/, "")}</option>)}
+                  </select>
+                </label>
+              )}
+
+              <div className="header-control-group">
+                <label className="control-label" htmlFor="jump-id">Find competitor</label>
+                <form className="header-jump" onSubmit={handleJumpSubmit}>
+                  <input
+                    id="jump-id"
+                    value={jumpId}
+                    onChange={(event) => setJumpId(event.target.value.toUpperCase())}
+                    placeholder="WCA ID"
+                    inputMode="text"
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    maxLength={10}
+                  />
+                  <button type="submit" aria-label="Find WCA ID">→</button>
+                </form>
+              </div>
+
+              <div className="header-control-group">
+                <span className="control-label">Quick jump</span>
+                <div className="rank-jumps" aria-label="Quick ranking jumps">
+                  <button type="button" onClick={() => animateJump(-10_000)} disabled={visibleRank <= 1}>−10k</button>
+                  <button type="button" onClick={() => animateJump(10_000)}>+10k</button>
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <button
+              className="collapsed-filter-summary"
+              type="button"
+              aria-expanded="false"
+              aria-controls="header-controls"
+              onClick={() => setManualHeaderOpen(true)}
+            >
+              <span className="collapsed-filter-copy">
+                <strong>{selectedEvent.name}</strong>
+                <small>{resultTypeLabel} · {scopeLabel}</small>
+              </span>
+              <span className="collapsed-filter-action" aria-hidden="true">Change <b>⌄</b></span>
+            </button>
+          )}
         </div>
         {jumpMessage && <div className="header-message" role="status">{jumpMessage}</div>}
       </header>
@@ -435,6 +547,7 @@ export function RankingsExplorer() {
         </div>
 
         <div className="ranking-window" ref={listRef} aria-label="Ranking results">
+          {loadingPrevious && <div className="previous-page-loading" role="status">Loading earlier rankings…</div>}
           {loading ? (
             <div className="loading-list" role="status" aria-label="Loading rankings">
               {Array.from({ length: 10 }, (_, index) => <span key={index} />)}
@@ -480,10 +593,28 @@ export function RankingsExplorer() {
       </section>
 
       {jumpAnimation && (
-        <div className="jump-overlay" role="status" aria-live="polite">
-          <span>Jumping to</span>
-          <div className="odometer" key={jumpAnimation.to}><small>#</small>{jumpAnimation.to.toLocaleString()}</div>
-          <p>{jumpAnimation.from.toLocaleString()} → {jumpAnimation.to.toLocaleString()}</p>
+        <div
+          className={`jump-overlay jump-overlay-${jumpAnimation.to > jumpAnimation.from ? "down" : "up"}`}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="jump-scroll-track" aria-hidden="true">
+            {Array.from({ length: 24 }, (_, index) => {
+              const progress = index / 23;
+              const rank = Math.round(jumpAnimation.from + (jumpAnimation.to - jumpAnimation.from) * progress);
+              return (
+                <div className="jump-ghost-row" key={index}>
+                  <span>#{rank.toLocaleString()}</span>
+                  <i /><i /><b />
+                </div>
+              );
+            })}
+          </div>
+          <div className="jump-flight-badge">
+            <span>{jumpAnimation.to > jumpAnimation.from ? "Scrolling down" : "Scrolling up"}</span>
+            <strong>10,000 rows</strong>
+            <small>Landing at #{jumpAnimation.to.toLocaleString()}</small>
+          </div>
         </div>
       )}
     </main>

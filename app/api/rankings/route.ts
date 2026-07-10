@@ -102,17 +102,39 @@ async function queryD1({
     : cursorRank
       ? [cursorRank, cursorRank, cursorId]
       : [startRank];
-  const queryLimit = paged ? limit * 5 : limit + 1;
-  const query = database.prepare(
+  const querySql =
     `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
       country_iso2, continent_id, best
     FROM ranking_entries
     WHERE event_id = ? AND ranking_type = ?${regionClause}${cursorClause}
-    ORDER BY ${rankColumn}, person_id
-    LIMIT ?`,
-  ).bind(eventId, type, ...regionBindings, ...cursorBindings, queryLimit);
+    ORDER BY ${rankColumn}, person_id${paged ? "" : " LIMIT ?"}`;
+  const queryBindings = paged
+    ? [eventId, type, ...regionBindings, ...cursorBindings]
+    : [eventId, type, ...regionBindings, ...cursorBindings, limit + 1];
+  const query = database.prepare(querySql).bind(...queryBindings);
 
-  const [result, countRow, exportDateRow] = await Promise.all([
+  const nextPageRank = paged
+    ? database
+        .prepare(
+          `SELECT MIN(${rankColumn}) AS rank
+           FROM ranking_entries
+           WHERE event_id = ? AND ranking_type = ?${regionClause} AND ${rankColumn} >= ?`,
+        )
+        .bind(eventId, type, ...regionBindings, startRank + limit)
+        .first<{ rank: number | null }>()
+    : Promise.resolve(null);
+  const previousPageRank = paged && startRank > 1
+    ? database
+        .prepare(
+          `SELECT MAX(${rankColumn}) AS rank
+           FROM ranking_entries
+           WHERE event_id = ? AND ranking_type = ?${regionClause} AND ${rankColumn} < ?`,
+        )
+        .bind(eventId, type, ...regionBindings, startRank)
+        .first<{ rank: number | null }>()
+    : Promise.resolve(null);
+
+  const [result, countRow, exportDateRow, nextRankRow, previousRankRow] = await Promise.all([
     query.all<D1Row>(),
     database
       .prepare(
@@ -124,17 +146,27 @@ async function queryD1({
     database
       .prepare("SELECT value FROM export_metadata WHERE key = 'export_date'")
       .first<{ value: string }>(),
+    nextPageRank,
+    previousPageRank,
   ]);
 
   const rows = result.results.map(toRankingEntry);
   const total = Number(countRow?.count ?? 0);
-  const hasMore = paged ? rows.length > 0 && startRank + limit <= total : rows.length > limit;
+  const nextPageStart = nextRankRow?.rank
+    ? Math.floor((Number(nextRankRow.rank) - 1) / limit) * limit + 1
+    : null;
+  const previousPageStart = previousRankRow?.rank
+    ? Math.floor((Number(previousRankRow.rank) - 1) / limit) * limit + 1
+    : null;
+  const hasMore = paged ? nextPageStart !== null : rows.length > limit;
   const entries = paged ? rows : (hasMore ? rows.slice(0, limit) : rows);
   const last = entries.at(-1);
 
   return {
     entries,
     hasMore,
+    nextPageStart,
+    previousPageStart,
     nextCursor: last ? { rank: last.rank, personId: last.personId } : null,
     total,
     exportDate: exportDateRow?.value ?? null,
@@ -196,9 +228,12 @@ export async function GET(request: Request) {
     }
 
     const last = entries.at(-1);
+    const hasMore = startRank + limit <= 248_392;
     return Response.json({
       entries,
-      hasMore: startRank + limit <= 248_392,
+      hasMore,
+      nextPageStart: hasMore ? startRank + limit : null,
+      previousPageStart: startRank > 1 ? Math.max(1, startRank - limit) : null,
       nextCursor: last ? { rank: last.rank, personId: last.personId } : null,
       total: 248_392,
       exportDate: null,

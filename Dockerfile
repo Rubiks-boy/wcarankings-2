@@ -18,14 +18,19 @@ ENV PORT=3000
 WORKDIR /app
 
 RUN useradd --system --uid 10001 --create-home app
+RUN apt-get update \
+  && apt-get install --yes --no-install-recommends mariadb-client \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build --chown=app:app /app/node_modules ./node_modules
 COPY --from=build --chown=app:app /app/dist/standalone ./dist/standalone
 COPY --from=build --chown=app:app /app/dist/client ./dist/client
-COPY --from=build --chown=app:app /app/drizzle ./drizzle
+COPY --from=build --chown=app:app /app/migrations ./migrations
 COPY --from=build --chown=app:app /app/scripts/migrate.mjs ./scripts/migrate.mjs
+COPY --from=build --chown=app:app /app/scripts/mysql-schema.mjs ./scripts/mysql-schema.mjs
 COPY --from=build --chown=app:app /app/scripts/sync-wca-export.mjs ./scripts/sync-wca-export.mjs
 COPY --chown=app:app docker-entrypoint.sh ./docker-entrypoint.sh
+RUN mkdir -p /var/cache/wcarankings && chown app:app /var/cache/wcarankings
 
 USER app
 

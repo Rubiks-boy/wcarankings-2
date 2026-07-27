@@ -1,27 +1,33 @@
-import { basename, join } from "node:path";
-import { createInterface } from "node:readline";
+import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { Client } from "pg";
+import { access, mkdir, rename, rm } from "node:fs/promises";
+import { basename, join } from "node:path";
+import { pipeline } from "node:stream/promises";
+import mysql from "mysql2/promise";
 import * as unzipper from "unzipper";
+import { migrateDatabase } from "./migrate.mjs";
+import { dropManagedObject } from "./mysql-schema.mjs";
 
 const EXPORT_API = "https://www.worldcubeassociation.org/api/v0/export/public";
-const BATCH_SIZE = 500;
-const dryRun = process.argv.includes("--dry-run");
 const force = process.argv.includes("--force");
+const dryRun = process.argv.includes("--dry-run");
 
-function requiredEnvironment(name) {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is required.`);
-  return value;
+function argumentValue(name) {
+  const prefix = `--${name}=`;
+  const argument = process.argv.find((value) => value.startsWith(prefix));
+  return argument ? argument.slice(prefix.length) : "";
 }
 
-function readValue(row, ...keys) {
-  for (const key of keys) {
-    if (row[key] !== undefined) return row[key];
-  }
-  return "";
+function databaseOptions(connectionString = process.env.DATABASE_URL) {
+  if (!connectionString) throw new Error("DATABASE_URL is required");
+  const url = new URL(connectionString);
+  return {
+    host: url.hostname,
+    port: Number(url.port || 3306),
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: decodeURIComponent(url.pathname.replace(/^\//, "")),
+  };
 }
 
 async function getLatestExport() {
@@ -29,308 +35,170 @@ async function getLatestExport() {
   if (!response.ok) throw new Error(`WCA export API returned ${response.status}.`);
   const payload = await response.json();
   const exportDate = payload.export_date ?? payload.exportDate;
-  const tsvUrl = payload.tsv_url ?? payload.tsvUrl;
+  const sqlUrl = payload.sql_url ?? payload.sqlUrl;
   const version = payload.export_format_version ?? payload.exportFormatVersion ?? "2";
-  if (!exportDate || !tsvUrl) throw new Error("The WCA export API response is missing export_date or tsv_url.");
+  if (!exportDate || !sqlUrl) throw new Error("The WCA export API response is missing export_date or sql_url.");
   if (!String(version).startsWith("2")) {
     throw new Error(`Unsupported WCA export major version: ${version}. Review the importer before continuing.`);
   }
-  return { exportDate, tsvUrl, version };
+  return { exportDate, sqlUrl, version };
+}
+
+async function getSuppliedExportMetadata(path) {
+  const archive = await unzipper.Open.file(path);
+  const entry = archive.files.find((file) => basename(file.path).toLowerCase() === "metadata.json");
+  if (!entry) throw new Error("The supplied WCA SQL export is missing metadata.json.");
+  const metadata = JSON.parse((await entry.buffer()).toString("utf8"));
+  const exportDate = metadata.export_date ?? metadata.exportDate;
+  const version = metadata.export_format_version ?? metadata.exportFormatVersion ?? "2";
+  if (!exportDate) throw new Error("The supplied WCA SQL export metadata is missing export_date.");
+  return { exportDate, sqlUrl: "", version };
 }
 
 async function download(url, destination) {
   const response = await fetch(url, { redirect: "follow" });
   if (!response.ok || !response.body) throw new Error(`Export download returned ${response.status}.`);
   const output = createWriteStream(destination);
-  for await (const chunk of response.body) {
-    if (!output.write(chunk)) await new Promise((resolve) => output.once("drain", resolve));
-  }
-  const finished = new Promise((resolve, reject) => {
-    output.once("finish", resolve);
-    output.once("error", reject);
-  });
-  output.end();
-  await finished;
+  await pipeline(response.body, output);
 }
 
-function findEntry(directory, tableName) {
-  const expected = `${tableName.toLowerCase()}.tsv`;
-  const entry = directory.files.find((file) => file.path.toLowerCase().endsWith(expected));
-  if (!entry) throw new Error(`Could not find ${tableName}.tsv in the WCA export.`);
+async function getCachedExport(latest) {
+  const suppliedPath = argumentValue("sql-path") || process.env.WCA_SQL_EXPORT_PATH;
+  if (suppliedPath) {
+    await access(suppliedPath);
+    process.stdout.write(`Using supplied WCA SQL export: ${suppliedPath}\n`);
+    return suppliedPath;
+  }
+
+  const cacheDirectory = process.env.WCA_EXPORT_CACHE_DIR || "/var/cache/wcarankings";
+  await mkdir(cacheDirectory, { recursive: true });
+  const cacheDate = String(latest.exportDate).slice(0, 10);
+  const cachePath = join(cacheDirectory, `wca-export-${cacheDate}.sql.zip`);
+  try {
+    await access(cachePath);
+    process.stdout.write(`Using cached WCA SQL export: ${cachePath}\n`);
+    return cachePath;
+  } catch {
+    const partialPath = `${cachePath}.part`;
+    await rm(partialPath, { force: true });
+    process.stdout.write(`Downloading WCA SQL export to ${cachePath}…\n`);
+    try {
+      await download(latest.sqlUrl, partialPath);
+      await rename(partialPath, cachePath);
+    } catch (error) {
+      await rm(partialPath, { force: true });
+      throw error;
+    }
+    return cachePath;
+  }
+}
+
+async function getCachedExportForToday() {
+  const cacheDirectory = process.env.WCA_EXPORT_CACHE_DIR || "/var/cache/wcarankings";
+  const cachePath = join(cacheDirectory, `wca-export-${new Date().toISOString().slice(0, 10)}.sql.zip`);
+  try {
+    await access(cachePath);
+    return cachePath;
+  } catch {
+    return null;
+  }
+}
+
+function sqlEntry(archive) {
+  const entry = archive.files.find((file) => basename(file.path).toLowerCase() === "wca_export.sql");
+  if (!entry) throw new Error("Could not find WCA_export.sql in the WCA SQL export.");
   return entry;
 }
 
-async function forEachTsvRow(entry, callback) {
-  const lines = createInterface({ input: entry.stream(), crlfDelay: Infinity });
-  let headers;
-  for await (const rawLine of lines) {
-    const line = rawLine.replace(/\r$/, "");
-    if (!headers) {
-      headers = line.split("\t");
-      continue;
+async function dropRankingViews() {
+  const connection = await mysql.createConnection(databaseOptions());
+  try {
+    for (const name of ["ranking_counts", "ranking_entries", "ranking_counts_source", "ranking_entries_source", "wca_best_single", "wca_best_average"]) {
+      await dropManagedObject(connection, name);
     }
-    if (!line) continue;
-    const values = line.split("\t");
-    const row = Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
-    await callback(row);
+  } finally {
+    await connection.end();
   }
 }
 
-async function readReferenceData(directory) {
-  const people = new Map();
-  const countries = new Map();
-
-  process.stdout.write("Reading countries and current competitor profiles…\n");
-  await forEachTsvRow(findEntry(directory, "countries"), async (row) => {
-    const id = readValue(row, "id");
-    countries.set(id, {
-      name: readValue(row, "name") || id,
-      iso2: readValue(row, "iso2"),
-      continentId: readValue(row, "continent_id", "continentId"),
-    });
+async function importSqlExport(zipPath) {
+  const archive = await unzipper.Open.file(zipPath);
+  const entry = sqlEntry(archive);
+  const options = databaseOptions();
+  const child = spawn("mariadb", [
+    "--protocol=TCP",
+    "--host", options.host,
+    "--port", String(options.port),
+    "--user", options.user,
+    "--database", options.database,
+    "--binary-mode",
+  ], {
+    env: { ...process.env, MYSQL_PWD: options.password },
+    stdio: ["pipe", "ignore", "pipe"],
   });
-  await forEachTsvRow(findEntry(directory, "persons"), async (row) => {
-    const personId = readValue(row, "wca_id", "id");
-    const subId = Number(readValue(row, "sub_id", "subid")) || 1;
-    const existing = people.get(personId);
-    if (!existing || subId < existing.subId) {
-      people.set(personId, {
-        subId,
-        name: readValue(row, "name"),
-        countryId: readValue(row, "country_id", "countryId"),
-      });
-    }
+  child.stderr.on("data", (chunk) => process.stderr.write(chunk));
+  const exit = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => resolve({ code, signal }));
   });
-  return { people, countries };
+  await pipeline(entry.stream(), child.stdin);
+  const result = await exit;
+  if (result.code !== 0) throw new Error(`MariaDB import failed with exit code ${result.code ?? result.signal}.`);
 }
 
-async function readBestCompetitions(directory, people) {
-  const bestCompetitions = new Map();
-  process.stdout.write("Reading personal-best competitions…\n");
-  const competitions = new Map();
-  await forEachTsvRow(findEntry(directory, "competitions"), async (row) => {
-    const competitionId = readValue(row, "id");
-    const name = readValue(row, "name");
-    if (competitionId && name) competitions.set(competitionId, name);
-  });
-  await forEachTsvRow(findEntry(directory, "results"), async (row) => {
-    const personId = readValue(row, "person_id", "personId");
-    const eventId = readValue(row, "event_id", "eventId");
-    const competitionId = readValue(row, "competition_id", "competitionId");
-    if (!personId || !eventId || !competitionId || !people.has(personId)) return;
-
-    const key = `${personId}\t${eventId}`;
-    const current = bestCompetitions.get(key) ?? {};
-    for (const [rankingType, value] of [
-      ["single", Number(readValue(row, "best"))],
-      ["average", Number(readValue(row, "average"))],
-    ]) {
-      if (!Number.isFinite(value) || value <= 0) continue;
-      if (!current[rankingType] || value < current[rankingType].value) {
-        current[rankingType] = {
-          value,
-          competitionId,
-          competitionName: competitions.get(competitionId) ?? competitionId,
-        };
-      }
-    }
-    bestCompetitions.set(key, current);
-  });
-  return bestCompetitions;
-}
-
-const rankingColumns = [
-  "event_id",
-  "ranking_type",
-  "person_id",
-  "person_name",
-  "country_id",
-  "country_name",
-  "country_iso2",
-  "continent_id",
-  "best",
-  "competition_id",
-  "competition_name",
-  "world_rank",
-  "continent_rank",
-  "country_rank",
-];
-
-async function insertBatch(client, batch) {
-  if (!batch.length) return;
-  const values = batch.flat();
-  let parameterIndex = 0;
-  const placeholders = batch.map((row) => `(${row.map(() => `$${++parameterIndex}`).join(",")})`);
-  await client.query(
-    `INSERT INTO ranking_entries_next (${rankingColumns.join(",")}) VALUES ${placeholders.join(",")}`,
-    values,
-  );
-}
-
-async function writeRankTable({ entry, rankingType, people, countries, bestCompetitions, client }) {
-  let batch = [];
-  let processed = 0;
-
-  const flush = async () => {
-    await insertBatch(client, batch);
-    batch = [];
-  };
-
-  await forEachTsvRow(entry, async (row) => {
-    const personId = readValue(row, "person_id", "personId");
-    const eventId = readValue(row, "event_id", "eventId");
-    const person = people.get(personId);
-    if (!person || !eventId) return;
-    const country = countries.get(person.countryId) ?? {
-      name: person.countryId,
-      iso2: "",
-      continentId: "",
-    };
-    const competitionId = bestCompetitions.get(`${personId}\t${eventId}`)?.[rankingType]?.competitionId ?? "";
-    const competitionName = bestCompetitions.get(`${personId}\t${eventId}`)?.[rankingType]?.competitionName ?? "";
-    batch.push([
-      eventId,
-      rankingType,
-      personId,
-      person.name,
-      person.countryId,
-      country.name,
-      country.iso2,
-      country.continentId,
-      Number(readValue(row, "best")) || 0,
-      competitionId,
-      competitionName,
-      Number(readValue(row, "world_rank", "worldRank")) || 0,
-      Number(readValue(row, "continent_rank", "continentRank")) || 0,
-      Number(readValue(row, "country_rank", "countryRank")) || 0,
-    ]);
-    processed += 1;
-    if (batch.length >= BATCH_SIZE) await flush();
-    if (processed % 250_000 === 0) process.stdout.write(`  ${rankingType}: ${processed.toLocaleString()} rows\n`);
-  });
-  await flush();
-  process.stdout.write(`  ${rankingType}: ${processed.toLocaleString()} rows complete\n`);
-  return processed;
-}
-
-async function createProjectionTables(client) {
-  await client.query(`
-    DROP TABLE IF EXISTS ranking_entries_next;
-    CREATE TABLE ranking_entries_next (
-      event_id TEXT NOT NULL,
-      ranking_type TEXT NOT NULL,
-      person_id TEXT NOT NULL,
-      person_name TEXT NOT NULL,
-      country_id TEXT NOT NULL,
-      country_name TEXT NOT NULL,
-      country_iso2 TEXT NOT NULL,
-      continent_id TEXT NOT NULL,
-      best INTEGER NOT NULL,
-      competition_id TEXT NOT NULL,
-      competition_name TEXT NOT NULL,
-      world_rank INTEGER NOT NULL,
-      continent_rank INTEGER NOT NULL,
-      country_rank INTEGER NOT NULL,
-      PRIMARY KEY (event_id, ranking_type, person_id)
-    )
-  `);
-}
-
-async function finishProjection(client, exportInfo) {
-  const indexSuffix = `${String(exportInfo.exportDate).replace(/[^0-9]/g, "").slice(-8) || "export"}_${Date.now()}`;
-  await client.query(`
-    CREATE INDEX ranking_world_${indexSuffix}_idx ON ranking_entries_next (event_id, ranking_type, world_rank, person_id);
-    CREATE INDEX ranking_continent_${indexSuffix}_idx ON ranking_entries_next (event_id, ranking_type, continent_id, continent_rank, person_id);
-    CREATE INDEX ranking_country_${indexSuffix}_idx ON ranking_entries_next (event_id, ranking_type, country_id, country_rank, person_id);
-    CREATE INDEX ranking_person_${indexSuffix}_idx ON ranking_entries_next (person_id, event_id, ranking_type);
-    DROP TABLE IF EXISTS ranking_counts_next;
-    CREATE TABLE ranking_counts_next (
-      event_id TEXT NOT NULL,
-      ranking_type TEXT NOT NULL,
-      scope TEXT NOT NULL,
-      region_id TEXT NOT NULL DEFAULT '',
-      count INTEGER NOT NULL,
-      PRIMARY KEY (event_id, ranking_type, scope, region_id)
-    );
-    INSERT INTO ranking_counts_next
-      SELECT event_id, ranking_type, 'world', '', COUNT(*) FROM ranking_entries_next GROUP BY event_id, ranking_type;
-    INSERT INTO ranking_counts_next
-      SELECT event_id, ranking_type, 'continent', continent_id, COUNT(*) FROM ranking_entries_next GROUP BY event_id, ranking_type, continent_id;
-    INSERT INTO ranking_counts_next
-      SELECT event_id, ranking_type, 'country', country_id, COUNT(*) FROM ranking_entries_next GROUP BY event_id, ranking_type, country_id;
-    CREATE TABLE IF NOT EXISTS ranking_entries AS SELECT * FROM ranking_entries_next WITH NO DATA;
-    CREATE TABLE IF NOT EXISTS ranking_counts AS SELECT * FROM ranking_counts_next WITH NO DATA;
-    CREATE TABLE IF NOT EXISTS export_metadata (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
-    DROP TABLE IF EXISTS ranking_entries_old;
-    ALTER TABLE ranking_entries RENAME TO ranking_entries_old;
-    ALTER TABLE ranking_entries_next RENAME TO ranking_entries;
-    DROP TABLE ranking_entries_old;
-    DROP TABLE IF EXISTS ranking_counts_old;
-    ALTER TABLE ranking_counts RENAME TO ranking_counts_old;
-    ALTER TABLE ranking_counts_next RENAME TO ranking_counts;
-    DROP TABLE ranking_counts_old;
-  `);
-  await client.query(`
-    INSERT INTO export_metadata (key, value) VALUES
-      ('export_date', $1), ('export_format_version', $2), ('fetched_at', $3)
-    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-  `, [String(exportInfo.exportDate), String(exportInfo.version), new Date().toISOString()]);
-}
-
-async function alreadyImported(client, exportDate) {
-  if (force || dryRun) return false;
+async function getImportedDate() {
+  const connection = await mysql.createConnection(databaseOptions());
   try {
-    const result = await client.query("SELECT value FROM export_metadata WHERE key = 'export_date' LIMIT 1");
-    return result.rows[0]?.value === String(exportDate);
+    const [rows] = await connection.query("SELECT value FROM export_metadata WHERE `key` = 'export_date' LIMIT 1");
+    return rows[0]?.value ?? null;
   } catch (error) {
-    if (error?.code === "42P01") return false;
+    if (error?.code === "ER_NO_SUCH_TABLE") return null;
     throw error;
+  } finally {
+    await connection.end();
+  }
+}
+
+async function writeExportMetadata(latest) {
+  const connection = await mysql.createConnection(databaseOptions());
+  try {
+    await connection.query(
+      "INSERT INTO export_metadata (`key`, `value`) VALUES (?, ?), (?, ?), (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)",
+      ["export_date", String(latest.exportDate), "export_format_version", String(latest.version), "fetched_at", new Date().toISOString()],
+    );
+  } finally {
+    await connection.end();
   }
 }
 
 async function main() {
-  const latest = await getLatestExport();
-  process.stdout.write(`Latest WCA export: ${latest.exportDate} (v${latest.version})\n`);
-
-  const connectionString = requiredEnvironment("DATABASE_URL");
-  const client = new Client({ connectionString });
-  await client.connect();
-  const workingDirectory = await mkdtemp(join(tmpdir(), "wcarankings-sync-"));
-  try {
-    if (await alreadyImported(client, latest.exportDate)) {
-      process.stdout.write("Database is already current. Nothing to do.\n");
-      return;
-    }
-
-    const zipPath = join(workingDirectory, basename(new URL(latest.tsvUrl).pathname) || "wca-export.tsv.zip");
-    process.stdout.write("Downloading the WCA TSV export…\n");
-    await download(latest.tsvUrl, zipPath);
-    const directory = await unzipper.Open.file(zipPath);
-    if (dryRun) {
-      const { people } = await readReferenceData(directory);
-      process.stdout.write(`Dry run complete. Found ${people.size.toLocaleString()} current competitor profiles.\n`);
-      return;
-    }
-
-    const { people, countries } = await readReferenceData(directory);
-    const bestCompetitions = await readBestCompetitions(directory, people);
-    await client.query("BEGIN");
-    try {
-      await createProjectionTables(client);
-      process.stdout.write("Projecting rank tables…\n");
-      await writeRankTable({ entry: findEntry(directory, "ranks_single"), rankingType: "single", people, countries, bestCompetitions, client });
-      await writeRankTable({ entry: findEntry(directory, "ranks_average"), rankingType: "average", people, countries, bestCompetitions, client });
-      await finishProjection(client, latest);
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    }
-    process.stdout.write(`WCA rankings are current through ${latest.exportDate}.\n`);
-  } finally {
-    await client.end();
-    await rm(workingDirectory, { recursive: true, force: true });
+  const suppliedPath = argumentValue("sql-path") || process.env.WCA_SQL_EXPORT_PATH;
+  let latest;
+  if (suppliedPath) {
+    latest = await getSuppliedExportMetadata(suppliedPath);
+  } else {
+    const cachedPath = await getCachedExportForToday();
+    latest = cachedPath ? await getSuppliedExportMetadata(cachedPath) : await getLatestExport();
   }
+  process.stdout.write(`Latest WCA export: ${latest.exportDate} (v${String(latest.version).replace(/^v/i, "")})\n`);
+  if (!force && await getImportedDate() === String(latest.exportDate)) {
+    process.stdout.write("Database is already current. Nothing to do.\n");
+    return;
+  }
+
+  const zipPath = await getCachedExport(latest);
+  if (dryRun) {
+    process.stdout.write("Dry run complete. The cached SQL export is available for import.\n");
+    return;
+  }
+
+  await dropRankingViews();
+  process.stdout.write("Importing WCA SQL tables into MariaDB…\n");
+  await importSqlExport(zipPath);
+  process.stdout.write("Running MySQL migrations and refreshing ranking views…\n");
+  await migrateDatabase();
+  await writeExportMetadata(latest);
+  process.stdout.write(`WCA rankings are current through ${latest.exportDate}.\n`);
 }
 
 main().catch((error) => {

@@ -1,4 +1,4 @@
-import { queryPostgres } from "./api/rankings/route";
+import { queryMysql } from "./api/rankings/route";
 import { RankingsExplorer } from "./components/RankingsExplorer";
 import { makeDemoRankings } from "@/lib/demo-data";
 import { isEventId, isRankingType, isRegionScope } from "@/lib/wca";
@@ -40,12 +40,12 @@ async function getInitialRankings(searchParams: Record<string, string | string[]
 
   try {
     const searchResult = search
-      ? await queryPostgres({ ...queryOptions, startRank: 1, limit: PAGE_SIZE, search, searchLimit: 500, paged: false })
+      ? await queryMysql({ ...queryOptions, startRank: 1, limit: PAGE_SIZE, search, searchLimit: 500, paged: false })
       : null;
     const searchMatches = searchResult && "entries" in searchResult ? searchResult.entries : [];
     const firstMatch = searchMatches[0];
     const startRank = firstMatch ? pageStartForRank(firstMatch.rank) : 1;
-    const page = await queryPostgres({
+    const page = await queryMysql({
       ...queryOptions,
       startRank,
       limit: PAGE_SIZE,

@@ -54,7 +54,7 @@ function getQueryShape(scope: RegionScope) {
 
 function addParameter(values: unknown[], value: unknown) {
   values.push(value);
-  return `$${values.length}`;
+  return "?";
 }
 
 function makeFilters({
@@ -80,7 +80,7 @@ function makeFilters({
   return { rankColumn, conditions, values };
 }
 
-export async function queryPostgres({
+export async function queryMysql({
   eventId,
   type,
   scope,
@@ -133,7 +133,7 @@ export async function queryPostgres({
         country_iso2, continent_id, best, competition_id, competition_name
       FROM ranking_entries
       WHERE ${conditions.join(" AND ")}
-        AND (person_name ILIKE ${searchParameter} OR person_id ILIKE ${searchParameter})
+        AND (person_name LIKE ${searchParameter} OR person_id LIKE ${searchParameter})
       ORDER BY ${rankColumn}, person_id
       LIMIT ${addParameter(values, searchLimit)}`,
       values,
@@ -168,13 +168,13 @@ export async function queryPostgres({
 
   const nextPageRank = paged
     ? query<{ rank: number | null }>(
-      `SELECT MIN(${rankColumn}) AS rank FROM ranking_entries WHERE ${conditions.join(" AND ")} AND ${rankColumn} >= $${filter.values.length + 1}`,
+      `SELECT MIN(${rankColumn}) AS rank FROM ranking_entries WHERE ${conditions.join(" AND ")} AND ${rankColumn} >= ?`,
       [...filter.values, startRank + limit],
     ).then((result) => result.rows[0] ?? null)
     : Promise.resolve(null);
   const previousPageRank = paged && startRank > 1
     ? query<{ rank: number | null }>(
-      `SELECT MAX(${rankColumn}) AS rank FROM ranking_entries WHERE ${conditions.join(" AND ")} AND ${rankColumn} < $${filter.values.length + 1}`,
+      `SELECT MAX(${rankColumn}) AS rank FROM ranking_entries WHERE ${conditions.join(" AND ")} AND ${rankColumn} < ?`,
       [...filter.values, startRank],
     ).then((result) => result.rows[0] ?? null)
     : Promise.resolve(null);
@@ -183,7 +183,7 @@ export async function queryPostgres({
   const [result, countResult, exportDateResult, fetchedAtResult, nextRankRow, previousRankRow] = await Promise.all([
     query<RankingRow>(querySql, values),
     query<{ count: number }>(
-      `SELECT count FROM ranking_counts WHERE event_id = $1 AND ranking_type = $2 AND scope = $3 AND region_id = $4`,
+      "SELECT count FROM ranking_counts WHERE event_id = ? AND ranking_type = ? AND scope = ? AND region_id = ?",
       countValues,
     ),
     query<{ value: string }>("SELECT value FROM export_metadata WHERE key = 'export_date'"),
@@ -248,7 +248,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const data = await queryPostgres({
+    const data = await queryMysql({
       eventId,
       type,
       scope,

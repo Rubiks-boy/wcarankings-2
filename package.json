@@ -12,15 +12,13 @@
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate",
     "sync:wca": "node scripts/sync-wca-export.mjs",
     "sync:wca:local": "node --env-file=.env.local scripts/sync-wca-export.mjs"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.5",
-    "drizzle-orm": "0.45.2",
+    "mysql2": "^3.23.2",
     "next": "16.2.6",
-    "pg": "^8.16.3",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "unzipper": "^0.12.5"
@@ -28,13 +26,11 @@
   "devDependencies": {
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
-    "@types/pg": "^8.20.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@types/unzipper": "^0.10.11",
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
-    "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
     "react-server-dom-webpack": "19.2.6",

@@ -8,7 +8,7 @@ export default defineConfig({
     ? { watch: { useFsEvents: false, usePolling: true } }
     : undefined,
   ssr: {
-    external: ["pg"],
+    external: ["mysql2"],
   },
   plugins: [vinext()],
 });

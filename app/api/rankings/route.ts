@@ -186,8 +186,8 @@ export async function queryMysql({
       "SELECT count FROM ranking_counts WHERE event_id = ? AND ranking_type = ? AND scope = ? AND region_id = ?",
       countValues,
     ),
-    query<{ value: string }>("SELECT value FROM export_metadata WHERE key = 'export_date'"),
-    query<{ value: string }>("SELECT value FROM export_metadata WHERE key = 'fetched_at'"),
+    query<{ value: string }>("SELECT value FROM export_metadata WHERE `key` = 'export_date'"),
+    query<{ value: string }>("SELECT value FROM export_metadata WHERE `key` = 'fetched_at'"),
     nextPageRank,
     previousPageRank,
   ]);

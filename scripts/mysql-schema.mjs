@@ -79,18 +79,6 @@ const VIEW_STATEMENTS = [
    LEFT JOIN countries c ON c.id = p.country_id
    LEFT JOIN wca_best_average b ON b.person_id = r.person_id AND b.event_id = r.event_id
    LEFT JOIN competitions comp ON comp.id = b.competition_id`,
-  `CREATE OR REPLACE VIEW ranking_counts_source AS
-   SELECT event_id, ranking_type, 'world' AS scope, '' AS region_id, COUNT(*) AS count
-   FROM ranking_entries_source
-   GROUP BY event_id, ranking_type
-   UNION ALL
-   SELECT event_id, ranking_type, 'continent' AS scope, continent_id AS region_id, COUNT(*) AS count
-   FROM ranking_entries_source
-   GROUP BY event_id, ranking_type, continent_id
-   UNION ALL
-   SELECT event_id, ranking_type, 'country' AS scope, country_id AS region_id, COUNT(*) AS count
-   FROM ranking_entries_source
-   GROUP BY event_id, ranking_type, country_id`,
 ];
 
 export async function dropManagedObject(connection, name) {
@@ -128,6 +116,19 @@ export async function refreshMysqlSchema(connection) {
   for (const [name, columns] of PROJECTION_INDEXES) {
     await connection.query(`ALTER TABLE ranking_entries ADD INDEX \`${name}\` ${columns}`);
   }
-  await connection.query("CREATE TABLE ranking_counts AS SELECT * FROM ranking_counts_source");
+  await connection.query(`
+    CREATE TABLE ranking_counts AS
+    SELECT event_id, ranking_type, 'world' AS scope, '' AS region_id, COUNT(*) AS count
+    FROM ranking_entries
+    GROUP BY event_id, ranking_type
+    UNION ALL
+    SELECT event_id, ranking_type, 'continent' AS scope, continent_id AS region_id, COUNT(*) AS count
+    FROM ranking_entries
+    GROUP BY event_id, ranking_type, continent_id
+    UNION ALL
+    SELECT event_id, ranking_type, 'country' AS scope, country_id AS region_id, COUNT(*) AS count
+    FROM ranking_entries
+    GROUP BY event_id, ranking_type, country_id
+  `);
   await connection.query("ALTER TABLE ranking_counts ADD PRIMARY KEY (event_id, ranking_type, scope, region_id)");
 }

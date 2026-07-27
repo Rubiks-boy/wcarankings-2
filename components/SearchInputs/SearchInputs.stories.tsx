@@ -8,9 +8,12 @@ const matches = [
     subRank: 12,
     personId: "2024WALK01",
     personName: "Cailyn Sinclair",
+    countryName: "United States",
+    countryIso2: "US",
     best: 1234,
     competitionId: "storybook-open",
     competitionName: "Storybook Open 2026",
+    recordBadges: [],
   },
 ];
 

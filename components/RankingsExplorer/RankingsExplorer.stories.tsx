@@ -64,6 +64,9 @@ function makeMockRankings() {
         rank,
         subRank: index + 1,
         competitionId: `storybook-${index % 7}`,
+        countryName: ["United States", "Canada", "Japan", "Germany"][index % 4],
+        countryIso2: ["US", "CA", "JP", "DE"][index % 4],
+        recordBadges: index === 0 ? ["WR", "NR"] : index % 31 === 0 ? ["NR"] : [],
       };
     });
 }

@@ -19,9 +19,12 @@ test("renders regex search status without internal ordering details", () => {
         subRank: 3,
         personId: "2024AVERY01",
         personName: "Avery Chen",
+        countryName: "United States",
+        countryIso2: "US",
         best: 700,
         competitionId: "open",
         competitionName: "Open",
+        recordBadges: [],
       }}
       findMatches={[]}
       vimHelpOpen={false}

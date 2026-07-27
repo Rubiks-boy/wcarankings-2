@@ -1,26 +1,33 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import type { RankingEntry } from "../RankingsExplorer/types";
 import { ResultsTable } from "./ResultsTable";
 
-const entries = [
+const entries: RankingEntry[] = [
   {
     rank: 1,
     subRank: 1,
     personId: "2024FAST01",
     personName: "Fast Solver",
+    countryName: "United States",
+    countryIso2: "US",
     best: 512,
     competitionId: "storybook-open",
     competitionName: "Storybook Open 2026",
+    recordBadges: ["WR"],
   },
   {
     rank: 1,
     subRank: 2,
     personId: "2024TIED01",
     personName: "Tied Solver",
+    countryName: "Canada",
+    countryIso2: "CA",
     best: 512,
     competitionId: "storybook-open",
     competitionName: "Storybook Open 2026",
+    recordBadges: [],
   },
 ];
 

@@ -477,9 +477,27 @@ select {
   text-align: left;
 }
 
+.personName {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.35em;
+}
+
+.countryFlag {
+  flex: 0 0 auto;
+  font-size: 1.05em;
+  line-height: 1;
+}
+
 .name {
   overflow: auto;
   white-space: nowrap;
+}
+
+.personName .name {
+  min-width: 0;
+  flex: 1;
 }
 
 .identity .name,
@@ -497,6 +515,39 @@ select {
   min-width: 8ch;
   margin-left: auto;
   text-align: right;
+}
+
+.recordBadges {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.25em;
+  max-width: 13em;
+}
+
+.recordBadge {
+  padding: 0.25em 0.4em;
+  border: 1px solid #b18e2f;
+  border-radius: 0.3em;
+  background: #fff4bf;
+  color: #594600;
+  font-size: 0.68em;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.recordBadge--WR {
+  border-color: #9c6b16;
+  background: #ffe6a3;
+  color: #4d3100;
+}
+
+.recordBadge--NR {
+  border-color: #8298a5;
+  background: #edf3f6;
+  color: #344851;
 }
 
 .best {

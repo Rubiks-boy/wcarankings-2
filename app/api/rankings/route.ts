@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { query } from "@/db";
 import { makeDemoRankings } from "@/lib/demo-data";
 import {
   isEventId,
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 const MAX_PAGE_SIZE = 120;
 
-type D1Row = {
+type RankingRow = {
   rank: number;
   person_id: string;
   person_name: string;
@@ -24,7 +24,7 @@ type D1Row = {
   best: number;
 };
 
-function toRankingEntry(row: D1Row): RankingEntry {
+function toRankingEntry(row: RankingRow): RankingEntry {
   return {
     rank: Number(row.rank),
     personId: row.person_id,
@@ -47,7 +47,35 @@ function getQueryShape(scope: RegionScope) {
   return { rankColumn: "world_rank", regionColumn: null } as const;
 }
 
-async function queryD1({
+function addParameter(values: unknown[], value: unknown) {
+  values.push(value);
+  return `$${values.length}`;
+}
+
+function makeFilters({
+  eventId,
+  type,
+  scope,
+  regionId,
+}: {
+  eventId: string;
+  type: RankingType;
+  scope: RegionScope;
+  regionId: string;
+}) {
+  const { rankColumn, regionColumn } = getQueryShape(scope);
+  const values: unknown[] = [];
+  const conditions = [
+    `event_id = ${addParameter(values, eventId)}`,
+    `ranking_type = ${addParameter(values, type)}`,
+  ];
+  if (regionColumn) {
+    conditions.push(`${regionColumn} = ${addParameter(values, regionId)}`);
+  }
+  return { rankColumn, conditions, values };
+}
+
+async function queryPostgres({
   eventId,
   type,
   scope,
@@ -70,87 +98,67 @@ async function queryD1({
   locate: string;
   paged: boolean;
 }) {
-  const database = env.DB;
-  if (!database) throw new Error("D1 is not available");
-
-  const { rankColumn, regionColumn } = getQueryShape(scope);
-  const regionClause = regionColumn ? ` AND ${regionColumn} = ?` : "";
-  const regionBindings = regionColumn ? [regionId] : [];
+  const filter = makeFilters({ eventId, type, scope, regionId });
+  const { rankColumn, conditions } = filter;
 
   if (locate) {
-    const located = await database
-      .prepare(
-        `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
-          country_iso2, continent_id, best
-        FROM ranking_entries
-        WHERE event_id = ? AND ranking_type = ? AND person_id = ?${regionClause}
-        LIMIT 1`,
-      )
-      .bind(eventId, type, locate, ...regionBindings)
-      .first<D1Row>();
+    const values = [...filter.values];
+    const locateParameter = addParameter(values, locate);
+    const located = await query<RankingRow>(
+      `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
+        country_iso2, continent_id, best
+      FROM ranking_entries
+      WHERE ${conditions.join(" AND ")} AND person_id = ${locateParameter}
+      LIMIT 1`,
+      values,
+    );
 
-    return { located: located ? toRankingEntry(located) : null, source: "wca" as const };
+    return { located: located.rows[0] ? toRankingEntry(located.rows[0]) : null, source: "wca" as const };
   }
 
+  const values = [...filter.values];
+  const pageConditions = [...conditions];
   const cursorClause = paged
-    ? ` AND ${rankColumn} >= ? AND ${rankColumn} < ?`
+    ? ` AND ${rankColumn} >= ${addParameter(values, startRank)} AND ${rankColumn} < ${addParameter(values, startRank + limit)}`
     : cursorRank
-      ? ` AND (${rankColumn} > ? OR (${rankColumn} = ? AND person_id > ?))`
-      : ` AND ${rankColumn} >= ?`;
-  const cursorBindings = paged
-    ? [startRank, startRank + limit]
-    : cursorRank
-      ? [cursorRank, cursorRank, cursorId]
-      : [startRank];
-  const querySql =
-    `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
+      ? ` AND (${rankColumn} > ${addParameter(values, cursorRank)} OR (${rankColumn} = ${addParameter(values, cursorRank)} AND person_id > ${addParameter(values, cursorId)}))`
+      : ` AND ${rankColumn} >= ${addParameter(values, startRank)}`;
+  pageConditions.push(cursorClause.slice(5));
+  const limitParameter = paged ? "" : ` LIMIT ${addParameter(values, limit + 1)}`;
+  const querySql = `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
       country_iso2, continent_id, best
     FROM ranking_entries
-    WHERE event_id = ? AND ranking_type = ?${regionClause}${cursorClause}
-    ORDER BY ${rankColumn}, person_id${paged ? "" : " LIMIT ?"}`;
-  const queryBindings = paged
-    ? [eventId, type, ...regionBindings, ...cursorBindings]
-    : [eventId, type, ...regionBindings, ...cursorBindings, limit + 1];
-  const query = database.prepare(querySql).bind(...queryBindings);
+    WHERE ${pageConditions.join(" AND ")}
+    ORDER BY ${rankColumn}, person_id${limitParameter}`;
 
   const nextPageRank = paged
-    ? database
-        .prepare(
-          `SELECT MIN(${rankColumn}) AS rank
-           FROM ranking_entries
-           WHERE event_id = ? AND ranking_type = ?${regionClause} AND ${rankColumn} >= ?`,
-        )
-        .bind(eventId, type, ...regionBindings, startRank + limit)
-        .first<{ rank: number | null }>()
+    ? query<{ rank: number | null }>(
+      `SELECT MIN(${rankColumn}) AS rank FROM ranking_entries WHERE ${conditions.join(" AND ")} AND ${rankColumn} >= $${filter.values.length + 1}`,
+      [...filter.values, startRank + limit],
+    ).then((result) => result.rows[0] ?? null)
     : Promise.resolve(null);
   const previousPageRank = paged && startRank > 1
-    ? database
-        .prepare(
-          `SELECT MAX(${rankColumn}) AS rank
-           FROM ranking_entries
-           WHERE event_id = ? AND ranking_type = ?${regionClause} AND ${rankColumn} < ?`,
-        )
-        .bind(eventId, type, ...regionBindings, startRank)
-        .first<{ rank: number | null }>()
+    ? query<{ rank: number | null }>(
+      `SELECT MAX(${rankColumn}) AS rank FROM ranking_entries WHERE ${conditions.join(" AND ")} AND ${rankColumn} < $${filter.values.length + 1}`,
+      [...filter.values, startRank],
+    ).then((result) => result.rows[0] ?? null)
     : Promise.resolve(null);
 
-  const [result, countRow, exportDateRow, nextRankRow, previousRankRow] = await Promise.all([
-    query.all<D1Row>(),
-    database
-      .prepare(
-        `SELECT count FROM ranking_counts
-         WHERE event_id = ? AND ranking_type = ? AND scope = ? AND region_id = ?`,
-      )
-      .bind(eventId, type, scope, regionId)
-      .first<{ count: number }>(),
-    database
-      .prepare("SELECT value FROM export_metadata WHERE key = 'export_date'")
-      .first<{ value: string }>(),
+  const countValues = [eventId, type, scope, regionId];
+  const [result, countResult, exportDateResult, nextRankRow, previousRankRow] = await Promise.all([
+    query<RankingRow>(querySql, values),
+    query<{ count: number }>(
+      `SELECT count FROM ranking_counts WHERE event_id = $1 AND ranking_type = $2 AND scope = $3 AND region_id = $4`,
+      countValues,
+    ),
+    query<{ value: string }>("SELECT value FROM export_metadata WHERE key = 'export_date'"),
     nextPageRank,
     previousPageRank,
   ]);
 
-  const rows = result.results.map(toRankingEntry);
+  const rows = result.rows.map(toRankingEntry);
+  const countRow = countResult.rows[0];
+  const exportDateRow = exportDateResult.rows[0];
   const total = Number(countRow?.count ?? 0);
   const nextPageStart = nextRankRow?.rank
     ? Math.floor((Number(nextRankRow.rank) - 1) / limit) * limit + 1
@@ -199,7 +207,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const data = await queryD1({
+    const data = await queryPostgres({
       eventId,
       type,
       scope,

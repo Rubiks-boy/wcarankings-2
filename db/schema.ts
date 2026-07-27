@@ -1,6 +1,6 @@
-import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, pgTable, primaryKey, text } from "drizzle-orm/pg-core";
 
-export const rankingEntries = sqliteTable(
+export const rankingEntries = pgTable(
   "ranking_entries",
   {
     eventId: text("event_id").notNull(),
@@ -37,7 +37,7 @@ export const rankingEntries = sqliteTable(
   ],
 );
 
-export const rankingCounts = sqliteTable(
+export const rankingCounts = pgTable(
   "ranking_counts",
   {
     eventId: text("event_id").notNull(),
@@ -49,7 +49,7 @@ export const rankingCounts = sqliteTable(
   (table) => [primaryKey({ columns: [table.eventId, table.rankingType, table.scope, table.regionId] })],
 );
 
-export const exportMetadata = sqliteTable("export_metadata", {
+export const exportMetadata = pgTable("export_metadata", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
 });

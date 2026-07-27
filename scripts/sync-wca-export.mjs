@@ -1,19 +1,15 @@
-import { createWriteStream } from "node:fs";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { once } from "node:events";
 import { createInterface } from "node:readline";
-import { spawn } from "node:child_process";
+import { createWriteStream } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { Client } from "pg";
 import * as unzipper from "unzipper";
 
 const EXPORT_API = "https://www.worldcubeassociation.org/api/v0/export/public";
-const BATCH_SIZE = 300;
-const LOCAL_DATABASE_NAME = "site-creator-d1";
-const LOCAL_DATABASE_ID = "00000000-0000-4000-8000-000000000000";
+const BATCH_SIZE = 500;
 const dryRun = process.argv.includes("--dry-run");
 const force = process.argv.includes("--force");
-const local = process.argv.includes("--local");
 
 function requiredEnvironment(name) {
   const value = process.env[name];
@@ -26,14 +22,6 @@ function readValue(row, ...keys) {
     if (row[key] !== undefined) return row[key];
   }
   return "";
-}
-
-function sqlString(value) {
-  return `'${String(value ?? "").replaceAll("'", "''")}'`;
-}
-
-async function writeChunk(stream, chunk) {
-  if (!stream.write(chunk)) await once(stream, "drain");
 }
 
 async function getLatestExport() {
@@ -50,106 +38,19 @@ async function getLatestExport() {
   return { exportDate, tsvUrl, version };
 }
 
-async function d1Query(sql) {
-  const accountId = requiredEnvironment("CLOUDFLARE_ACCOUNT_ID");
-  const databaseId = requiredEnvironment("D1_DATABASE_ID");
-  const token = requiredEnvironment("CLOUDFLARE_API_TOKEN");
-  const response = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ sql }),
-    },
-  );
-  const body = await response.json();
-  if (!response.ok || !body.success) {
-    throw new Error(`D1 query failed: ${JSON.stringify(body.errors ?? body)}`);
-  }
-  return body.result?.[0]?.results ?? [];
-}
-
-async function runWrangler(args, { capture = false } = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      process.platform === "win32" ? "npx.cmd" : "npx",
-      ["wrangler", ...args],
-      capture ? { env: process.env } : { stdio: "inherit", env: process.env },
-    );
-    let stdout = "";
-    let stderr = "";
-    if (capture) {
-      child.stdout.setEncoding("utf8");
-      child.stderr.setEncoding("utf8");
-      child.stdout.on("data", (chunk) => { stdout += chunk; });
-      child.stderr.on("data", (chunk) => { stderr += chunk; });
-    }
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error(`Wrangler exited with ${code}.${stderr ? `\n${stderr.trim()}` : ""}`));
-    });
-  });
-}
-
-async function writeWranglerConfig(workingDirectory) {
-  const databaseId = local ? LOCAL_DATABASE_ID : requiredEnvironment("D1_DATABASE_ID");
-  const databaseName = local ? LOCAL_DATABASE_NAME : "wcarankings";
-  const configPath = join(workingDirectory, "wrangler.sync.jsonc");
-  const config = `{
-    "name": "wcarankings-sync",
-    "compatibility_date": "2026-07-01",
-    "d1_databases": [{
-      "binding": "DB",
-      "database_name": "${databaseName}",
-      "database_id": "${databaseId}"
-    }]
-  }`;
-  await writeFile(configPath, config);
-  return configPath;
-}
-
-function localWranglerArgs(configPath) {
-  return [
-    "d1",
-    "execute",
-    "DB",
-    "--local",
-    // Wrangler appends its own v3/d1 path beneath this persistence root.
-    `--persist-to=${join(process.cwd(), ".wrangler/state")}`,
-    `--config=${configPath}`,
-  ];
-}
-
-async function localD1Query(sql, configPath) {
-  const { stdout } = await runWrangler(
-    [...localWranglerArgs(configPath), `--command=${sql}`, "--json"],
-    { capture: true },
-  );
-  const payload = JSON.parse(stdout);
-  return payload?.[0]?.results ?? [];
-}
-
-async function alreadyImported(exportDate, configPath) {
-  if (force || dryRun) return false;
-  try {
-    const sql = "SELECT value FROM export_metadata WHERE key = 'export_date' LIMIT 1";
-    const rows = local ? await localD1Query(sql, configPath) : await d1Query(sql);
-    return rows[0]?.value === exportDate;
-  } catch {
-    return false;
-  }
-}
-
 async function download(url, destination) {
   const response = await fetch(url, { redirect: "follow" });
   if (!response.ok || !response.body) throw new Error(`Export download returned ${response.status}.`);
   const output = createWriteStream(destination);
   for await (const chunk of response.body) {
-    if (!output.write(chunk)) await once(output, "drain");
+    if (!output.write(chunk)) await new Promise((resolve) => output.once("drain", resolve));
   }
+  const finished = new Promise((resolve, reject) => {
+    output.once("finish", resolve);
+    output.once("error", reject);
+  });
   output.end();
-  await once(output, "finish");
+  await finished;
 }
 
 function findEntry(directory, tableName) {
@@ -175,58 +76,9 @@ async function forEachTsvRow(entry, callback) {
   }
 }
 
-async function writeRankTable({ entry, rankingType, people, countries, output }) {
-  let batch = [];
-  let processed = 0;
-
-  const flush = async () => {
-    if (!batch.length) return;
-    await writeChunk(
-      output,
-      `INSERT INTO ranking_entries_next VALUES\n${batch.join(",\n")};\n`,
-    );
-    batch = [];
-  };
-
-  await forEachTsvRow(entry, async (row) => {
-    const personId = readValue(row, "person_id", "personId");
-    const eventId = readValue(row, "event_id", "eventId");
-    const person = people.get(personId);
-    if (!person || !eventId) return;
-    const country = countries.get(person.countryId) ?? {
-      name: person.countryId,
-      iso2: "",
-      continentId: "",
-    };
-    const values = [
-      eventId,
-      rankingType,
-      personId,
-      person.name,
-      person.countryId,
-      country.name,
-      country.iso2,
-      country.continentId,
-      Number(readValue(row, "best")) || 0,
-      Number(readValue(row, "world_rank", "worldRank")) || 0,
-      Number(readValue(row, "continent_rank", "continentRank")) || 0,
-      Number(readValue(row, "country_rank", "countryRank")) || 0,
-    ];
-    batch.push(`(${values.map((value) => typeof value === "number" ? value : sqlString(value)).join(",")})`);
-    processed += 1;
-    if (batch.length >= BATCH_SIZE) await flush();
-    if (processed % 250_000 === 0) process.stdout.write(`  ${rankingType}: ${processed.toLocaleString()} rows\n`);
-  });
-  await flush();
-  process.stdout.write(`  ${rankingType}: ${processed.toLocaleString()} rows complete\n`);
-  return processed;
-}
-
-async function generateProjectionSql(zipPath, sqlPath, latest) {
-  const directory = await unzipper.Open.file(zipPath);
+async function readReferenceData(directory) {
   const people = new Map();
   const countries = new Map();
-  const indexSuffix = String(latest.exportDate).replace(/[^0-9]/g, "").slice(-14) || Date.now();
 
   process.stdout.write("Reading countries and current competitor profiles…\n");
   await forEachTsvRow(findEntry(directory, "countries"), async (row) => {
@@ -249,122 +101,191 @@ async function generateProjectionSql(zipPath, sqlPath, latest) {
       });
     }
   });
-
-  const output = createWriteStream(sqlPath, { encoding: "utf8" });
-  await writeChunk(output, `-- CubeRanks projection generated from WCA export ${latest.exportDate}\n`);
-  await writeChunk(output, `DROP TABLE IF EXISTS ranking_entries_next;\n`);
-  await writeChunk(output, `CREATE TABLE ranking_entries_next (
-event_id TEXT NOT NULL,
-ranking_type TEXT NOT NULL,
-person_id TEXT NOT NULL,
-person_name TEXT NOT NULL,
-country_id TEXT NOT NULL,
-country_name TEXT NOT NULL,
-country_iso2 TEXT NOT NULL,
-continent_id TEXT NOT NULL,
-best INTEGER NOT NULL,
-world_rank INTEGER NOT NULL,
-continent_rank INTEGER NOT NULL,
-country_rank INTEGER NOT NULL,
-PRIMARY KEY (event_id, ranking_type, person_id)
-);\n`);
-
-  process.stdout.write("Projecting rank tables…\n");
-  await writeRankTable({
-    entry: findEntry(directory, "ranks_single"),
-    rankingType: "single",
-    people,
-    countries,
-    output,
-  });
-  await writeRankTable({
-    entry: findEntry(directory, "ranks_average"),
-    rankingType: "average",
-    people,
-    countries,
-    output,
-  });
-
-  await writeChunk(output, `
-CREATE INDEX ranking_world_${indexSuffix}_idx ON ranking_entries_next (event_id, ranking_type, world_rank, person_id);
-CREATE INDEX ranking_continent_${indexSuffix}_idx ON ranking_entries_next (event_id, ranking_type, continent_id, continent_rank, person_id);
-CREATE INDEX ranking_country_${indexSuffix}_idx ON ranking_entries_next (event_id, ranking_type, country_id, country_rank, person_id);
-CREATE INDEX ranking_person_${indexSuffix}_idx ON ranking_entries_next (person_id, event_id, ranking_type);
-DROP TABLE IF EXISTS ranking_counts_next;
-CREATE TABLE ranking_counts_next (
-event_id TEXT NOT NULL,
-ranking_type TEXT NOT NULL,
-scope TEXT NOT NULL,
-region_id TEXT NOT NULL DEFAULT '',
-count INTEGER NOT NULL,
-PRIMARY KEY (event_id, ranking_type, scope, region_id)
-);
-INSERT INTO ranking_counts_next
-SELECT event_id, ranking_type, 'world', '', COUNT(*) FROM ranking_entries_next GROUP BY event_id, ranking_type;
-INSERT INTO ranking_counts_next
-SELECT event_id, ranking_type, 'continent', continent_id, COUNT(*) FROM ranking_entries_next GROUP BY event_id, ranking_type, continent_id;
-INSERT INTO ranking_counts_next
-SELECT event_id, ranking_type, 'country', country_id, COUNT(*) FROM ranking_entries_next GROUP BY event_id, ranking_type, country_id;
-CREATE TABLE IF NOT EXISTS ranking_entries AS SELECT * FROM ranking_entries_next WHERE 0;
-CREATE TABLE IF NOT EXISTS ranking_counts AS SELECT * FROM ranking_counts_next WHERE 0;
-DROP TABLE IF EXISTS ranking_entries_old;
-ALTER TABLE ranking_entries RENAME TO ranking_entries_old;
-ALTER TABLE ranking_entries_next RENAME TO ranking_entries;
-DROP TABLE ranking_entries_old;
-DROP TABLE IF EXISTS ranking_counts_old;
-ALTER TABLE ranking_counts RENAME TO ranking_counts_old;
-ALTER TABLE ranking_counts_next RENAME TO ranking_counts;
-DROP TABLE ranking_counts_old;
-CREATE TABLE IF NOT EXISTS export_metadata (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
-INSERT INTO export_metadata (key, value) VALUES ('export_date', ${sqlString(latest.exportDate)})
-ON CONFLICT(key) DO UPDATE SET value = excluded.value;
-INSERT INTO export_metadata (key, value) VALUES ('export_format_version', ${sqlString(latest.version)})
-ON CONFLICT(key) DO UPDATE SET value = excluded.value;
-`);
-  output.end();
-  await once(output, "finish");
+  return { people, countries };
 }
 
-async function importWithWrangler(sqlPath, workingDirectory) {
-  const configPath = await writeWranglerConfig(workingDirectory);
-  const args = local
-    ? [...localWranglerArgs(configPath), `--file=${sqlPath}`]
-    : ["d1", "execute", "DB", "--remote", `--file=${sqlPath}`, `--config=${configPath}`];
-  // A local file import otherwise prints one JSON result per INSERT statement.
-  await runWrangler(args, { capture: local });
+const rankingColumns = [
+  "event_id",
+  "ranking_type",
+  "person_id",
+  "person_name",
+  "country_id",
+  "country_name",
+  "country_iso2",
+  "continent_id",
+  "best",
+  "world_rank",
+  "continent_rank",
+  "country_rank",
+];
+
+async function insertBatch(client, batch) {
+  if (!batch.length) return;
+  const values = batch.flat();
+  let parameterIndex = 0;
+  const placeholders = batch.map((row) => `(${row.map(() => `$${++parameterIndex}`).join(",")})`);
+  await client.query(
+    `INSERT INTO ranking_entries_next (${rankingColumns.join(",")}) VALUES ${placeholders.join(",")}`,
+    values,
+  );
+}
+
+async function writeRankTable({ entry, rankingType, people, countries, client }) {
+  let batch = [];
+  let processed = 0;
+
+  const flush = async () => {
+    await insertBatch(client, batch);
+    batch = [];
+  };
+
+  await forEachTsvRow(entry, async (row) => {
+    const personId = readValue(row, "person_id", "personId");
+    const eventId = readValue(row, "event_id", "eventId");
+    const person = people.get(personId);
+    if (!person || !eventId) return;
+    const country = countries.get(person.countryId) ?? {
+      name: person.countryId,
+      iso2: "",
+      continentId: "",
+    };
+    batch.push([
+      eventId,
+      rankingType,
+      personId,
+      person.name,
+      person.countryId,
+      country.name,
+      country.iso2,
+      country.continentId,
+      Number(readValue(row, "best")) || 0,
+      Number(readValue(row, "world_rank", "worldRank")) || 0,
+      Number(readValue(row, "continent_rank", "continentRank")) || 0,
+      Number(readValue(row, "country_rank", "countryRank")) || 0,
+    ]);
+    processed += 1;
+    if (batch.length >= BATCH_SIZE) await flush();
+    if (processed % 250_000 === 0) process.stdout.write(`  ${rankingType}: ${processed.toLocaleString()} rows\n`);
+  });
+  await flush();
+  process.stdout.write(`  ${rankingType}: ${processed.toLocaleString()} rows complete\n`);
+  return processed;
+}
+
+async function createProjectionTables(client) {
+  await client.query(`
+    DROP TABLE IF EXISTS ranking_entries_next;
+    CREATE TABLE ranking_entries_next (
+      event_id TEXT NOT NULL,
+      ranking_type TEXT NOT NULL,
+      person_id TEXT NOT NULL,
+      person_name TEXT NOT NULL,
+      country_id TEXT NOT NULL,
+      country_name TEXT NOT NULL,
+      country_iso2 TEXT NOT NULL,
+      continent_id TEXT NOT NULL,
+      best INTEGER NOT NULL,
+      world_rank INTEGER NOT NULL,
+      continent_rank INTEGER NOT NULL,
+      country_rank INTEGER NOT NULL,
+      PRIMARY KEY (event_id, ranking_type, person_id)
+    )
+  `);
+}
+
+async function finishProjection(client, exportInfo) {
+  const indexSuffix = `${String(exportInfo.exportDate).replace(/[^0-9]/g, "").slice(-8) || "export"}_${Date.now()}`;
+  await client.query(`
+    CREATE INDEX ranking_world_${indexSuffix}_idx ON ranking_entries_next (event_id, ranking_type, world_rank, person_id);
+    CREATE INDEX ranking_continent_${indexSuffix}_idx ON ranking_entries_next (event_id, ranking_type, continent_id, continent_rank, person_id);
+    CREATE INDEX ranking_country_${indexSuffix}_idx ON ranking_entries_next (event_id, ranking_type, country_id, country_rank, person_id);
+    CREATE INDEX ranking_person_${indexSuffix}_idx ON ranking_entries_next (person_id, event_id, ranking_type);
+    DROP TABLE IF EXISTS ranking_counts_next;
+    CREATE TABLE ranking_counts_next (
+      event_id TEXT NOT NULL,
+      ranking_type TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      region_id TEXT NOT NULL DEFAULT '',
+      count INTEGER NOT NULL,
+      PRIMARY KEY (event_id, ranking_type, scope, region_id)
+    );
+    INSERT INTO ranking_counts_next
+      SELECT event_id, ranking_type, 'world', '', COUNT(*) FROM ranking_entries_next GROUP BY event_id, ranking_type;
+    INSERT INTO ranking_counts_next
+      SELECT event_id, ranking_type, 'continent', continent_id, COUNT(*) FROM ranking_entries_next GROUP BY event_id, ranking_type, continent_id;
+    INSERT INTO ranking_counts_next
+      SELECT event_id, ranking_type, 'country', country_id, COUNT(*) FROM ranking_entries_next GROUP BY event_id, ranking_type, country_id;
+    CREATE TABLE IF NOT EXISTS ranking_entries AS SELECT * FROM ranking_entries_next WITH NO DATA;
+    CREATE TABLE IF NOT EXISTS ranking_counts AS SELECT * FROM ranking_counts_next WITH NO DATA;
+    CREATE TABLE IF NOT EXISTS export_metadata (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
+    DROP TABLE IF EXISTS ranking_entries_old;
+    ALTER TABLE ranking_entries RENAME TO ranking_entries_old;
+    ALTER TABLE ranking_entries_next RENAME TO ranking_entries;
+    DROP TABLE ranking_entries_old;
+    DROP TABLE IF EXISTS ranking_counts_old;
+    ALTER TABLE ranking_counts RENAME TO ranking_counts_old;
+    ALTER TABLE ranking_counts_next RENAME TO ranking_counts;
+    DROP TABLE ranking_counts_old;
+  `);
+  await client.query(`
+    INSERT INTO export_metadata (key, value) VALUES
+      ('export_date', $1), ('export_format_version', $2)
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+  `, [String(exportInfo.exportDate), String(exportInfo.version)]);
+}
+
+async function alreadyImported(client, exportDate) {
+  if (force || dryRun) return false;
+  try {
+    const result = await client.query("SELECT value FROM export_metadata WHERE key = 'export_date' LIMIT 1");
+    return result.rows[0]?.value === String(exportDate);
+  } catch (error) {
+    if (error?.code === "42P01") return false;
+    throw error;
+  }
 }
 
 async function main() {
-  const workingRoot = local ? join(process.cwd(), ".wrangler/work/tmp") : tmpdir();
-  await mkdir(workingRoot, { recursive: true });
-  const workingDirectory = await mkdtemp(join(workingRoot, "wcarankings-sync-"));
+  const latest = await getLatestExport();
+  process.stdout.write(`Latest WCA export: ${latest.exportDate} (v${latest.version})\n`);
+
+  const connectionString = requiredEnvironment("DATABASE_URL");
+  const client = new Client({ connectionString });
+  await client.connect();
+  const workingDirectory = await mkdtemp(join(tmpdir(), "wcarankings-sync-"));
   try {
-    const latest = await getLatestExport();
-    process.stdout.write(`Latest WCA export: ${latest.exportDate} (v${latest.version})\n`);
-    const configPath = local ? await writeWranglerConfig(workingDirectory) : undefined;
-    if (await alreadyImported(latest.exportDate, configPath)) {
+    if (await alreadyImported(client, latest.exportDate)) {
       process.stdout.write("Database is already current. Nothing to do.\n");
       return;
     }
 
     const zipPath = join(workingDirectory, basename(new URL(latest.tsvUrl).pathname) || "wca-export.tsv.zip");
-    const sqlPath = join(workingDirectory, "wcarankings-projection.sql");
     process.stdout.write("Downloading the WCA TSV export…\n");
     await download(latest.tsvUrl, zipPath);
-    await generateProjectionSql(zipPath, sqlPath, latest);
-    const sqlSize = (await stat(sqlPath)).size;
-    process.stdout.write(`Projection ready (${(sqlSize / 1024 / 1024).toFixed(1)} MB).\n`);
-
+    const directory = await unzipper.Open.file(zipPath);
     if (dryRun) {
-      process.stdout.write(`Dry run complete. SQL was generated at ${sqlPath}\n`);
+      const { people } = await readReferenceData(directory);
+      process.stdout.write(`Dry run complete. Found ${people.size.toLocaleString()} current competitor profiles.\n`);
       return;
     }
 
-    process.stdout.write("Importing the new projection into D1…\n");
-    await importWithWrangler(sqlPath, workingDirectory);
+    const { people, countries } = await readReferenceData(directory);
+    await client.query("BEGIN");
+    try {
+      await createProjectionTables(client);
+      process.stdout.write("Projecting rank tables…\n");
+      await writeRankTable({ entry: findEntry(directory, "ranks_single"), rankingType: "single", people, countries, client });
+      await writeRankTable({ entry: findEntry(directory, "ranks_average"), rankingType: "average", people, countries, client });
+      await finishProjection(client, latest);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    }
     process.stdout.write(`WCA rankings are current through ${latest.exportDate}.\n`);
   } finally {
-    if (!dryRun) await rm(workingDirectory, { recursive: true, force: true });
+    await client.end();
+    await rm(workingDirectory, { recursive: true, force: true });
   }
 }
 

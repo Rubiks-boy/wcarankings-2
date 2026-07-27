@@ -1,13 +1,29 @@
-import { env } from "cloudflare:workers";
-import { drizzle } from "drizzle-orm/d1";
+import { Pool, type QueryResultRow } from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "./schema";
 
-export function getDb() {
-  if (!env.DB) {
-    throw new Error(
-      "Cloudflare D1 binding `DB` is unavailable. Set the `d1` field in .openai/hosting.json to `DB` or let your control plane inject the real binding values before using the database."
-    );
-  }
+const globalForDb = globalThis as typeof globalThis & {
+  __cubeRanksPool?: Pool;
+};
 
-  return drizzle(env.DB, { schema });
+export function getPool() {
+  if (globalForDb.__cubeRanksPool) return globalForDb.__cubeRanksPool;
+
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error("DATABASE_URL is required");
+
+  globalForDb.__cubeRanksPool = new Pool({
+    connectionString,
+    max: Number(process.env.DATABASE_POOL_MAX ?? 5),
+    idleTimeoutMillis: 30_000,
+  });
+  return globalForDb.__cubeRanksPool;
+}
+
+export function getDb() {
+  return drizzle(getPool(), { schema });
+}
+
+export function query<T extends QueryResultRow>(text: string, values: unknown[] = []) {
+  return getPool().query<T>(text, values);
 }

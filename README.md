@@ -1,35 +1,33 @@
-# CubeRanks / wcarankings-2
+# WCA Rankings
 
-A fast, mobile-first browser for official [World Cube Association rankings](https://www.worldcubeassociation.org/results/rankings/333/single). The React frontend supports event, result type, and region filters; virtualized infinite scrolling; animated ±10,000 jumps; direct WCA ID lookup; and optional WCA OAuth sign-in for a one-tap “my rank” jump.
+CubeRanks is a fast, mobile-first browser for official [World Cube Association rankings](https://www.worldcubeassociation.org/results/rankings/333/single). It supports event and result-type filters, virtualized ranking pages, large rank jumps, WCA ID lookup, and optional WCA OAuth sign-in.
 
-> This information is based on competition results owned and maintained by the World Cube Association, published at https://worldcubeassociation.org/results.
-
-## What is included
-
-- React 19 / Vinext UI with window virtualization and cacheable 100-rank page requests
-- Cloudflare Worker API routes backed by an indexed D1 ranking projection
-- Preview data fallback, so the product is fully explorable before the first WCA import
-- Streaming WCA Results Export v2 importer that keeps only the data required for rankings
-- Daily GitHub Actions sync that checks the official export date before downloading anything
-- WCA OAuth 2 authorization-code flow with a signed, HTTP-only profile cookie
-- Drizzle schema and generated D1 migration
+The app runs as a self-hosted Node service backed by PostgreSQL. The importer downloads the official WCA Results Export v2, projects only the ranking data needed by the browser, and swaps the completed projection into place inside one database transaction.
 
 ## Local development
 
+Install dependencies and create a local environment:
+
 ```bash
 npm ci
+cp .env.example .env.local
+```
+
+For a local Node process, change `DATABASE_URL` in `.env.local` from the Compose hostname `db` to `localhost`, then start PostgreSQL:
+
+```bash
+docker compose up -d db
+npm run db:migrate
 npm run dev
 ```
 
-Open `http://localhost:3000`. Without a populated D1 binding, the app intentionally shows clearly labeled preview rows. Copy `.env.example` to `.env.local` only if you want to exercise WCA OAuth locally.
-
-To download the latest official export and populate the same local D1 database used by the development server:
+Open `http://localhost:3000`. Until the first WCA import, ranking routes use clearly labeled preview rows. Import the current export with:
 
 ```bash
 npm run sync:wca:local
 ```
 
-The command compares export dates before downloading, so a second run exits immediately when the local database is current. The current projection occupies about 528 MB on disk.
+The importer compares export dates before downloading, so repeated runs are safe. Use `--force` when an explicit re-import is needed.
 
 Useful checks:
 
@@ -39,30 +37,42 @@ npm test
 npm run lint
 ```
 
-## Data design
+## Docker Compose deployment
 
-The public WCA v2 TSV export is currently hundreds of megabytes, but most of it is competition rounds, attempts, and scrambles that a ranking browser never queries. The importer projects only:
+The production stack contains two services:
 
-- `ranks_single`
-- `ranks_average`
-- the current row for each `person`
-- `countries` and their continent mapping
+- `db`: PostgreSQL 16 with its data stored in the `postgres_data` named volume.
+- `app`: the Node/Vinext application. Its entrypoint runs PostgreSQL migrations before starting the server.
 
-Those are flattened into `ranking_entries`, with separate covering indexes for world, continent, country, and WCA-ID lookups. The React client requests fixed 100-rank buckets (1, 101, 201, and so on), caches recent buckets in memory, and never pays the cost of a large SQL `OFFSET`. WCA ties can make a bucket contain more or fewer than 100 people while keeping every official rank intact.
+On the droplet, from `/srv/wcarankings`:
 
-The importer builds `ranking_entries_next` beside the live table, creates its indexes and counts, and swaps it in only after the projection is complete. A failed download or transformation therefore leaves the currently published rankings intact.
+```bash
+cp .env.example .env
+openssl rand -hex 32
+# Put the generated value in POSTGRES_PASSWORD and DATABASE_URL.
+docker compose up -d --build
+docker compose ps
+docker compose logs -f app
+```
 
-## Scheduled export refresh
+The application listens on `127.0.0.1:3000` on the host. Put a TLS-terminating reverse proxy in front of it before exposing the site publicly. The PostgreSQL service has no public network port.
 
-The workflow in `.github/workflows/sync-wca-export.yml` runs daily at 08:17 UTC. It calls the WCA-recommended endpoint at `https://www.worldcubeassociation.org/api/v0/export/public`, compares `export_date` with `export_metadata`, and exits immediately when the database is current.
+Run the initial WCA import from the app image:
 
-Add these GitHub Actions repository secrets after the first deployment:
+```bash
+docker compose run --rm app node /app/scripts/sync-wca-export.mjs
+```
 
-- `CLOUDFLARE_ACCOUNT_ID`
-- `CLOUDFLARE_API_TOKEN` with D1 read/write permission
-- `D1_DATABASE_ID`
+The import downloads the export into temporary storage, streams the TSV files in batches, and leaves the previous published ranking tables untouched if anything fails.
 
-Run the workflow manually once to perform the initial import. The WCA normally publishes a new export after competition weekends, so the daily check does not imply a daily 349 MB download.
+To keep the self-hosted database current, install the included systemd timer as root after copying the repository to `/srv/wcarankings`:
+
+```bash
+install -m 0644 ops/wcarankings-sync.service /etc/systemd/system/
+install -m 0644 ops/wcarankings-sync.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now wcarankings-sync.timer
+```
 
 ## WCA sign-in
 
@@ -72,36 +82,17 @@ Create an OAuth application in your [WCA account](https://www.worldcubeassociati
 https://YOUR_DOMAIN/api/auth/wca/callback
 ```
 
-Then set these hosted runtime values:
-
-- `WCA_CLIENT_ID`
-- `WCA_CLIENT_SECRET`
-- `WCA_REDIRECT_URI`
-
-The app requests only the `public` scope, calls `/api/v0/me`, and retains the public profile fields needed for “my rank.” It does not store the WCA access token.
-
-## Deployment recommendation
-
-The lowest-friction target for this repository is Cloudflare Sites/Workers + D1. The code, database binding, runtime, and CDN stay in one deployment, and the scheduled import can run for free in GitHub Actions for this public repository.
-
-| Option | Likely starting cost | Fit for this project |
-| --- | ---: | --- |
-| Cloudflare Workers + D1 | $0 if the projection stays inside the free 500 MB database limit; otherwise $5/month Workers Paid | Recommended. Already implemented, globally fast, scales to zero, no always-on server. |
-| Railway app + PostgreSQL | $5/month minimum on Hobby, with $5 usage included; more if the always-on app/database exceeds that usage | Easiest conventional Postgres alternative, but less likely to remain exactly $5 once both services run continuously. |
-| Neon + separate frontend | Free only up to 0.5 GB; paid usage is typically above the stated $5 target | Excellent serverless Postgres, but the full ranking projection is likely to outgrow the free storage ceiling. |
-| Supabase | Free only up to 500 MB; Pro starts at $25/month | Comfortable managed Postgres, but not aligned with the preferred budget. |
-
-If D1 storage is close to 500 MB after the first import, move directly to Workers Paid rather than trimming events or sacrificing indexes. The paid plan’s 10 GB per-database ceiling is ample for this ranking-only projection, and the minimum remains the target $5/month.
+Set `WCA_CLIENT_ID`, `WCA_CLIENT_SECRET`, and `WCA_REDIRECT_URI` in the deployment `.env` file. The app requests only the `public` scope and stores a signed, HTTP-only profile cookie; it does not persist the WCA access token.
 
 ## Repository layout
 
 ```text
 app/                         React UI and API routes
-db/                          Drizzle D1 schema
-drizzle/                     Generated SQL migrations
-lib/                         WCA types, formatting, auth, preview data
-scripts/sync-wca-export.mjs  Export checker, projection builder, D1 importer
-.github/workflows/           Daily refresh automation
+db/                          Drizzle PostgreSQL schema and connection pool
+drizzle/                     Generated PostgreSQL migrations
+scripts/sync-wca-export.mjs  WCA export downloader and projection importer
+Dockerfile                   Multi-stage production image
+docker-compose.yml           PostgreSQL + app services
 ```
 
 CubeRanks is an independent community project and is not affiliated with or endorsed by the World Cube Association.

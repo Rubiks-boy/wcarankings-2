@@ -1,5 +1,3 @@
-import { env } from "cloudflare:workers";
-
 export type WcaProfile = {
   wcaId: string;
   name: string;
@@ -17,7 +15,7 @@ type WcaMeResponse = {
 };
 
 export function getWcaAuthConfig(request: Request) {
-  const runtime = env as unknown as Record<string, string | undefined>;
+  const runtime = process.env;
   const clientId = runtime.WCA_CLIENT_ID;
   const clientSecret = runtime.WCA_CLIENT_SECRET;
   const redirectUri = runtime.WCA_REDIRECT_URI ?? `${new URL(request.url).origin}/api/auth/wca/callback`;
@@ -105,4 +103,3 @@ export function toWcaProfile(response: WcaMeResponse): WcaProfile | null {
     avatarUrl: me.avatar?.thumb_url ?? me.avatar?.url ?? null,
   };
 }
-

@@ -21,20 +21,20 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     metadataBase,
-    title: "CubeRanks — WCA Rankings",
-    description: "Browse official World Cube Association rankings by event, result type, and region.",
+    title: "WCA Rankings",
+    description: "Browse official World Cube Association rankings by event and result type.",
     icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
     openGraph: {
-      title: "CubeRanks — WCA Rankings",
-      description: "Browse every official WCA ranking with fast filters, infinite scroll, and direct competitor jumps.",
+      title: "WCA Rankings",
+      description: "Browse official World Cube Association rankings.",
       type: "website",
       url: metadataBase,
       images: [{ url: "/og.png", width: 1731, height: 909, alt: "CubeRanks WCA rankings" }],
     },
     twitter: {
       card: "summary_large_image",
-      title: "CubeRanks — WCA Rankings",
-      description: "Browse official WCA rankings by event, result type, and region.",
+      title: "WCA Rankings",
+      description: "Browse official World Cube Association rankings.",
       images: ["/og.png"],
     },
   };

@@ -99,6 +99,8 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /cancelOnUserInput/);
   assert.match(component, /navigationEpochRef/);
   assert.match(component, /requestEpoch !== navigationEpochRef\.current/);
+  assert.match(component, /pendingNavigationAppendRef/);
+  assert.match(component, /const loadedEntries/);
   assert.match(component, /addEventListener\("wheel"/);
   assert.match(component, /getOffsetForIndex/);
   assert.match(component, /measureElement/);
@@ -113,7 +115,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /formatRankingNumber\(rank\)/);
   assert.match(component, /formatWcaResult\(eventId, entry\.best, rankingType\)/);
   assert.match(wca, /rankingType === "average" \? \(value \/ 100\)\.toFixed\(2\)/);
-  assert.match(component, /const nextStart = normalizedRank/);
+  assert.match(component, /const nextStart = [\s\S]*normalizedRank/);
   assert.doesNotMatch(component, /header-controls|collapsed-filter-summary|table-quick-jump/);
   assert.match(rankingsRoute, /SELECT MIN\(\$\{rankColumn\}\) AS rank/);
   assert.match(rankingsRoute, /SELECT MAX\(\$\{rankColumn\}\) AS rank/);

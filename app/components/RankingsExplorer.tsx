@@ -695,6 +695,7 @@ export function RankingsExplorer({
   const pendingFocusLastRef = useRef(false);
   const pendingScrollToTopRef = useRef(false);
   const pendingScrollDirectionRef = useRef<-1 | 1 | null>(null);
+  const pendingNavigationAppendRef = useRef(false);
   const navigationTargetRankRef = useRef<number | null>(null);
   const jumpUpTimerRef = useRef<number | null>(null);
   const jumpDownTimerRef = useRef<number | null>(null);
@@ -839,13 +840,16 @@ export function RankingsExplorer({
     }
     let active = true;
     const requestNavigationEpoch = navigationEpochRef.current;
+    const preserveList = preserveListDuringLoadRef.current;
     // This reset is coupled to the request started immediately below.
     setLoading(true);
-    if (!preserveListDuringLoadRef.current) setEntries([]);
-    setNextPageStart(null);
-    setPreviousPageStart(null);
-    setHasMore(true);
-    setTotal(Number.POSITIVE_INFINITY);
+    if (!preserveList) {
+      setEntries([]);
+      setNextPageStart(null);
+      setPreviousPageStart(null);
+      setHasMore(true);
+      setTotal(Number.POSITIVE_INFINITY);
+    }
     setError("");
     moreRequestRef.current = false;
     previousRequestRef.current = false;
@@ -884,39 +888,86 @@ export function RankingsExplorer({
           rowVirtualizer.getVirtualItems()[0]?.index
         );
         const scrollToTop = pendingScrollToTopRef.current;
+        const pendingPersonId = pendingPersonIdRef.current;
+        const pendingDirection = pendingScrollDirectionRef.current;
+        const appendNavigation =
+          pendingNavigationAppendRef.current &&
+          !scrollToTop &&
+          !focusPersonId &&
+          !pendingPersonId &&
+          !focusLast &&
+          Boolean(pendingDirection);
+        const previousEntries = entriesRef.current;
+        const previousStartPosition = startPositionRef.current;
+        const previousListHeight = appendNavigation && pendingDirection === -1
+          ? rowVirtualizer.getTotalSize()
+          : null;
+        const loadedEntries = appendNavigation
+          ? pendingDirection === 1
+            ? [
+                ...previousEntries,
+                ...data.entries.filter(
+                  (entry) =>
+                    !previousEntries.some(
+                      (currentEntry) => currentEntry.personId === entry.personId
+                    )
+                ),
+              ]
+            : [
+                ...data.entries.filter(
+                  (entry) =>
+                    !previousEntries.some(
+                      (currentEntry) => currentEntry.personId === entry.personId
+                    )
+                ),
+                ...previousEntries,
+              ]
+          : data.entries;
+        const loadedStartPosition =
+          appendNavigation && pendingDirection === -1
+            ? data.startPosition
+            : previousStartPosition;
         pendingScrollToTopRef.current = false;
-        setEntries(data.entries);
-        setStartPosition(data.startPosition);
-        setNextPageStart(data.nextPageStart);
-        setPreviousPageStart(data.previousPageStart);
+        pendingNavigationAppendRef.current = false;
+        setEntries(loadedEntries);
+        setStartPosition(
+          appendNavigation ? loadedStartPosition : data.startPosition
+        );
+        if (!appendNavigation || pendingDirection === 1) {
+          setNextPageStart(data.nextPageStart);
+        }
+        if (!appendNavigation || pendingDirection === -1) {
+          setPreviousPageStart(data.previousPageStart);
+        }
         setLastRank(data.lastRank);
         setHasMore(data.hasMore);
         setTotal(data.total);
         setFetchedAt(data.fetchedAt);
-        const pendingPersonId = pendingPersonIdRef.current;
-        const pendingDirection = pendingScrollDirectionRef.current;
         const requestedTargetIndex = pendingPersonId
-          ? data.entries.findIndex(
+          ? loadedEntries.findIndex(
               (entry) => entry.personId === pendingPersonId
             )
           : focusLast
-          ? Math.max(0, data.entries.length - 1)
-          : data.entries.findIndex(
+          ? Math.max(0, loadedEntries.length - 1)
+          : loadedEntries.findIndex(
               (entry) => entry.rank >= pendingRankRef.current
             );
         const targetIndex =
           requestedTargetIndex >= 0
             ? requestedTargetIndex
             : pendingDirection === -1
-            ? Math.max(0, data.entries.length - 1)
+            ? Math.max(0, loadedEntries.length - 1)
             : 0;
-        const targetPosition = data.startPosition + targetIndex;
+        const targetPosition =
+          (appendNavigation ? loadedStartPosition : data.startPosition) +
+          targetIndex;
         const shouldScrollToTarget = Boolean(
           scrollToTop ||
             focusPersonId ||
             pendingPersonId ||
             focusLast ||
-            pendingDirection
+            pendingDirection ||
+            appendNavigation
         );
         pendingPersonIdRef.current = "";
         pendingScrollDirectionRef.current = null;
@@ -928,6 +979,16 @@ export function RankingsExplorer({
             getScrollAnimationDuration(currentPosition)
           );
         } else if (shouldScrollToTarget) {
+          if (previousListHeight !== null) {
+            window.requestAnimationFrame(() => {
+              const addedHeight = Math.max(
+                0,
+                rowVirtualizer.getTotalSize() - previousListHeight
+              );
+              if (addedHeight > 0)
+                window.scrollBy({ top: addedHeight, behavior: "auto" });
+            });
+          }
           scrollToEntry({
             state: scrollAnimationStateRef.current,
             list: listRef.current,
@@ -971,6 +1032,7 @@ export function RankingsExplorer({
     (match: RankingEntry) => {
       navigationEpochRef.current += 1;
       cancelScrollAnimation(scrollAnimationStateRef.current);
+      pendingNavigationAppendRef.current = false;
       pendingRankRef.current = match.rank;
       navigationTargetRankRef.current = match.rank;
       pendingPersonIdRef.current = match.personId;
@@ -1325,6 +1387,7 @@ export function RankingsExplorer({
       navigationEpochRef.current += 1;
       cancelScrollAnimation(scrollAnimationStateRef.current);
       navigationTargetRankRef.current = null;
+      pendingNavigationAppendRef.current = false;
       preserveListDuringLoadRef.current = false;
       setPreserveListDuringLoad(false);
     };
@@ -1361,6 +1424,7 @@ export function RankingsExplorer({
     (rank: number) => {
       navigationEpochRef.current += 1;
       cancelScrollAnimation(scrollAnimationStateRef.current);
+      pendingNavigationAppendRef.current = false;
       const maximumRank = lastRank ?? (Number.isFinite(total) ? total : rank);
       const normalizedRank = Math.max(1, Math.min(rank, maximumRank));
       const currentRank = getCurrentViewportRank(
@@ -1411,7 +1475,13 @@ export function RankingsExplorer({
           : null;
       // Rank values can be missing, so ask the API for the exact target and let
       // its ordered query choose the first real result at or beyond that rank.
-      const nextStart = normalizedRank;
+      pendingNavigationAppendRef.current = Boolean(
+        pendingScrollDirectionRef.current
+      );
+      const nextStart =
+        pendingScrollDirectionRef.current === 1
+          ? Math.max(1, normalizedRank - PAGE_SIZE + 1)
+          : normalizedRank;
       const firstLoadedRank = entries[0]?.rank ?? Number.POSITIVE_INFINITY;
       const lastLoadedRank = entries.at(-1)?.rank ?? 0;
       if (
@@ -1462,6 +1532,7 @@ export function RankingsExplorer({
   const jumpToEnd = useCallback(() => {
     navigationEpochRef.current += 1;
     cancelScrollAnimation(scrollAnimationStateRef.current);
+    pendingNavigationAppendRef.current = false;
     const endRank = lastRank ?? (Number.isFinite(total) ? total : visibleRank);
     const nextStart = Math.max(1, endRank - PAGE_SIZE + 1);
     const currentRank = getCurrentViewportRank(

@@ -6,43 +6,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FALLBACK_CONTINENTS,
   FALLBACK_COUNTRIES,
-  formatWcaResult,
   isEventId,
   isRankingType,
   parseRegionQuery,
   WCA_EVENTS,
-  type RegionScope,
 } from "@/lib/wca";
+import { VimHelp } from "../VimHelp/VimHelp";
+import { VimSearchInput } from "../VimSearchInput/VimSearchInput";
+import { JumpControls } from "../JumpControls/JumpControls";
+import { RankingControls } from "../RankingControls/RankingControls";
+import { ResultsTable } from "../ResultsTable/ResultsTable";
+import { SearchInputs } from "../SearchInputs/SearchInputs";
+import { formatFetchedAgo, type InitialRankingData, type RankingEntry, type RankingPage, type RegionOption, type RegionSelection } from "./types";
 
 const PAGE_SIZE = 100;
 const ROW_HEIGHT = 61.6;
 const MIN_SCROLL_ANIMATION_DURATION_MS = 1000;
 const MAX_SCROLL_ANIMATION_DURATION_MS = 1800;
 const LOG_SCROLL_DURATION_PER_DECADE_MS = 150;
-const rankingNumberFormatter = new Intl.NumberFormat(undefined, {
-  maximumFractionDigits: 0,
-});
-function formatRankingNumber(value: number) {
-  return rankingNumberFormatter.format(value);
-}
-
-function formatFetchedAgo(value: string) {
-  const fetchedAt = new Date(value).getTime();
-  if (!Number.isFinite(fetchedAt)) return "time unavailable";
-  const elapsedMinutes = Math.max(
-    0,
-    Math.floor((Date.now() - fetchedAt) / 60_000)
-  );
-  if (elapsedMinutes < 1) return "just now";
-  if (elapsedMinutes < 60)
-    return `${elapsedMinutes} minute${elapsedMinutes === 1 ? "" : "s"} ago`;
-  const elapsedHours = Math.floor(elapsedMinutes / 60);
-  if (elapsedHours < 24)
-    return `${elapsedHours} hour${elapsedHours === 1 ? "" : "s"} ago`;
-  const elapsedDays = Math.floor(elapsedHours / 24);
-  return `${elapsedDays} day${elapsedDays === 1 ? "" : "s"} ago`;
-}
-
 function updateQueryParams(updates: Record<string, string | null>) {
   const url = new URL(window.location.href);
   Object.entries(updates).forEach(([key, value]) => {
@@ -55,59 +36,6 @@ function updateQueryParams(updates: Record<string, string | null>) {
     `${url.pathname}${url.search}`
   );
 }
-
-function setSearchQueryParam(value: string) {
-  updateQueryParams({ search: value.trim() ? value : null });
-}
-
-type RankingEntry = {
-  rank: number;
-  subRank: number;
-  personId: string;
-  personName: string;
-  best: number;
-  competitionId: string;
-  competitionName: string;
-};
-
-type RankingPage = {
-  entries: RankingEntry[];
-  hasMore: boolean;
-  nextPageStart: number | null;
-  previousPageStart: number | null;
-  startPosition: number;
-  lastRank: number | null;
-  total: number;
-  fetchedAt: string | null;
-  exportDate?: string | null;
-};
-
-type InitialRankingData = Pick<
-  RankingPage,
-  | "entries"
-  | "hasMore"
-  | "nextPageStart"
-  | "previousPageStart"
-  | "total"
-  | "fetchedAt"
-> & {
-  startRank: number;
-  startPosition: number;
-  lastRank: number | null;
-  searchMatches: RankingEntry[];
-  initialMatchPersonId: string;
-  regexSearch?: boolean;
-};
-
-type RegionOption = {
-  key: string;
-  scope: RegionScope;
-  regionId: string;
-  label: string;
-  iso2?: string;
-};
-
-type RegionSelection = Pick<RegionOption, "scope" | "regionId">;
 
 const pageCache = new Map<string, Promise<RankingPage>>();
 
@@ -350,247 +278,6 @@ function getCurrentViewportSubRank(
     Math.min(entries.length - 1, Math.floor(-listTop / ROW_HEIGHT))
   );
   return entries[index]?.subRank ?? fallbackSubRank;
-}
-
-function Arrow({ direction }: { direction: "up" | "down" }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      height="24"
-      viewBox="0 -960 960 960"
-      width="24"
-      aria-hidden="true"
-    >
-      <path
-        d={
-          direction === "up"
-            ? "M440-160v-487L216-423l-56-57 320-320 320 320-56 57-224-224v487h-80Z"
-            : "M440-800v487L216-537l-56 57 320 320 320-320-56-57-224 224v-487h-80Z"
-        }
-      />
-    </svg>
-  );
-}
-
-function SelectArrow() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <path
-        d="M7 10L12 15L17 10"
-        stroke="#000000"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <circle
-        cx="10.75"
-        cy="10.75"
-        r="5.75"
-        stroke="currentColor"
-        strokeWidth="1.75"
-      />
-      <path
-        d="M15 15L20 20"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function RegionPicker({
-  options,
-  selected,
-  onChange,
-}: {
-  options: RegionOption[];
-  selected: RegionSelection;
-  onChange: (option: RegionOption) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const pickerRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
-  const selectedOption =
-    options.find(
-      (option) =>
-        option.scope === selected.scope && option.regionId === selected.regionId
-    ) ?? options[0];
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredOptions = normalizedQuery
-    ? options.filter((option) =>
-        option.label.toLocaleLowerCase().includes(normalizedQuery)
-      )
-    : options;
-  const continents = filteredOptions.filter(
-    (option) => option.scope === "continent"
-  );
-  const countries = filteredOptions.filter(
-    (option) => option.scope === "country"
-  );
-
-  useEffect(() => {
-    if (!open) return;
-    searchRef.current?.focus();
-    const closeOnOutsideClick = (event: PointerEvent) => {
-      if (!pickerRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOnOutsideClick);
-    return () =>
-      document.removeEventListener("pointerdown", closeOnOutsideClick);
-  }, [open]);
-
-  const choose = (option: RegionOption) => {
-    onChange(option);
-    setQuery("");
-    setOpen(false);
-  };
-
-  const renderOption = (option: RegionOption) => (
-    <button
-      className={`regionOption${
-        selectedOption?.key === option.key ? " isSelected" : ""
-      }`}
-      type="button"
-      role="option"
-      aria-selected={selectedOption?.key === option.key}
-      onClick={() => choose(option)}
-      key={option.key}
-    >
-      <span>{option.label}</span>
-    </button>
-  );
-
-  return (
-    <div className="regionPicker" ref={pickerRef}>
-      <input
-        className="regionPickerTrigger"
-        id="region-picker-button"
-        type="search"
-        ref={searchRef}
-        value={open ? query : selectedOption?.label ?? "World"}
-        onFocus={() => {
-          if (!open) setQuery("");
-          setOpen(true);
-        }}
-        onChange={(event) => {
-          setQuery(event.target.value);
-          setOpen(true);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            setQuery("");
-            setOpen(false);
-          }
-        }}
-        aria-label="Region"
-        aria-haspopup="listbox"
-      />
-      {open && (
-        <div className="regionPickerMenu" role="listbox" aria-label="Region">
-          {filteredOptions.length === 0 ? (
-            <div className="regionEmpty">No matching regions</div>
-          ) : (
-            <div className="regionOptions">
-              {renderOption(options[0])}
-              {continents.length > 0 && (
-                <div className="regionGroupLabel">Continents</div>
-              )}
-              {continents.map(renderOption)}
-              {countries.length > 0 && (
-                <div className="regionGroupLabel">Countries</div>
-              )}
-              {countries.map(renderOption)}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function RankingRow({
-  entry,
-  eventId,
-  rankingType,
-  loading,
-  animationIndex,
-  highlighted = false,
-  rankIsDuplicate = false,
-}: {
-  entry: RankingEntry | null;
-  eventId: string;
-  rankingType: "single" | "average";
-  loading: boolean;
-  animationIndex: number;
-  highlighted?: boolean;
-  rankIsDuplicate?: boolean;
-}) {
-  const style = {
-    "--t-animation-delay": `${animationIndex * 10}ms`,
-  } as React.CSSProperties;
-  const rank = entry?.rank ?? 0;
-  const name = entry?.personName ?? "";
-  const id = entry?.personId ?? "";
-
-  return (
-    <li
-      className={`listItem${loading || !entry ? " isLoading" : ""}`}
-      style={style}
-    >
-      <div className="loader" aria-hidden="true">
-        <div className="rank loaderBlob" />
-        <div className="name loaderBlob" />
-        <div className="best loaderBlob" />
-      </div>
-      <div
-        className={`row${animationIndex % 2 === 1 ? " row--alternate" : ""}${
-          highlighted ? " row--searchMatch" : ""
-        }`}
-      >
-        <span className={`rank${rankIsDuplicate ? " rank--duplicate" : ""}`}>
-          {formatRankingNumber(rank)}
-        </span>
-        <span className="identity">
-          <span className="name">{name}</span>
-          <span className="wcaId">{id}</span>
-        </span>
-        <span className="result">
-          <span className="best">
-            {entry ? formatWcaResult(eventId, entry.best, rankingType) : ""}
-          </span>
-          {entry?.competitionName && (
-            <span className="competitionName" title={entry.competitionName}>
-              {entry.competitionName}
-            </span>
-          )}
-        </span>
-      </div>
-    </li>
-  );
 }
 
 export function RankingsExplorer({
@@ -1124,7 +811,7 @@ export function RankingsExplorer({
   const resetFind = useCallback(() => {
     findMatchesRef.current = [];
     findIndexRef.current = -1;
-    setSearchQueryParam("");
+    updateQueryParams({ search: null });
     updateQueryParams({ mode: null });
     setFindQuery("");
     setRegexSearch(false);
@@ -1968,7 +1655,6 @@ export function RankingsExplorer({
 
   const findPending =
     Boolean(findQuery.trim()) && findQuery.trim() !== findResolvedQuery;
-  const vimInputValue = vimMode ? vimCommand : `/${vimSearchQuery}`;
   const activeFindMatch = findMatches[findIndex] ?? null;
 
   return (
@@ -1978,163 +1664,50 @@ export function RankingsExplorer({
           <h1 className="title">
             <Link href="/">WCA Rankings</Link>
           </h1>
-          {findOpen ? (
-            <div
-              ref={findBarRef}
-              className={`findBar${findFloating ? " findBar--floating" : ""}`}
-              role="search"
-              onBlur={(event) => {
-                if (
-                  !event.currentTarget.contains(
-                    event.relatedTarget as Node | null
-                  )
-                )
-                  setFindOpen(false);
-              }}
-            >
-              <span className="findIcon" aria-hidden="true">
-                <SearchIcon />
-              </span>
-              <input
-                ref={findInputRef}
-                className="findInput"
-                type="search"
-                value={findQuery}
-                onChange={(event) => {
-                  setVimSearchActive(false);
-                  setVimSearchQuery("");
-                  setRegexSearch(false);
-                  setFindResolvedQuery("");
-                  updateQueryParams({ search: event.target.value.trim() ? event.target.value : null, mode: null });
-                  setFindQuery(event.target.value);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    cycleFind(event.shiftKey ? -1 : 1);
-                  } else if (event.key === "Escape") {
-                    event.preventDefault();
-                    setFindOpen(false);
-                  }
-                }}
-                aria-label="Find a name or WCA ID"
-              />
-              <span
-                className={`findStatus${findError ? " isError" : ""}`}
-                aria-live="polite"
-              >
-                {findError ||
-                  (findLoading || findPending
-                    ? "Searching…"
-                    : findQuery.trim()
-                    ? findMatches.length
-                      ? `${findIndex + 1} of ${findMatches.length}`
-                      : "No matches"
-                    : "")}
-              </span>
-              {activeFindMatch && !findLoading && (
-                <span
-                  className="findMatchSummary"
-                  title={activeFindMatch.personName}
-                >
-                  Rank {formatRankingNumber(activeFindMatch.rank)} · sub-rank {formatRankingNumber(activeFindMatch.subRank)}
-                </span>
-              )}
-              <button
-                className="findClose"
-                type="button"
-                onClick={() => setFindOpen(false)}
-                aria-label="Close search"
-              >
-                ×
-              </button>
-            </div>
-          ) : (
-            <button
-              className={`searchButton${
-                findFloating ? " searchButton--floating" : ""
-              }`}
-              type="button"
-              onClick={openFind}
-              aria-label="Search names or WCA IDs"
-              title="Search names or WCA IDs (Ctrl+F)"
-            >
-              <SearchIcon />
-            </button>
-          )}
+          <SearchInputs
+            barRef={findBarRef}
+            findOpen={findOpen}
+            findFloating={findFloating}
+            findQuery={findQuery}
+            findError={findError}
+            findLoading={findLoading}
+            findPending={findPending}
+            findMatches={findMatches}
+            findIndex={findIndex}
+            activeFindMatch={activeFindMatch}
+            onOpen={openFind}
+            onClose={() => setFindOpen(false)}
+            onQueryChange={(value) => {
+              setVimSearchActive(false);
+              setVimSearchQuery("");
+              setRegexSearch(false);
+              setFindResolvedQuery("");
+              updateQueryParams({ search: value.trim() ? value : null, mode: null });
+              setFindQuery(value);
+            }}
+            onCycle={cycleFind}
+          />
         </div>
-        <div className="chooser">
-          <div className="selectInput eventInput">
-            <select
-              name="Event Id"
-              onChange={(event) =>
-                changeEvent(
-                  event.target.value as (typeof WCA_EVENTS)[number]["id"]
-                )
-              }
-              value={eventId}
-            >
-              {WCA_EVENTS.map(({ id, shortName }) => (
-                <option key={id} value={id}>
-                  {shortName}
-                </option>
-              ))}
-            </select>
-            <SelectArrow />
-          </div>
-          <fieldset className="rankingTypeToggle" aria-label="Ranking type">
-            <legend className="visuallyHidden">Ranking type</legend>
-            {(["single", "average"] as const).map((option) => (
-              <label
-                className={`rankingTypeOption${
-                  rankingType === option ? " isSelected" : ""
-                }${
-                  option === "average" && eventId === "333mbf"
-                    ? " isDisabled"
-                    : ""
-                }`}
-                key={option}
-              >
-                <input
-                  type="radio"
-                  name="Ranking type"
-                  value={option}
-                  checked={rankingType === option}
-                  disabled={option === "average" && eventId === "333mbf"}
-                  onChange={() => changeRankingType(option)}
-                />
-                <span>{option === "single" ? "Single" : "Average"}</span>
-              </label>
-            ))}
-          </fieldset>
-          {regions.length > 0 && (
-            <RegionPicker
-              options={regions}
-              selected={regionSelection}
-              onChange={changeRegion}
-            />
-          )}
-        </div>
+        <RankingControls
+          eventId={eventId}
+          rankingType={rankingType}
+          regions={regions}
+          regionSelection={regionSelection}
+          onEventChange={changeEvent}
+          onRankingTypeChange={changeRankingType}
+          onRegionChange={changeRegion}
+        />
       </header>
 
       <main>
-        <div
-          className={`Jump Jump--up${
-          visibleSubRank > 1 || jumpUpArmed ? " visible" : ""
-          }`}
-        >
-          <button className="Jump-button" onClick={handleJumpUp}>
-            <Arrow direction="up" />
-            <span>
-              {jumpUpArmed
-                ? "Jump to top"
-                : visibleSubRank <= 5000
-                ? "Jump to top"
-                : `Jump ${formatRankingNumber(5000)}`}
-            </span>
-            <Arrow direction="up" />
-          </button>
-        </div>
+        <JumpControls
+          direction="up"
+          visible={visibleSubRank > 1 || jumpUpArmed}
+          armed={jumpUpArmed}
+          currentPosition={visibleSubRank}
+          total={total}
+          onJump={handleJumpUp}
+        />
 
         <div className="outerListWrapper" ref={listRef}>
           <div className="listContainer">
@@ -2143,188 +1716,55 @@ export function RankingsExplorer({
             )}
             {error ? (
               <div className="listMessage">{error}</div>
-            ) : loading && !preserveListDuringLoad ? (
-              <ol className="list loadingList">
-                {Array.from({ length: 10 }, (_, index) => (
-                  <RankingRow
-                    key={index}
-                    entry={null}
-                    eventId={eventId}
-                    rankingType={rankingType}
-                    loading
-                    animationIndex={index}
-                  />
-                ))}
-              </ol>
             ) : (
-              <ol
-                className="list"
-                style={{ height: `${renderedListHeight}px` }}
-              >
-                {renderedRows.map((virtualRow) => {
-                  const entry = entries[virtualRow.index] ?? null;
-                  return (
-                    <div
-                      ref={rowVirtualizer.measureElement}
-                      className="virtualRow"
-                      key={virtualRow.key}
-                      data-index={virtualRow.index}
-                      style={{
-                        transform: `translateY(${
-                          virtualRow.start - listOffset
-                        }px)`,
-                      }}
-                    >
-                      {entry ? (
-                        <RankingRow
-                          entry={entry}
-                          eventId={eventId}
-                          rankingType={rankingType}
-                          loading={false}
-                          animationIndex={virtualRow.index}
-                          highlighted={entry.personId === highlightedPersonId}
-                          rankIsDuplicate={
-                            virtualRow.index > 0 &&
-                            entries[virtualRow.index - 1]?.rank === entry.rank
-                          }
-                        />
-                      ) : (
-                        <div className="listMessage">
-                          {loadingMore
-                            ? "Loading more results…"
-                            : "Keep scrolling…"}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </ol>
+              <ResultsTable
+                entries={entries}
+                renderedRows={renderedRows}
+                renderedListHeight={renderedListHeight}
+                listOffset={listOffset}
+                eventId={eventId}
+                rankingType={rankingType}
+                loading={loading}
+                preserveListDuringLoad={preserveListDuringLoad}
+                loadingMore={loadingMore}
+                highlightedPersonId={highlightedPersonId}
+                measureElement={rowVirtualizer.measureElement}
+              />
             )}
           </div>
         </div>
 
-        <div
-          className={`Jump Jump--down${
-            jumpDownArmed || (Number.isFinite(total) && visibleSubRank < total)
-              ? " visible"
-              : ""
-          }`}
-        >
-          <button className="Jump-button" onClick={handleJumpDown}>
-            <Arrow direction="down" />
-            <span>
-              {jumpDownArmed
-                ? "Jump to end"
-                : Number.isFinite(total) && visibleSubRank >= total - 5000
-                ? "Jump to end"
-                : `Jump ${formatRankingNumber(5000)}`}
-            </span>
-            <Arrow direction="down" />
-          </button>
-        </div>
+        <JumpControls
+          direction="down"
+          visible={jumpDownArmed || (Number.isFinite(total) && visibleSubRank < total)}
+          armed={jumpDownArmed}
+          currentPosition={visibleSubRank}
+          total={total}
+          onJump={handleJumpDown}
+        />
       </main>
       {(vimMode || vimSearchActive) && (
-        <div className="vimCommandLine" role="status" aria-label="Vim command">
-          <div className="vimCommandText">
-            <input
-              ref={vimInputRef}
-              className="vimInput"
-              type="text"
-              value={vimInputValue}
-              readOnly={!vimMode}
-              aria-label={vimSearchActive && !vimMode ? "Vim regex search" : "Vim command"}
-              onChange={(event) => {
-                if (vimMode) setVimCommand(event.target.value);
-              }}
-              onFocus={(event) => {
-                if (!vimMode) event.currentTarget.blur();
-              }}
-              onKeyDown={(event) => {
-                if (
-                  vimSearchActive &&
-                  !vimMode &&
-                  (event.ctrlKey || event.metaKey) &&
-                  event.key.toLocaleLowerCase() === "g"
-                ) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setFindOpen(false);
-                  cycleFind(event.shiftKey ? -1 : 1);
-                  return;
-                }
-                if (
-                  ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) ||
-                  event.ctrlKey ||
-                  event.metaKey ||
-                  event.altKey
-                ) {
-                  event.stopPropagation();
-                }
-              }}
-            />
-          </div>
-          {vimSearchActive && (
-            <span className="vimMatchStatus" aria-live="polite">
-              {findLoading || findPending
-                ? "Searching…"
-                : findQuery.trim()
-                ? activeFindMatch
-                  ? `${activeFindMatch.personName} · rank ${formatRankingNumber(activeFindMatch.rank)} · sub-rank ${formatRankingNumber(activeFindMatch.subRank)}`
-                  : `${findMatches.length} ${findMatches.length === 1 ? "match" : "matches"}`
-                : ""}
-            </span>
-          )}
-          <button
-            className="vimHelpButton"
-            type="button"
-            aria-label="Show Vim keybindings"
-            aria-expanded={vimHelpOpen}
-            aria-controls="vim-help-popup"
-            onClick={() => setVimHelpOpen((open) => !open)}
-          >
-            ?
-          </button>
-        </div>
+        <VimSearchInput
+          inputRef={vimInputRef}
+          value={vimMode ? vimCommand : `/${vimSearchQuery}`}
+          vimMode={vimMode}
+          vimSearchActive={vimSearchActive}
+          findLoading={findLoading}
+          findPending={findPending}
+          findQuery={findQuery}
+          activeFindMatch={activeFindMatch}
+          findMatches={findMatches}
+          vimHelpOpen={vimHelpOpen}
+          onChange={setVimCommand}
+          onCycle={(direction) => {
+            setFindOpen(false);
+            cycleFind(direction);
+          }}
+          onToggleHelp={() => setVimHelpOpen((open) => !open)}
+        />
       )}
       {(vimMode || vimSearchActive) && vimHelpOpen && (
-        <div
-          className="vimHelpPopup"
-          id="vim-help-popup"
-          role="dialog"
-          aria-label="Vim keybindings"
-        >
-          <div className="vimHelpHeader">
-            <strong>Vim bindings</strong>
-            <button
-              className="vimHelpClose"
-              type="button"
-              aria-label="Close Vim keybindings"
-              onClick={() => setVimHelpOpen(false)}
-            >
-              ×
-            </button>
-          </div>
-          <dl>
-            <dt>j / d</dt>
-                <dd>Scroll up 100 people</dd>
-            <dt>k / u</dt>
-                <dd>Scroll down 100 people</dd>
-            <dt>gg</dt>
-            <dd>Jump to the top</dd>
-            <dt>G</dt>
-            <dd>Jump to the end</dd>
-            <dt>:5000</dt>
-            <dd>Jump to a specific rank</dd>
-              <dt>:+500</dt>
-              <dd>Jump relative to the current rank</dd>
-            <dt>/pattern</dt>
-            <dd>Search names and WCA IDs with regex</dd>
-            <dt>Ctrl+G</dt>
-            <dd>Next search result</dd>
-            <dt>Ctrl+Shift+G</dt>
-            <dd>Previous search result</dd>
-          </dl>
-        </div>
+        <VimHelp onClose={() => setVimHelpOpen(false)} />
       )}
       <footer className="siteFooter">
         <span>By Adam Walker and Cailyn Sinclair</span>

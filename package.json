@@ -8,11 +8,14 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
+    "storybook": "STORYBOOK=true storybook dev -p 6006",
+    "build-storybook": "STORYBOOK=true storybook build",
     "start": "node dist/standalone/server.js",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
     "db:refresh-rankings": "node --env-file-if-exists=.env.local scripts/refresh-rankings.mjs",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "test:unit": "node --import tsx --test components/*/*.test.tsx",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern storybook-static",
     "sync:wca": "node scripts/sync-wca-export.mjs",
     "sync:wca:local": "node --env-file=.env.local scripts/sync-wca-export.mjs"
   },
@@ -25,6 +28,8 @@
     "unzipper": "^0.12.5"
   },
   "devDependencies": {
+    "@storybook/nextjs-vite": "^10.5.5",
+    "@storybook/react": "^10.5.5",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
@@ -35,7 +40,9 @@
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
     "react-server-dom-webpack": "19.2.6",
+    "storybook": "^10.5.5",
     "tailwindcss": "4.2.1",
+    "tsx": "^4.22.1",
     "typescript": "5.9.3",
     "vinext": "0.0.50",
     "vite": "8.0.13"

@@ -1,10 +1,8 @@
-import { queryMysql } from "./api/rankings/route";
-import { RankingsExplorer } from "./components/RankingsExplorer";
+import type { GetServerSideProps } from "next";
+import { queryMysql } from "@/app/api/rankings/route";
+import { RankingsExplorer } from "@/components/RankingsExplorer/RankingsExplorer";
 import { getRegions } from "@/lib/regions";
-import { isEventId, isRankingType, isValidRegexPattern, parseRegionQuery } from "@/lib/wca";
-import { redirect } from "next/navigation";
-
-export const dynamic = "force-dynamic";
+import { isEventId, isRankingType, isValidRegexPattern, parseRegionQuery, WCA_EVENTS } from "@/lib/wca";
 
 const PAGE_SIZE = 100;
 
@@ -108,34 +106,70 @@ async function getInitialRankings(searchParams: Record<string, string | string[]
   };
 }
 
-export default async function Home({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const resolvedSearchParams = await searchParams;
-  const rawEventId = getSearchParamWithLegacyKey(resolvedSearchParams, "eventId", "event");
-  const rawRankingType = getSearchParamWithLegacyKey(resolvedSearchParams, "result", "type");
+type QueryParams = Record<string, string | string[] | undefined>;
+
+type PageProps = {
+  initialRankings: Awaited<ReturnType<typeof getInitialRankings>>;
+  initialSearch: string;
+  initialRegexSearch: boolean;
+  eventId: (typeof WCA_EVENTS)[number]["id"];
+  rankingType: "single" | "average";
+  scope: ReturnType<typeof parseRegionQuery>["scope"];
+  regionId: string;
+  continents: Array<{ id: string; name: string }>;
+  countries: Array<{ id: string; name: string; iso2?: string }>;
+};
+
+export const getServerSideProps: GetServerSideProps<PageProps> = async ({ query }) => {
+  const searchParams = query as QueryParams;
+  const rawEventId = getSearchParamWithLegacyKey(searchParams, "eventId", "event");
+  const rawRankingType = getSearchParamWithLegacyKey(searchParams, "result", "type");
   const eventId = isEventId(rawEventId) ? rawEventId : "333";
   const rankingType = eventId === "333mbf" ? "single" : isRankingType(rawRankingType) ? rawRankingType : "single";
-  const { scope, regionId } = parseRegionQuery(getSearchParam(resolvedSearchParams, "region"));
-  const canonicalParams = getCanonicalSearchParams(resolvedSearchParams, eventId, rankingType, regionId);
+  const { scope, regionId } = parseRegionQuery(getSearchParam(searchParams, "region"));
+  const canonicalParams = getCanonicalSearchParams(searchParams, eventId, rankingType, regionId);
   const currentParams = new URLSearchParams();
-  Object.entries(resolvedSearchParams).forEach(([key, value]) => {
+  Object.entries(searchParams).forEach(([key, value]) => {
     if (Array.isArray(value)) value.forEach((item) => currentParams.append(key, item));
     else if (value !== undefined) currentParams.set(key, value);
   });
   if (canonicalParams.toString() !== currentParams.toString()) {
     const query = canonicalParams.toString();
-    redirect(query ? `/?${query}` : "/");
+    return { redirect: { destination: query ? `/?${query}` : "/", permanent: false } };
   }
   const [initialRankings, continents, countries] = await Promise.all([
-    getInitialRankings(resolvedSearchParams),
+    getInitialRankings(searchParams),
     getRegions("continent"),
     getRegions("country"),
   ]);
-  const initialSearch = getSearchParam(resolvedSearchParams, "search").trim().slice(0, 80);
-  const initialRegexSearch = getSearchParam(resolvedSearchParams, "mode") === "vim" && isValidRegexPattern(initialSearch);
+  const initialSearch = getSearchParam(searchParams, "search").trim().slice(0, 80);
+  const initialRegexSearch = getSearchParam(searchParams, "mode") === "vim" && isValidRegexPattern(initialSearch);
+  return {
+    props: {
+      initialRankings,
+      initialSearch,
+      initialRegexSearch,
+      eventId,
+      rankingType,
+      scope,
+      regionId,
+      continents,
+      countries,
+    },
+  };
+};
+
+export default function Home({
+  initialRankings,
+  initialSearch,
+  initialRegexSearch,
+  eventId,
+  rankingType,
+  scope,
+  regionId,
+  continents,
+  countries,
+}: PageProps) {
   return (
     <RankingsExplorer
       initialData={initialRankings}

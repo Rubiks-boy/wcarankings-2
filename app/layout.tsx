@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
-import { PwaRegistration } from "./components/PwaRegistration";
+import { PwaRegistration } from "@/components/PwaRegistration/PwaRegistration";
 import "./globals.css";
 
 const geistSans = Geist({

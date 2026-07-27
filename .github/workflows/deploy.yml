@@ -17,8 +17,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      DEPLOY_HOST: 159.223.195.0
-      DEPLOY_USER: www
+      SERVER_IP: ${{ secrets.SERVER_IP }}
+      SERVER_HOST: ${{ secrets.SERVER_HOST }}
+      SERVER_USER: www
 
     steps:
       - name: Check out main
@@ -58,38 +59,56 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Verify production image contents
+        run: |
+          docker run --rm --entrypoint sh "wcarankings-app:${GITHUB_SHA}" -c \
+            'test -f /app/scripts/migrate.mjs && test -f /app/scripts/sync-wca-export.mjs && test -f /app/scripts/refresh-rankings.mjs'
+
       - name: Copy deployment configuration
         run: |
-          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
             'install -d -m 0755 /srv/wcarankings/ops'
           scp -q -o BatchMode=yes docker-compose.yml \
-            "$DEPLOY_USER@$DEPLOY_HOST:/srv/wcarankings/docker-compose.yml"
+            "$SERVER_USER@$SERVER_IP:/srv/wcarankings/docker-compose.yml"
           scp -q -o BatchMode=yes ops/Caddyfile \
-            "$DEPLOY_USER@$DEPLOY_HOST:/srv/wcarankings/ops/Caddyfile"
+            "$SERVER_USER@$SERVER_IP:/srv/wcarankings/ops/Caddyfile"
 
       - name: Load image and switch production services
         run: |
           set -o pipefail
-          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
-            'cd /srv/wcarankings && docker compose stop app || true; docker compose rm -f app || true; docker image ls --format "{{.ID}}" wcarankings-app | sort -u | xargs -r docker image rm -f; docker builder prune -af; docker image prune -f'
+          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
+            'cd /srv/wcarankings && if docker image inspect wcarankings-app:latest >/dev/null 2>&1; then docker tag wcarankings-app:latest wcarankings-app:previous; fi'
           docker save "wcarankings-app:${GITHUB_SHA}" \
             | gzip -1 \
-            | ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            | ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
                 'gzip -d | docker load'
-          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
             "docker tag wcarankings-app:${GITHUB_SHA} wcarankings-app:latest && cd /srv/wcarankings && docker compose up -d --no-build --remove-orphans app proxy"
 
       - name: Verify deployment
         run: |
-          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
             'cd /srv/wcarankings && docker compose ps && for attempt in $(seq 1 30); do curl --fail --silent http://127.0.0.1:3000/ >/dev/null && exit 0; sleep 2; done; docker compose logs --tail=80 app; exit 1'
 
-      - name: Import current WCA SQL export
-        run: |
-          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
-            'cd /srv/wcarankings && docker compose run --rm app node /app/scripts/sync-wca-export.mjs'
+          for attempt in $(seq 1 30); do
+            curl --fail --silent --show-error "https://${SERVER_HOST}/" >/dev/null && exit 0
+            sleep 2
+          done
+          exit 1
 
-      - name: Re-run migrations and ranking projections
+      - name: Run pending app migrations
         run: |
-          ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 "$DEPLOY_USER@$DEPLOY_HOST" \
-            'cd /srv/wcarankings && docker compose run --rm app node /app/scripts/migrate.mjs && docker compose run --rm app node /app/scripts/refresh-rankings.mjs'
+          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
+            'cd /srv/wcarankings && docker compose run --rm app node /app/scripts/migrate.mjs'
+
+      - name: Roll back failed deployment
+        if: failure()
+        run: |
+          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
+            'set -eu; cd /srv/wcarankings; if ! docker image inspect wcarankings-app:previous >/dev/null 2>&1; then echo "No previous image is available for rollback." >&2; exit 1; fi; docker tag wcarankings-app:previous wcarankings-app:latest; docker compose up -d --no-build --remove-orphans app proxy'
+
+      - name: Remove previous image after successful deployment
+        if: success()
+        run: |
+          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
+            'docker image inspect wcarankings-app:previous >/dev/null 2>&1 && docker image rm wcarankings-app:previous || true'

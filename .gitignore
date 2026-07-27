@@ -24,6 +24,7 @@
 
 # debug
 npm-debug.log*
+debug-storybook.log
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
@@ -38,6 +39,8 @@ yarn-error.log*
 # typescript
 next-env.d.ts
 /dist/
+/storybook-static/
+/.playwright-mcp/
 /.wrangler/
 /outputs/
 /work/

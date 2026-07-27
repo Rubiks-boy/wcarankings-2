@@ -2,7 +2,7 @@
 Description=Daily CubeRanks WCA ranking sync
 
 [Timer]
-OnCalendar=*-*-* 08:17:00 UTC
+OnCalendar=*-*-* 04:00:00 UTC
 Persistent=true
 RandomizedDelaySec=15m
 

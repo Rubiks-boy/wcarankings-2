@@ -1,0 +1,22 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { renderToStaticMarkup } from "react-dom/server";
+import { RankingControls } from "./RankingControls";
+
+test("renders event and ranking type controls", () => {
+  const markup = renderToStaticMarkup(
+    <RankingControls
+      eventId="333"
+      rankingType="single"
+      regions={[{ key: "world", scope: "world", regionId: "", label: "World" }]}
+      regionSelection={{ scope: "world", regionId: "" }}
+      onEventChange={() => undefined}
+      onRankingTypeChange={() => undefined}
+      onRegionChange={() => undefined}
+    />,
+  );
+  assert.match(markup, /name="Event Id"/);
+  assert.match(markup, /Single/);
+  assert.match(markup, /Average/);
+  assert.match(markup, /aria-label="Region"/);
+});

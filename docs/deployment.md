@@ -24,10 +24,13 @@ From the deployment directory on the production host:
 cp .env.example .env
 openssl rand -hex 32
 # Put the generated value in the database environment configuration.
-docker compose up -d --build
+docker compose up -d db
 docker compose ps
-docker compose logs -f app
 ```
+
+The application image is built by GitHub Actions and transferred to the host;
+the production host does not build application images. The first deployment
+starts the application and proxy after loading that image.
 
 The app listens on `127.0.0.1:3000` on the host. Caddy publishes ports 80 and 443
 and obtains certificates automatically. MariaDB has no public network port.
@@ -79,25 +82,31 @@ The workflow does the following:
 3. Uses repository-configured SSH credentials and host verification to establish
    non-interactive access to the production host.
 4. Copies `docker-compose.yml` and `ops/Caddyfile` to the deployment directory.
-5. Stops/removes the old app container and prunes old app images/build cache on the
-   server.
-6. Streams the image directly to the server with
+5. Preserves the current image as `wcarankings-app:previous`.
+6. Streams the new image directly to the server with
    `docker save | gzip | ssh ... 'gzip -d | docker load'`. There is no container
    registry involved.
 7. Tags the loaded image as `wcarankings-app:latest` and runs
    `docker compose up -d --no-build --remove-orphans app proxy`.
-8. Checks that the app answers on `http://127.0.0.1:3000/`, retrying for up to one
-   minute and printing recent app logs if it never becomes healthy.
-9. Runs the cached WCA SQL importer. It is a no-op when the database already has
-   the current export, and performs the initial MariaDB import on a new database.
+8. Verifies the app locally on the server and through the configured public host.
+9. Runs pending app-owned migrations only.
+10. Rolls back to `wcarankings-app:previous` if deployment health checks or
+    migrations fail; otherwise removes the previous image after success.
 
 The deployment server needs the Compose file, Caddyfile, and `.env`, but does not
-need a checkout of the application source. The import command runs migrations and
-rebuilds the ranking projections after the raw WCA tables load. The app entrypoint
-only starts the server, so a fresh host should be imported before it is considered
-ready for ranking traffic.
+need a checkout of the application source. Deployments do not download or import
+WCA data and do not rebuild ranking projections. The daily systemd sync owns that
+slower data operation. The app entrypoint only starts the server, so a fresh host
+should be imported before it is considered ready for ranking traffic.
 
-The workflow is a direct replacement deployment: it stops the current app before
-loading the new image, so a failed handoff may require manual recovery. MariaDB,
+The GitHub Actions workflow expects these repository secrets:
+
+- `SERVER_IP`: SSH address for the deployment host.
+- `SERVER_HOST`: public HTTPS hostname used for the post-deploy check.
+- `DEPLOY_SSH_KEY`: private key for the deployment account.
+- `DEPLOY_KNOWN_HOSTS`: SSH host verification entries.
+
+The workflow replaces the app container after loading the new image, while keeping
+the previous image available until health checks and migrations succeed. MariaDB,
 the export cache, Caddy certificates, and their data survive because they are stored
 in named Docker volumes.

@@ -2,6 +2,7 @@ import vinext from "vinext";
 import { defineConfig } from "vite";
 
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
+const isStorybook = process.env.STORYBOOK === "true";
 
 export default defineConfig({
   server: isCodexSeatbeltSandbox
@@ -10,5 +11,5 @@ export default defineConfig({
   ssr: {
     external: ["mysql2"],
   },
-  plugins: [vinext()],
+  plugins: isStorybook ? [] : [vinext()],
 });

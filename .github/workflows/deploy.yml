@@ -91,5 +91,5 @@ jobs:
 
       - name: Re-run migrations and ranking projections
         run: |
-          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+          ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 "$DEPLOY_USER@$DEPLOY_HOST" \
             'cd /srv/wcarankings && docker compose run --rm app node /app/scripts/migrate.mjs && docker compose run --rm app node /app/scripts/refresh-rankings.mjs'

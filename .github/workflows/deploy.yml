@@ -69,6 +69,9 @@ jobs:
 
       - name: Load image and switch production services
         run: |
+          set -o pipefail
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            'cd /srv/wcarankings && docker compose stop app || true; docker compose rm -f app || true; docker image ls --format "{{.ID}}" wcarankings-app | sort -u | xargs -r docker image rm -f; docker builder prune -af; docker image prune -f'
           docker save "wcarankings-app:${GITHUB_SHA}" \
             | gzip -1 \
             | ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \

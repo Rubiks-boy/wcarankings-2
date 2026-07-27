@@ -12,6 +12,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const MAX_PAGE_SIZE = 120;
+const MAX_SEARCH_RESULTS = 500;
 
 type RankingRow = {
   rank: number;
@@ -85,6 +86,8 @@ async function queryPostgres({
   cursorId,
   limit,
   locate,
+  search,
+  searchLimit,
   paged,
 }: {
   eventId: string;
@@ -96,6 +99,8 @@ async function queryPostgres({
   cursorId: string;
   limit: number;
   locate: string;
+  search: string;
+  searchLimit: number;
   paged: boolean;
 }) {
   const filter = makeFilters({ eventId, type, scope, regionId });
@@ -114,6 +119,32 @@ async function queryPostgres({
     );
 
     return { located: located.rows[0] ? toRankingEntry(located.rows[0]) : null, source: "wca" as const };
+  }
+
+  if (search) {
+    const values = [...filter.values];
+    const searchParameter = addParameter(values, `%${search}%`);
+    const searchResult = await query<RankingRow>(
+      `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
+        country_iso2, continent_id, best
+      FROM ranking_entries
+      WHERE ${conditions.join(" AND ")}
+        AND (person_name ILIKE ${searchParameter} OR person_id ILIKE ${searchParameter})
+      ORDER BY ${rankColumn}, person_id
+      LIMIT ${addParameter(values, searchLimit)}`,
+      values,
+    );
+
+    return {
+      entries: searchResult.rows.map(toRankingEntry),
+      hasMore: false,
+      nextPageStart: null,
+      previousPageStart: null,
+      nextCursor: null,
+      total: searchResult.rowCount ?? searchResult.rows.length,
+      exportDate: null,
+      source: "wca" as const,
+    };
   }
 
   const values = [...filter.values];
@@ -201,6 +232,9 @@ export async function GET(request: Request) {
   const cursorRank = Number(url.searchParams.get("cursorRank")) || null;
   const cursorId = url.searchParams.get("cursorId") ?? "";
   const locate = (url.searchParams.get("locate") ?? "").trim().toUpperCase();
+  const search = (url.searchParams.get("search") ?? "").trim().slice(0, 80);
+  const requestedSearchLimit = Number(url.searchParams.get("searchLimit")) || MAX_SEARCH_RESULTS;
+  const searchLimit = Math.min(MAX_SEARCH_RESULTS, Math.max(1, requestedSearchLimit));
 
   if (scope !== "world" && !regionId) {
     return Response.json({ error: "Choose a region before loading rankings." }, { status: 400 });
@@ -217,6 +251,8 @@ export async function GET(request: Request) {
       cursorId,
       limit,
       locate,
+      search,
+      searchLimit,
       paged,
     });
     return Response.json(data, { headers: { "Cache-Control": "public, max-age=60, s-maxage=3600" } });
@@ -233,6 +269,13 @@ export async function GET(request: Request) {
 
     if (locate) {
       return Response.json({ located, source: "demo" });
+    }
+
+    if (search) {
+      const normalizedSearch = search.toLocaleLowerCase();
+      const searchEntries = makeDemoRankings({ eventId, type, scope, regionId, startRank: 1, limit: searchLimit })
+        .filter((entry) => entry.personName.toLocaleLowerCase().includes(normalizedSearch) || entry.personId.toLocaleLowerCase().includes(normalizedSearch));
+      return Response.json({ entries: searchEntries, total: searchEntries.length, source: "demo" });
     }
 
     const last = entries.at(-1);

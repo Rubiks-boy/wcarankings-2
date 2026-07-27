@@ -101,6 +101,31 @@ function getPage(
   return request;
 }
 
+function searchRankings(
+  eventId: string,
+  rankingType: "single" | "average",
+  selection: RegionSelection,
+  search: string,
+  signal: AbortSignal,
+) {
+  const params = new URLSearchParams({
+    event: eventId,
+    type: rankingType,
+    scope: selection.scope,
+    region: selection.regionId,
+    search,
+    searchLimit: "500",
+  });
+
+  return fetch(`/api/rankings?${params}`, { signal }).then(async (response) => {
+    if (!response.ok) {
+      const body = await response.json() as { error?: string };
+      throw new Error(body.error ?? "Search is unavailable.");
+    }
+    return response.json() as Promise<{ entries: RankingEntry[] }>;
+  });
+}
+
 function scrollToEntry(list: HTMLDivElement | null, index: number) {
   window.requestAnimationFrame(() => {
     const listTop = list?.getBoundingClientRect().top ?? 0;
@@ -234,7 +259,7 @@ function RegionPicker({
   );
 }
 
-function RankingRow({ entry, eventId, loading, animationIndex }: { entry: RankingEntry | null; eventId: string; loading: boolean; animationIndex: number }) {
+function RankingRow({ entry, eventId, loading, animationIndex, highlighted = false }: { entry: RankingEntry | null; eventId: string; loading: boolean; animationIndex: number; highlighted?: boolean }) {
   const style = { "--t-animation-delay": `${animationIndex * 10}ms` } as React.CSSProperties;
   const rank = entry?.rank ?? 0;
   const name = entry?.personName ?? "";
@@ -247,7 +272,7 @@ function RankingRow({ entry, eventId, loading, animationIndex }: { entry: Rankin
         <div className="name loaderBlob" />
         <div className="best loaderBlob" />
       </div>
-      <div className={`row${animationIndex % 2 === 1 ? " row--alternate" : ""}`}>
+      <div className={`row${animationIndex % 2 === 1 ? " row--alternate" : ""}${highlighted ? " row--searchMatch" : ""}`}>
         <span className="rank">{rank}</span>
         <span className="name">{name}</span>
         <span className="wcaId">({id})</span>
@@ -273,10 +298,23 @@ export function RankingsExplorer() {
   const [loadingPrevious, setLoadingPrevious] = useState(false);
   const [error, setError] = useState("");
   const [listOffset, setListOffset] = useState(0);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findMatches, setFindMatches] = useState<RankingEntry[]>([]);
+  const [findIndex, setFindIndex] = useState(-1);
+  const [findLoading, setFindLoading] = useState(false);
+  const [findError, setFindError] = useState("");
+  const [highlightedPersonId, setHighlightedPersonId] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
+  const findInputRef = useRef<HTMLInputElement>(null);
   const moreRequestRef = useRef(false);
   const previousRequestRef = useRef(false);
   const pendingRankRef = useRef(1);
+  const pendingPersonIdRef = useRef("");
+  const findMatchesRef = useRef<RankingEntry[]>([]);
+  const findIndexRef = useRef(-1);
+  const entriesRef = useRef(entries);
+  const startRankRef = useRef(startRank);
 
   const rowVirtualizer = useWindowVirtualizer({
     count: entries.length + (hasMore ? 1 : 0),
@@ -292,6 +330,11 @@ export function RankingsExplorer() {
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, [eventId, rankingType, loading, regionSelection]);
+
+  useEffect(() => {
+    entriesRef.current = entries;
+    startRankRef.current = startRank;
+  }, [entries, startRank]);
 
   useEffect(() => {
     let active = true;
@@ -354,7 +397,10 @@ export function RankingsExplorer() {
         setPreviousPageStart(data.previousPageStart);
         setHasMore(data.hasMore);
         setTotal(data.total);
-        const targetIndex = data.entries.findIndex((entry) => entry.rank >= pendingRankRef.current);
+        const targetIndex = pendingPersonIdRef.current
+          ? data.entries.findIndex((entry) => entry.personId === pendingPersonIdRef.current)
+          : data.entries.findIndex((entry) => entry.rank >= pendingRankRef.current);
+        pendingPersonIdRef.current = "";
         if (startRank === 1) window.scrollTo({ top: 0, behavior: "auto" });
         else scrollToEntry(listRef.current, targetIndex);
       })
@@ -367,6 +413,95 @@ export function RankingsExplorer() {
 
     return () => { active = false; };
   }, [eventId, rankingType, regionSelection, startRank]);
+
+  const jumpToMatch = useCallback((match: RankingEntry) => {
+    pendingRankRef.current = match.rank;
+    pendingPersonIdRef.current = match.personId;
+    setHighlightedPersonId(match.personId);
+    const nextStart = pageStartForRank(match.rank);
+    if (nextStart === startRankRef.current) {
+      const targetIndex = entriesRef.current.findIndex((entry) => entry.personId === match.personId);
+      if (targetIndex >= 0) {
+        pendingPersonIdRef.current = "";
+        scrollToEntry(listRef.current, targetIndex);
+      }
+      return;
+    }
+    setStartRank(nextStart);
+  }, []);
+
+  const cycleFind = useCallback((direction: 1 | -1 = 1) => {
+    const matches = findMatchesRef.current;
+    if (matches.length === 0) return;
+    const currentIndex = findIndexRef.current;
+    const nextIndex = currentIndex < 0
+      ? direction > 0 ? 0 : matches.length - 1
+      : (currentIndex + direction + matches.length) % matches.length;
+    findIndexRef.current = nextIndex;
+    setFindIndex(nextIndex);
+    jumpToMatch(matches[nextIndex]);
+  }, [jumpToMatch]);
+
+  useEffect(() => {
+    const normalizedQuery = findQuery.trim();
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      if (controller.signal.aborted) return;
+      findMatchesRef.current = [];
+      findIndexRef.current = -1;
+      setFindMatches([]);
+      setFindIndex(-1);
+      setFindError("");
+      setHighlightedPersonId("");
+
+      if (!normalizedQuery) {
+        setFindLoading(false);
+        return;
+      }
+
+      setFindLoading(true);
+      searchRankings(eventId, rankingType, regionSelection, normalizedQuery, controller.signal)
+        .then((data) => {
+          if (controller.signal.aborted) return;
+          findMatchesRef.current = data.entries;
+          setFindMatches(data.entries);
+          if (data.entries.length > 0) {
+            findIndexRef.current = 0;
+            setFindIndex(0);
+            jumpToMatch(data.entries[0]);
+          }
+        })
+        .catch((requestError: unknown) => {
+          if (!controller.signal.aborted) {
+            setFindError(requestError instanceof Error ? requestError.message : "Search is unavailable.");
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setFindLoading(false);
+        });
+    }, normalizedQuery ? 150 : 0);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [eventId, findQuery, rankingType, regionSelection, jumpToMatch]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "f") {
+        event.preventDefault();
+        setFindOpen(true);
+        if (findQuery.trim()) cycleFind();
+        else window.requestAnimationFrame(() => findInputRef.current?.focus());
+      } else if (event.key === "Escape" && findOpen) {
+        event.preventDefault();
+        setFindOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [cycleFind, findOpen, findQuery]);
 
   const loadMore = useCallback(async () => {
     if (!nextPageStart || !hasMore || moreRequestRef.current || loading) return;
@@ -426,6 +561,7 @@ export function RankingsExplorer() {
   const resetToRank = (rank: number) => {
     const normalizedRank = Math.max(1, Math.min(rank, Number.isFinite(total) ? total : rank));
     pendingRankRef.current = normalizedRank;
+    pendingPersonIdRef.current = "";
     const nextStart = pageStartForRank(normalizedRank);
     if (nextStart === startRank) {
       const targetIndex = entries.findIndex((entry) => entry.rank >= normalizedRank);
@@ -437,6 +573,7 @@ export function RankingsExplorer() {
 
   const toggleSingle = () => {
     pendingRankRef.current = 1;
+    pendingPersonIdRef.current = "";
     setRankingType((current) => current === "single" ? "average" : "single");
     setStartRank(1);
   };
@@ -473,6 +610,34 @@ export function RankingsExplorer() {
             </div>
       </header>
 
+      {findOpen && (
+        <div className="findBar" role="search">
+          <span className="findIcon" aria-hidden="true">⌕</span>
+          <input
+            ref={findInputRef}
+            className="findInput"
+            type="search"
+            value={findQuery}
+            onChange={(event) => setFindQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                cycleFind(event.shiftKey ? -1 : 1);
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                setFindOpen(false);
+              }
+            }}
+            placeholder="Find a name or WCA ID"
+            aria-label="Find a name or WCA ID"
+          />
+          <span className={`findStatus${findError ? " isError" : ""}`} aria-live="polite">
+            {findError || (findLoading ? "Searching…" : findQuery.trim() ? findMatches.length ? `${findIndex + 1} of ${findMatches.length}` : "No matches" : "Ctrl+F to find")}
+          </span>
+          <button className="findClose" type="button" onClick={() => setFindOpen(false)} aria-label="Close find">×</button>
+        </div>
+      )}
+
       <main>
         <div className={`Jump Jump--up${visibleRank > VISIBLE_AFTER_NUM_ENTRIES ? " visible" : ""}`}>
           <button className="Jump-button" onClick={() => resetToRank(visibleRank > 5000 ? visibleRank - 5000 : 1)}>
@@ -491,7 +656,7 @@ export function RankingsExplorer() {
                   const entry = entries[virtualRow.index] ?? null;
                   return (
                     <div className="virtualRow" key={virtualRow.key} style={{ transform: `translateY(${virtualRow.start - listOffset}px)` }}>
-                      {entry ? <RankingRow entry={entry} eventId={eventId} loading={false} animationIndex={virtualRow.index} /> : <div className="listMessage">{loadingMore ? "Loading more results…" : "Keep scrolling…"}</div>}
+                      {entry ? <RankingRow entry={entry} eventId={eventId} loading={false} animationIndex={virtualRow.index} highlighted={entry.personId === highlightedPersonId} /> : <div className="listMessage">{loadingMore ? "Loading more results…" : "Keep scrolling…"}</div>}
                     </div>
                   );
                 })}
@@ -507,8 +672,7 @@ export function RankingsExplorer() {
           </div>
         </main>
         <footer className="siteFooter">
-          <span>UI by Adam Walker</span>
-          <span>Backend by Cailyn Sinclair</span>
+          By Adam Walker and Cailyn Sinclair
         </footer>
       </div>
   );

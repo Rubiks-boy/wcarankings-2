@@ -39,10 +39,11 @@ npm run lint
 
 ## Docker Compose deployment
 
-The production stack contains two services:
+The production stack contains three services:
 
 - `db`: PostgreSQL 16 with its data stored in the `postgres_data` named volume.
 - `app`: the Node/Vinext application. Its entrypoint runs PostgreSQL migrations before starting the server.
+- `proxy`: Caddy, which terminates HTTPS for `wcarankings.com` and `www.wcarankings.com` and forwards requests to `app`.
 
 On the droplet, from `/srv/wcarankings`:
 
@@ -55,7 +56,7 @@ docker compose ps
 docker compose logs -f app
 ```
 
-The application listens on `127.0.0.1:3000` on the host. Put a TLS-terminating reverse proxy in front of it before exposing the site publicly. The PostgreSQL service has no public network port.
+The application listens on `127.0.0.1:3000` on the host, while Caddy publishes ports 80 and 443 and obtains certificates automatically. The PostgreSQL service has no public network port.
 
 Run the initial WCA import from the app image:
 

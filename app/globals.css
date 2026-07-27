@@ -46,6 +46,65 @@ select {
   margin: 0.5em 0;
 }
 
+.findBar {
+  position: fixed;
+  z-index: 4;
+  top: 3.5em;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  width: min(calc(100% - 2em), 32em);
+  min-height: 2.75em;
+  padding: 0.2em 0.35em 0.2em 0.7em;
+  border: 1px solid #b9cbd4;
+  border-radius: 0.4em;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(24, 48, 61, 0.18);
+  transform: translateX(-50%);
+}
+
+.findIcon {
+  color: #6b7880;
+  font-size: 1.25em;
+}
+
+.findInput {
+  min-width: 0;
+  flex: 1;
+  padding: 0.45em 0.55em;
+  border: 0;
+  outline: none;
+  color: #111;
+  background: transparent;
+  font: inherit;
+}
+
+.findStatus {
+  flex: 0 0 auto;
+  color: #6b7880;
+  font-size: 0.75em;
+  white-space: nowrap;
+}
+
+.findStatus.isError {
+  color: #a33;
+}
+
+.findClose {
+  flex: 0 0 auto;
+  padding: 0.25em 0.45em;
+  border: 0;
+  background: transparent;
+  color: #6b7880;
+  cursor: pointer;
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+.findClose:hover {
+  color: #111;
+}
+
 .header h1 {
   margin-block: 0.5em;
   font-weight: 200;
@@ -292,6 +351,11 @@ select {
   background-color: #eaf4fa;
 }
 
+.row--searchMatch {
+  background-color: #fff1b8;
+  box-shadow: 0 0 0 2px #e1bd42;
+}
+
 .rank {
   width: 5ch;
 }
@@ -343,21 +407,33 @@ select {
 }
 
 .siteFooter {
+  display: none;
   position: fixed;
   z-index: 2;
   bottom: 0.5em;
   left: 0.75em;
-  display: flex;
   justify-content: center;
   gap: 0.75em;
-  padding: 0.35em 0.7em;
-  border: 1px solid rgba(204, 204, 204, 0.7);
-  border-radius: 999px;
-  background: rgba(255, 252, 255, 0.88);
+  padding: 0.15em 0.25em;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: #999;
   font-size: 0.65em;
   pointer-events: none;
   backdrop-filter: blur(4px);
+}
+
+@media only screen and (min-width: 500px) {
+  .siteFooter {
+    display: flex;
+  }
+}
+
+@media only screen and (max-width: 499px) {
+  .findBar {
+    top: 1em;
+  }
 }
 
 .siteFooter span + span::before {

@@ -1,7 +1,9 @@
 import { queryMysql } from "./api/rankings/route";
 import { RankingsExplorer } from "./components/RankingsExplorer";
 import { makeDemoRankings } from "@/lib/demo-data";
-import { isEventId, isRankingType, isRegionScope } from "@/lib/wca";
+import { getRegions } from "@/lib/regions";
+import { isEventId, isRankingType, isValidRegexPattern, parseRegionQuery } from "@/lib/wca";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -19,15 +21,48 @@ function getSearchParam(
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
+function getSearchParamWithLegacyKey(
+  searchParams: Record<string, string | string[] | undefined>,
+  key: string,
+  legacyKey: string,
+) {
+  return getSearchParam(searchParams, key) || getSearchParam(searchParams, legacyKey);
+}
+
+function getCanonicalSearchParams(
+  searchParams: Record<string, string | string[] | undefined>,
+  eventId: string,
+  rankingType: "single" | "average",
+  regionId: string,
+) {
+  const params = new URLSearchParams();
+  Object.entries(searchParams).forEach(([key, value]) => {
+    if (Array.isArray(value)) value.forEach((item) => params.append(key, item));
+    else if (value !== undefined) params.set(key, value);
+  });
+  params.delete("event");
+  params.delete("type");
+  params.delete("scope");
+  if (eventId === "333") params.delete("eventId");
+  else params.set("eventId", eventId);
+  if (rankingType === "single") params.delete("result");
+  else params.set("result", rankingType);
+  if (regionId) params.set("region", regionId);
+  else params.delete("region");
+  const search = getSearchParam(searchParams, "search").trim();
+  if (getSearchParam(searchParams, "regex") === "1" && search) params.set("regex", "1");
+  else params.delete("regex");
+  return params;
+}
+
 async function getInitialRankings(searchParams: Record<string, string | string[] | undefined>) {
-  const rawEventId = getSearchParam(searchParams, "event");
-  const rawRankingType = getSearchParam(searchParams, "type");
-  const rawScope = getSearchParam(searchParams, "scope");
+  const rawEventId = getSearchParamWithLegacyKey(searchParams, "eventId", "event");
+  const rawRankingType = getSearchParamWithLegacyKey(searchParams, "result", "type");
   const eventId = isEventId(rawEventId) ? rawEventId : "333";
-  const rankingType = isRankingType(rawRankingType) ? rawRankingType : "single";
-  const scope = isRegionScope(rawScope) ? rawScope : "world";
-  const regionId = scope === "world" ? "" : getSearchParam(searchParams, "region");
+  const rankingType = eventId === "333mbf" ? "single" : isRankingType(rawRankingType) ? rawRankingType : "single";
+  const { scope, regionId } = parseRegionQuery(getSearchParam(searchParams, "region"));
   const search = getSearchParam(searchParams, "search").trim().slice(0, 80);
+  const regexSearch = getSearchParam(searchParams, "regex") === "1" && isValidRegexPattern(search);
   const queryOptions = {
     eventId,
     type: rankingType,
@@ -40,9 +75,11 @@ async function getInitialRankings(searchParams: Record<string, string | string[]
 
   try {
     const searchResult = search
-      ? await queryMysql({ ...queryOptions, startRank: 1, limit: PAGE_SIZE, search, searchLimit: 500, paged: false })
+      ? await queryMysql({ ...queryOptions, startRank: 1, limit: PAGE_SIZE, search, regexSearch, searchLimit: 500, paged: false })
       : null;
-    const searchMatches = searchResult && "entries" in searchResult ? searchResult.entries : [];
+    const searchMatches = searchResult && "entries" in searchResult && Array.isArray(searchResult.entries)
+      ? searchResult.entries
+      : [];
     const firstMatch = searchMatches[0];
     const startRank = firstMatch ? searchPageStartForRank(firstMatch.rank) : 1;
     const page = await queryMysql({
@@ -52,19 +89,23 @@ async function getInitialRankings(searchParams: Record<string, string | string[]
       search: "",
       searchLimit: 500,
       paged: true,
+      focusPersonId: firstMatch?.personId ?? "",
     });
 
-    if (!("entries" in page)) throw new Error("Initial ranking page was unavailable.");
+    if (!("entries" in page) || !Array.isArray(page.entries)) throw new Error("Initial ranking page was unavailable.");
     return {
       entries: page.entries,
-      hasMore: page.hasMore,
-      nextPageStart: page.nextPageStart,
-      previousPageStart: page.previousPageStart,
-      total: page.total,
+      hasMore: page.hasMore ?? false,
+      nextPageStart: page.nextPageStart ?? null,
+      previousPageStart: page.previousPageStart ?? null,
+      startPosition: page.startPosition ?? Math.max(0, startRank - 1),
+      lastRank: page.lastRank ?? null,
+      total: page.total ?? 0,
       fetchedAt: page.fetchedAt ?? page.exportDate ?? null,
       startRank,
       searchMatches,
       initialMatchPersonId: firstMatch?.personId ?? "",
+      regexSearch,
     };
   } catch {
     const entries = makeDemoRankings({ eventId, type: rankingType, scope, regionId, startRank: 1, limit: PAGE_SIZE });
@@ -76,11 +117,14 @@ async function getInitialRankings(searchParams: Record<string, string | string[]
       hasMore: true,
       nextPageStart: PAGE_SIZE + 1,
       previousPageStart: null,
+      startPosition: 0,
+      lastRank: 248_392,
       total: 248_392,
       fetchedAt: null,
       startRank: 1,
       searchMatches,
       initialMatchPersonId: searchMatches[0]?.personId ?? "",
+      regexSearch: false,
     };
   }
 }
@@ -91,7 +135,37 @@ export default async function Home({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = await searchParams;
-  const initialRankings = await getInitialRankings(resolvedSearchParams);
+  const rawEventId = getSearchParamWithLegacyKey(resolvedSearchParams, "eventId", "event");
+  const rawRankingType = getSearchParamWithLegacyKey(resolvedSearchParams, "result", "type");
+  const eventId = isEventId(rawEventId) ? rawEventId : "333";
+  const rankingType = eventId === "333mbf" ? "single" : isRankingType(rawRankingType) ? rawRankingType : "single";
+  const { scope, regionId } = parseRegionQuery(getSearchParam(resolvedSearchParams, "region"));
+  const canonicalParams = getCanonicalSearchParams(resolvedSearchParams, eventId, rankingType, regionId);
+  const currentParams = new URLSearchParams();
+  Object.entries(resolvedSearchParams).forEach(([key, value]) => {
+    if (Array.isArray(value)) value.forEach((item) => currentParams.append(key, item));
+    else if (value !== undefined) currentParams.set(key, value);
+  });
+  if (canonicalParams.toString() !== currentParams.toString()) {
+    const query = canonicalParams.toString();
+    redirect(query ? `/?${query}` : "/");
+  }
+  const [initialRankings, continents, countries] = await Promise.all([
+    getInitialRankings(resolvedSearchParams),
+    getRegions("continent"),
+    getRegions("country"),
+  ]);
   const initialSearch = getSearchParam(resolvedSearchParams, "search").trim().slice(0, 80);
-  return <RankingsExplorer initialData={initialRankings} initialSearch={initialSearch} />;
+  const initialRegexSearch = getSearchParam(resolvedSearchParams, "regex") === "1" && isValidRegexPattern(initialSearch);
+  return (
+    <RankingsExplorer
+      initialData={initialRankings}
+      initialSearch={initialSearch}
+      initialRegexSearch={initialRegexSearch}
+      initialEventId={eventId}
+      initialRankingType={rankingType}
+      initialRegionSelection={{ scope, regionId }}
+      initialRegions={{ continents, countries }}
+    />
+  );
 }

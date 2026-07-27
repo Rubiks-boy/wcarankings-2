@@ -75,15 +75,31 @@ export function isRegionScope(value: string | null): value is RegionScope {
   return value === "world" || value === "continent" || value === "country";
 }
 
+export function parseRegionQuery(value: string | null): { scope: RegionScope; regionId: string } {
+  if (!value || value === "world") return { scope: "world", regionId: "" };
+  return value.startsWith("_")
+    ? { scope: "continent", regionId: value }
+    : { scope: "country", regionId: value };
+}
+
 export function isEventId(value: string | null): value is (typeof WCA_EVENTS)[number]["id"] {
   return WCA_EVENTS.some((event) => event.id === value);
 }
 
-export function formatWcaResult(eventId: string, value: number) {
+export function isValidRegexPattern(value: string) {
+  try {
+    new RegExp(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function formatWcaResult(eventId: string, value: number, rankingType: RankingType = "single") {
   if (value <= 0) return value === -1 ? "DNF" : "—";
 
   if (eventId === "333fm") {
-    return Number.isInteger(value) ? `${value}` : (value / 100).toFixed(2);
+    return rankingType === "average" ? (value / 100).toFixed(2) : `${value}`;
   }
 
   if (eventId === "333mbf") {

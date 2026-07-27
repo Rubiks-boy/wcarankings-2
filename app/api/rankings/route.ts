@@ -3,7 +3,8 @@ import { makeDemoRankings } from "@/lib/demo-data";
 import {
   isEventId,
   isRankingType,
-  isRegionScope,
+  isValidRegexPattern,
+  parseRegionQuery,
   type RankingEntry,
   type RankingType,
   type RegionScope,
@@ -91,8 +92,11 @@ export async function queryMysql({
   limit,
   locate,
   search,
+  regexSearch = false,
   searchLimit,
   paged,
+  focusPersonId = "",
+  focusBefore = 50,
 }: {
   eventId: string;
   type: RankingType;
@@ -104,8 +108,11 @@ export async function queryMysql({
   limit: number;
   locate: string;
   search: string;
+  regexSearch?: boolean;
   searchLimit: number;
   paged: boolean;
+  focusPersonId?: string;
+  focusBefore?: number;
 }) {
   const filter = makeFilters({ eventId, type, scope, regionId });
   const { rankColumn, conditions } = filter;
@@ -126,15 +133,20 @@ export async function queryMysql({
   }
 
   if (search) {
+    if (regexSearch && !isValidRegexPattern(search)) {
+      throw new Error("Invalid regular expression.");
+    }
     const values = [...filter.values];
-    const searchNameParameter = addParameter(values, `%${search}%`);
-    const searchIdParameter = addParameter(values, `%${search}%`);
+    const searchPattern = regexSearch ? search : `%${search}%`;
+    const searchNameParameter = addParameter(values, searchPattern);
+    const searchIdParameter = addParameter(values, searchPattern);
+    const searchOperator = regexSearch ? "REGEXP" : "LIKE";
     const searchResult = await query<RankingRow>(
       `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
         country_iso2, continent_id, best, competition_id, competition_name
       FROM ranking_entries
       WHERE ${conditions.join(" AND ")}
-        AND (person_name LIKE ${searchNameParameter} OR person_id LIKE ${searchIdParameter})
+        AND (person_name ${searchOperator} ${searchNameParameter} OR person_id ${searchOperator} ${searchIdParameter})
       ORDER BY ${rankColumn}, person_id
       LIMIT ${addParameter(values, searchLimit)}`,
       values,
@@ -152,10 +164,52 @@ export async function queryMysql({
     };
   }
 
+  let pageStartRank = startRank;
+  let focusedRowsPromise: Promise<{ rows: RankingRow[]; rowCount: number }> | null = null;
+  if (paged && focusPersonId) {
+    const focusResult = await query<{ rank: number }>(
+      `SELECT ${rankColumn} AS rank
+      FROM ranking_entries
+      WHERE ${conditions.join(" AND ")} AND person_id = ?
+      LIMIT 1`,
+      [...filter.values, focusPersonId],
+    );
+    const focusRank = Number(focusResult.rows[0]?.rank);
+    if (Number.isFinite(focusRank) && focusRank > 0) {
+      const beforeCount = Math.min(limit - 1, Math.max(0, Math.floor(focusBefore)));
+      pageStartRank = Math.max(1, focusRank - beforeCount);
+      const selectColumns = `
+        ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
+        country_iso2, continent_id, best, competition_id, competition_name`;
+      const before = query<RankingRow>(
+        `SELECT ${selectColumns}
+        FROM ranking_entries
+        WHERE ${conditions.join(" AND ")}
+          AND (${rankColumn} < ? OR (${rankColumn} = ? AND person_id < ?))
+        ORDER BY ${rankColumn} DESC, person_id DESC
+        LIMIT ?`,
+        [...filter.values, focusRank, focusRank, focusPersonId, beforeCount],
+      );
+      const after = query<RankingRow>(
+        `SELECT ${selectColumns}
+        FROM ranking_entries
+        WHERE ${conditions.join(" AND ")}
+          AND (${rankColumn} > ? OR (${rankColumn} = ? AND person_id >= ?))
+        ORDER BY ${rankColumn}, person_id
+        LIMIT ?`,
+        [...filter.values, focusRank, focusRank, focusPersonId, limit - beforeCount],
+      );
+      focusedRowsPromise = Promise.all([before, after]).then(([beforeRows, afterRows]) => ({
+        rows: [...beforeRows.rows.reverse(), ...afterRows.rows],
+        rowCount: beforeRows.rowCount + afterRows.rowCount,
+      }));
+    }
+  }
+
   const values = [...filter.values];
   const pageConditions = [...conditions];
   const cursorClause = paged
-    ? ` AND ${rankColumn} >= ${addParameter(values, startRank)} AND ${rankColumn} < ${addParameter(values, startRank + limit)}`
+    ? ` AND ${rankColumn} >= ${addParameter(values, pageStartRank)} AND ${rankColumn} < ${addParameter(values, pageStartRank + limit)}`
     : cursorRank
       ? ` AND (${rankColumn} > ${addParameter(values, cursorRank)} OR (${rankColumn} = ${addParameter(values, cursorRank)} AND person_id > ${addParameter(values, cursorId)}))`
       : ` AND ${rankColumn} >= ${addParameter(values, startRank)}`;
@@ -170,19 +224,19 @@ export async function queryMysql({
   const nextPageRank = paged
     ? query<{ rank: number | null }>(
       `SELECT MIN(${rankColumn}) AS rank FROM ranking_entries WHERE ${conditions.join(" AND ")} AND ${rankColumn} >= ?`,
-      [...filter.values, startRank + limit],
+      [...filter.values, pageStartRank + limit],
     ).then((result) => result.rows[0] ?? null)
     : Promise.resolve(null);
-  const previousPageRank = paged && startRank > 1
+  const previousPageRank = paged && pageStartRank > 1
     ? query<{ rank: number | null }>(
       `SELECT MAX(${rankColumn}) AS rank FROM ranking_entries WHERE ${conditions.join(" AND ")} AND ${rankColumn} < ?`,
-      [...filter.values, startRank],
+      [...filter.values, pageStartRank],
     ).then((result) => result.rows[0] ?? null)
     : Promise.resolve(null);
 
   const countValues = [eventId, type, scope, regionId];
-  const [result, countResult, exportDateResult, fetchedAtResult, nextRankRow, previousRankRow] = await Promise.all([
-    query<RankingRow>(querySql, values),
+  const [result, countResult, exportDateResult, fetchedAtResult, nextRankRow, previousRankRow, startPositionRow, lastRankRow] = await Promise.all([
+    focusedRowsPromise ?? query<RankingRow>(querySql, values),
     query<{ count: number }>(
       "SELECT count FROM ranking_counts WHERE event_id = ? AND ranking_type = ? AND scope = ? AND region_id = ?",
       countValues,
@@ -191,6 +245,16 @@ export async function queryMysql({
     query<{ value: string }>("SELECT value FROM export_metadata WHERE `key` = 'fetched_at'"),
     nextPageRank,
     previousPageRank,
+    paged
+      ? query<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM ranking_entries WHERE ${conditions.join(" AND ")} AND ${rankColumn} < ?`,
+        [...filter.values, pageStartRank],
+      ).then((result) => result.rows[0] ?? null)
+      : Promise.resolve({ count: 0 }),
+    query<{ rank: number | null }>(
+      `SELECT MAX(${rankColumn}) AS rank FROM ranking_entries WHERE ${conditions.join(" AND ")}`,
+      filter.values,
+    ).then((result) => result.rows[0] ?? null),
   ]);
 
   const rows = result.rows.map(toRankingEntry);
@@ -213,6 +277,8 @@ export async function queryMysql({
     hasMore,
     nextPageStart,
     previousPageStart,
+    startPosition: Number(startPositionRow?.count ?? 0),
+    lastRank: Number(lastRankRow?.rank ?? 0) || null,
     nextCursor: last ? { rank: last.rank, personId: last.personId } : null,
     total,
     exportDate: exportDateRow?.value ?? null,
@@ -223,13 +289,11 @@ export async function queryMysql({
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const rawEventId = url.searchParams.get("event");
-  const rawType = url.searchParams.get("type");
-  const rawScope = url.searchParams.get("scope");
+  const rawEventId = url.searchParams.get("eventId") ?? url.searchParams.get("event");
+  const rawType = url.searchParams.get("result") ?? url.searchParams.get("type");
   const eventId = isEventId(rawEventId) ? rawEventId : "333";
-  const type = isRankingType(rawType) ? rawType : "single";
-  const scope = isRegionScope(rawScope) ? rawScope : "world";
-  const regionId = scope === "world" ? "" : (url.searchParams.get("region") ?? "");
+  const type = eventId === "333mbf" ? "single" : isRankingType(rawType) ? rawType : "single";
+  const { scope, regionId } = parseRegionQuery(url.searchParams.get("region"));
   const paged = url.searchParams.get("paged") === "1";
   const requestedLimit = Number(url.searchParams.get("limit")) || (paged ? 100 : 80);
   const limit = Math.min(MAX_PAGE_SIZE, Math.max(20, requestedLimit));
@@ -241,11 +305,18 @@ export async function GET(request: Request) {
   const cursorId = url.searchParams.get("cursorId") ?? "";
   const locate = (url.searchParams.get("locate") ?? "").trim().toUpperCase();
   const search = (url.searchParams.get("search") ?? "").trim().slice(0, 80);
+  const regexSearch = url.searchParams.get("regex") === "1";
   const requestedSearchLimit = Number(url.searchParams.get("searchLimit")) || MAX_SEARCH_RESULTS;
   const searchLimit = Math.min(MAX_SEARCH_RESULTS, Math.max(1, requestedSearchLimit));
+  const focusPersonId = (url.searchParams.get("focus") ?? "").trim().toUpperCase();
+  const focusBefore = Number(url.searchParams.get("focusBefore")) || 50;
 
   if (scope !== "world" && !regionId) {
     return Response.json({ error: "Choose a region before loading rankings." }, { status: 400 });
+  }
+
+  if (regexSearch && search && !isValidRegexPattern(search)) {
+    return Response.json({ error: "Invalid regular expression." }, { status: 400 });
   }
 
   try {
@@ -260,8 +331,11 @@ export async function GET(request: Request) {
       limit,
       locate,
       search,
+      regexSearch,
       searchLimit,
       paged,
+      focusPersonId,
+      focusBefore,
     });
     return Response.json(data, { headers: { "Cache-Control": "public, max-age=60, s-maxage=3600" } });
   } catch {
@@ -293,6 +367,8 @@ export async function GET(request: Request) {
       hasMore,
       nextPageStart: hasMore ? startRank + limit : null,
       previousPageStart: startRank > 1 ? Math.max(1, startRank - limit) : null,
+      startPosition: Math.max(0, startRank - 1),
+      lastRank: 248_392,
       nextCursor: last ? { rank: last.rank, personId: last.personId } : null,
       total: 248_392,
       exportDate: null,

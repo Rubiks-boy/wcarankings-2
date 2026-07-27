@@ -36,13 +36,6 @@ export async function generateMetadata(): Promise<Metadata> {
       description: "Browse official World Cube Association rankings.",
       type: "website",
       url: metadataBase,
-      images: [{ url: "/og.png", width: 1731, height: 909, alt: "CubeRanks WCA rankings" }],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: "WCA Rankings",
-      description: "Browse official World Cube Association rankings.",
-      images: ["/og.png"],
     },
   };
 }

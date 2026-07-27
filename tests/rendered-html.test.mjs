@@ -6,28 +6,48 @@ const templateRoot = new URL("../", import.meta.url);
 const previewRoot = new URL("../app/_sites-preview/", import.meta.url);
 
 test("builds the original WCA Rankings UI on the self-hosted API", async () => {
-  const [component, layout, rankingsRoute] = await Promise.all([
+  const [component, layout, rankingsRoute, wca] = await Promise.all([
     readFile(new URL("../app/components/RankingsExplorer.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/rankings/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/wca.ts", import.meta.url), "utf8"),
   ]);
   assert.match(layout, /title:\s*"WCA Rankings"/);
-  assert.match(layout, /images:\s*\[\{ url: "\/og\.png"/);
+  assert.doesNotMatch(layout, /og\.png|summary_large_image/);
   assert.match(component, /useWindowVirtualizer/);
   assert.match(component, /const PAGE_SIZE = 100/);
   assert.match(component, /paged: "1"/);
   assert.match(component, /WCA Rankings/);
-  assert.match(component, /href="https:\/\/wcarankings\.com"/);
-  assert.match(component, /EVENTS_MAP/);
+  assert.match(component, /href="\/"/);
+  assert.doesNotMatch(component, /href="https:\/\/wcarankings\.com"/);
+  assert.match(component, /WCA_EVENTS\.map/);
+  assert.match(component, /className="selectInput eventInput"/);
+  assert.match(component, /className="rankingTypeToggle"/);
+  assert.match(component, /type="radio"/);
+  assert.match(component, /disabled=\{option === "average" && eventId === "333mbf"\}/);
+  assert.match(component, /updateQueryParams/);
+  assert.match(component, /eventId,/);
+  assert.match(component, /result: rankingType/);
+  assert.match(component, /eventId: nextEventId === "333" \? null : nextEventId/);
+  assert.match(component, /result: nextRankingType === "single" \? null : nextRankingType/);
+  assert.match(component, /parseRegionQuery/);
+  assert.doesNotMatch(component, /searchParams\.get\("scope"\)/);
+  assert.match(component, /region: option\.scope === "world" \? null : option\.regionId/);
+  const wcaEventSource = wca.match(/export const WCA_EVENTS = \[([\s\S]*?)\] as const;/)?.[1] ?? "";
+  assert.deepEqual(
+    [...wcaEventSource.matchAll(/\{ id: "([^"]+)", name:/g)].map((match) => match[1]),
+    ["333", "222", "444", "555", "666", "777", "333bf", "333fm", "333oh", "clock", "minx", "pyram", "skewb", "sq1", "444bf", "555bf", "333mbf"],
+  );
   assert.match(component, /className="chooser"/);
-  assert.match(component, /className="selectInput"/);
+  assert.match(component, /className="selectInput(?: eventInput)?"/);
   assert.match(component, /className=.*searchButton/);
   assert.match(component, /aria-label="Search names or WCA IDs"/);
   assert.match(component, /onClick={openFind}/);
   assert.match(component, /RegionPicker/);
   assert.match(component, /className="regionPickerTrigger"/);
-  assert.match(component, /kind=continent/);
-  assert.match(component, /kind=country/);
+  assert.match(component, /initialRegions/);
+  assert.match(component, /initialRegions\.continents/);
+  assert.match(component, /initialRegions\.countries/);
   assert.match(component, /label: "World"/);
   assert.doesNotMatch(component, /regionOptionIcon|flagEmoji/);
   assert.match(component, /className=\{`Jump Jump--up/);
@@ -37,26 +57,51 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /className="siteFooter"/);
   assert.match(component, /fetched time unavailable/);
   assert.match(component, /findBar--floating/);
+  assert.match(component, /findBarRef/);
+  assert.match(component, /closeOnOutsideClick/);
+  assert.match(component, /document\.addEventListener\("pointerdown"/);
+  assert.match(component, /setFindFloating\(window\.scrollY > 0\)/);
   assert.match(component, /loadPrevious/);
   assert.match(component, /window\.scrollBy/);
   assert.match(component, /findBar/);
   assert.match(component, /Ctrl\+F/);
   assert.match(component, /Find a name or WCA ID/);
   assert.match(component, /searchRankings/);
-  assert.match(component, /searchParams\.set\("search"/);
+  assert.match(component, /updateQueryParams\(\{ search:/);
   assert.match(component, /searchParams\.get\("search"/);
   assert.match(component, /history\.replaceState/);
   assert.match(component, /cycleFind/);
   assert.match(component, /key === "f"/);
+  assert.match(component, /setVimMode\(false\)/);
   assert.match(component, /findInputRef\.current\?\.select\(\)/);
   assert.match(component, /key === "g"/);
   assert.match(component, /window\.innerHeight/);
-  assert.match(component, /useIsomorphicLayoutEffect/);
+  assert.match(component, /requestAnimationFrame/);
   assert.match(component, /initialScrollRef/);
   assert.match(component, /initialSearchRef/);
-  assert.match(component, /scrollToEntry\(listRef\.current, targetIndex, "center", "smooth"/);
-  assert.match(component, /requestedBehavior: ScrollBehavior = "smooth"/);
-  assert.match(component, /SCROLL_ANIMATION_DURATION_MS = 1600/);
+  assert.match(component, /scrollToEntry\(\{[\s\S]*targetIndex/);
+  assert.match(component, /requestedBehavior\?: ScrollBehavior/);
+  assert.match(component, /MIN_SCROLL_ANIMATION_DURATION_MS = 1000/);
+  assert.match(component, /MAX_SCROLL_ANIMATION_DURATION_MS = 1800/);
+  assert.match(component, /LOG_SCROLL_DURATION_PER_DECADE_MS = 150/);
+  assert.match(component, /getScrollAnimationDuration/);
+  assert.match(component, /peopleDistance/);
+  assert.doesNotMatch(component, /getScrollAnimationDuration\(currentRank,/);
+  assert.match(component, /Math\.abs\(targetPosition - currentPosition\)/);
+  assert.match(component, /Math\.log10/);
+  assert.match(component, /easeInOutCubic/);
+  assert.match(component, /startPosition/);
+  assert.match(component, /lastRank/);
+  assert.match(component, /pendingScrollToTopRef/);
+  assert.match(component, /shouldScrollToTarget/);
+  assert.match(component, /shouldScrollToTarget = Boolean\([\s\S]*scrollToTop[\s\S]*focusPersonId[\s\S]*pendingDirection/);
+  assert.match(component, /animateScrollTo\([\s\S]*?0,[\s\S]*?getScrollAnimationDuration\(currentPosition\)/);
+  assert.match(component, /cancelOnUserInput/);
+  assert.match(component, /navigationEpochRef/);
+  assert.match(component, /requestEpoch !== navigationEpochRef\.current/);
+  assert.match(component, /addEventListener\("wheel"/);
+  assert.match(component, /getOffsetForIndex/);
+  assert.match(component, /measureElement/);
   assert.match(component, /preserveListDuringLoad/);
   assert.match(component, /listItem/);
   assert.match(component, /className="loader"/);
@@ -66,15 +111,20 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /title={entry\.competitionName}/);
   assert.match(component, /rankingNumberFormatter/);
   assert.match(component, /formatRankingNumber\(rank\)/);
+  assert.match(component, /formatWcaResult\(eventId, entry\.best, rankingType\)/);
+  assert.match(wca, /rankingType === "average" \? \(value \/ 100\)\.toFixed\(2\)/);
+  assert.match(component, /const nextStart = normalizedRank/);
   assert.doesNotMatch(component, /header-controls|collapsed-filter-summary|table-quick-jump/);
   assert.match(rankingsRoute, /SELECT MIN\(\$\{rankColumn\}\) AS rank/);
   assert.match(rankingsRoute, /SELECT MAX\(\$\{rankColumn\}\) AS rank/);
-  assert.match(rankingsRoute, /person_name LIKE/);
-  assert.match(rankingsRoute, /person_id LIKE/);
+  assert.match(rankingsRoute, /person_name \$\{searchOperator\}/);
+  assert.match(rankingsRoute, /person_id \$\{searchOperator\}/);
   assert.match(rankingsRoute, /searchNameParameter/);
   assert.match(rankingsRoute, /searchIdParameter/);
   assert.match(rankingsRoute, /competition_id/);
   assert.match(rankingsRoute, /fetched_at/);
+  assert.match(rankingsRoute, /startPosition/);
+  assert.match(rankingsRoute, /lastRank/);
   assert.match(rankingsRoute, /ORDER BY \$\{rankColumn\}, person_id/);
   assert.match(rankingsRoute, /const limitParameter = paged \? "" :/);
 });
@@ -90,8 +140,24 @@ test("uses the copied WCA Rankings visual language", async () => {
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /<RankingsExplorer initialData=\{initialRankings\}/);
+  assert.match(page, /<RankingsExplorer/);
+  assert.match(page, /initialData=\{initialRankings\}/);
+  assert.match(page, /initialEventId=\{eventId\}/);
+  assert.match(page, /initialRankingType=\{rankingType\}/);
+  assert.match(page, /initialRegionSelection=\{\{ scope, regionId \}\}/);
+  assert.match(page, /startPosition: page\.startPosition/);
+  assert.match(page, /lastRank: page\.lastRank/);
+  assert.match(page, /initialRegions=\{\{ continents, countries \}\}/);
+  assert.match(page, /getRegions\("continent"\)/);
+  assert.match(page, /getRegions\("country"\)/);
+  assert.match(page, /redirect/);
   assert.match(page, /queryMysql/);
+  assert.match(page, /getSearchParam\(resolvedSearchParams, "region"\)/);
+  assert.match(page, /getSearchParamWithLegacyKey\(resolvedSearchParams, "eventId", "event"\)/);
+  assert.match(page, /getSearchParamWithLegacyKey\(resolvedSearchParams, "result", "type"\)/);
+  assert.match(page, /eventId/);
+  assert.match(page, /result/);
+  assert.doesNotMatch(page, /getSearchParam\(resolvedSearchParams, "scope"\)/);
   assert.match(page, /searchPageStartForRank/);
   assert.match(page, /searchParams/);
   assert.match(page, /const startRank = firstMatch \? searchPageStartForRank\(firstMatch\.rank\) : 1/);
@@ -112,7 +178,11 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(css, /\.chooser\s*\{/);
   assert.match(css, /\.searchButton\s*\{/);
   assert.match(css, /\.selectInput select/);
+  assert.match(css, /\.rankingTypeToggle/);
+  assert.match(css, /\.rankingTypeOption/);
+  assert.match(css, /\.selectInput select,[\s\S]*\.rankingTypeToggle,[\s\S]*\.regionPickerTrigger/);
   assert.match(css, /\.listItem/);
+  assert.match(css, /overflow-anchor: none/);
   assert.match(css, /\.loaderBlob/);
   assert.match(css, /\.Jump/);
   assert.match(css, /\.row--alternate/);

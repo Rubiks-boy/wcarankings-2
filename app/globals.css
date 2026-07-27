@@ -12,6 +12,18 @@ body {
   line-height: 1.2;
 }
 
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 ol,
 ul {
   list-style: none;
@@ -24,6 +36,10 @@ ul {
   padding: 1em 1em 3.5em;
   background-color: #fffcff;
   --font-family: "Fira Sans", Arial, sans-serif;
+}
+
+.app.app--vimMode {
+  padding-bottom: 6em;
 }
 
 .app,
@@ -260,6 +276,10 @@ select {
   transition: background-color 150ms ease, border 150ms ease;
 }
 
+.eventInput select {
+  font-weight: 500;
+}
+
 .selectInput svg {
   position: absolute;
   z-index: 0;
@@ -275,6 +295,67 @@ select {
 
 .selectInput:hover svg {
   transform: translateY(-50%) scale(110%);
+}
+
+.rankingTypeToggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  min-width: 0;
+  min-height: 3.25em;
+  margin: 0;
+  padding: 0.2em;
+  border: 1px solid #ccc;
+  border-radius: 0.5em;
+  background: #fff;
+}
+
+.selectInput select,
+.rankingTypeToggle,
+.regionPickerTrigger {
+  height: 3.25em;
+  min-height: 0;
+}
+
+.rankingTypeOption {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 2.5em;
+  padding: 0.55em 0.65em;
+  place-items: center;
+  border-radius: 0.35em;
+  color: #4b5961;
+  cursor: pointer;
+  font-size: 0.85em;
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.rankingTypeOption input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.rankingTypeOption.isSelected {
+  background: #e7f3f9;
+  color: #17202a;
+  box-shadow: inset 0 0 0 1px #9cc9e2;
+}
+
+.rankingTypeOption:hover {
+  color: #17202a;
+}
+
+.rankingTypeOption.isDisabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.rankingTypeOption:focus-within {
+  box-shadow: 0 0 0 2px rgba(121, 92, 169, 0.3);
+  outline: none;
 }
 
 .selectInput select:focus-visible {
@@ -299,6 +380,7 @@ select {
   width: 100%;
   max-width: 1000px;
   margin: 0;
+  overflow-anchor: none;
 }
 
 .virtualRow {
@@ -347,7 +429,8 @@ select {
   align-items: center;
   gap: 0.5em;
   padding: 0.75em;
-  margin-bottom: 0.05em;
+  /* Keep this in whole pixels so Chrome does not round the tiny gap away. */
+  margin-bottom: 2px;
   border: 1px solid #ccc;
   border-radius: 0.5em;
   font-weight: 300;
@@ -369,6 +452,10 @@ select {
 
 .rank {
   width: 5ch;
+}
+
+.rank--duplicate {
+  color: #8a969c;
 }
 
 .identity {
@@ -473,6 +560,123 @@ select {
 
 .siteFooter span:last-child {
   text-align: right;
+}
+
+.vimCommandLine {
+  position: fixed;
+  z-index: 4;
+  right: 0;
+  bottom: 2.5em;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.15em;
+  min-height: 2.4em;
+  padding: 0.4em 1em;
+  border-top: 1px solid #cfd8dc;
+  background: rgba(255, 255, 255, 0.97);
+  color: #263238;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85em;
+  box-shadow: 0 -3px 12px rgba(24, 48, 61, 0.1);
+}
+
+.vimCommandText {
+  display: flex;
+  align-items: center;
+  gap: 0.15em;
+  min-width: 0;
+}
+
+.vimHelpButton,
+.vimHelpClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #b9c5ca;
+  border-radius: 50%;
+  background: #fff;
+  color: #263238;
+  cursor: pointer;
+  font: inherit;
+}
+
+.vimHelpButton {
+  width: 1.65em;
+  height: 1.65em;
+  margin-left: auto;
+  padding: 0;
+  flex-shrink: 0;
+  font-size: 0.85em;
+}
+
+.vimHelpButton:hover,
+.vimHelpButton:focus-visible,
+.vimHelpClose:hover,
+.vimHelpClose:focus-visible {
+  border-color: rgb(136, 15, 211);
+  color: rgb(136, 15, 211);
+}
+
+.vimHelpPopup {
+  position: fixed;
+  z-index: 5;
+  right: 0.75em;
+  bottom: 5.8em;
+  width: min(27em, calc(100vw - 1.5em));
+  padding: 0.85em 1em 1em;
+  border: 1px solid #cfd8dc;
+  border-radius: 0.35em;
+  background: rgba(255, 255, 255, 0.98);
+  color: #263238;
+  font-size: 0.8em;
+  box-shadow: 0 4px 18px rgba(24, 48, 61, 0.2);
+}
+
+.vimHelpHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  margin-bottom: 0.65em;
+}
+
+.vimHelpClose {
+  width: 1.5em;
+  height: 1.5em;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+.vimHelpPopup dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35em 1em;
+  margin: 0;
+}
+
+.vimHelpPopup dt {
+  color: #5f6f76;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+}
+
+.vimHelpPopup dd {
+  margin: 0;
+}
+
+.vimCaret {
+  width: 0.55em;
+  height: 1.1em;
+  background: currentColor;
+  animation: vimCaretBlink 1s steps(2, jump-none) infinite;
+}
+
+@keyframes vimCaretBlink {
+  50% { opacity: 0; }
 }
 
 .loadingList {
@@ -611,9 +815,15 @@ select {
     font-size: 0.85em;
   }
 
-  .rankingTypeInput {
+  .rankingTypeToggle {
     width: calc(100% - 0.5em);
     justify-self: center;
+  }
+
+  .rankingTypeOption {
+    min-height: 40px;
+    padding-block: 0.5em;
+    font-size: 0.75em;
   }
 
   .regionPicker {
@@ -624,6 +834,13 @@ select {
     min-height: 40px;
     padding: 0.75em 0.45em;
     font-size: 0.75em;
+  }
+
+  .selectInput select,
+  .rankingTypeToggle,
+  .regionPickerTrigger {
+    height: 40px;
+    min-height: 40px;
   }
 
 }

@@ -27,7 +27,7 @@ const EVENTS_MAP = {
 } as const;
 
 const PAGE_SIZE = 100;
-const ROW_HEIGHT = 54.8;
+const ROW_HEIGHT = 60.4;
 const VISIBLE_AFTER_NUM_ENTRIES = 40;
 
 type RankingEntry = {
@@ -274,8 +274,10 @@ function RankingRow({ entry, eventId, loading, animationIndex, highlighted = fal
       </div>
       <div className={`row${animationIndex % 2 === 1 ? " row--alternate" : ""}${highlighted ? " row--searchMatch" : ""}`}>
         <span className="rank">{rank}</span>
-        <span className="name">{name}</span>
-        <span className="wcaId">({id})</span>
+        <span className="identity">
+          <span className="name">{name}</span>
+          <span className="wcaId">{id}</span>
+        </span>
         <span className="best">{entry ? formatWcaResult(eventId, entry.best) : ""}</span>
       </div>
     </li>

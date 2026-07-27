@@ -2,6 +2,7 @@
 Description=Sync CubeRanks WCA rankings
 Requires=docker.service
 After=docker.service
+OnFailure=wcarankings-sync-alert.service
 
 [Service]
 Type=oneshot

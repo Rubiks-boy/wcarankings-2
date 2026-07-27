@@ -334,9 +334,10 @@ select {
 .row,
 .loader {
   display: flex;
+  align-items: center;
   gap: 0.5em;
-  padding: 1em;
-  margin-bottom: 0.1em;
+  padding: 0.75em;
+  margin-bottom: 0.05em;
   border: 1px solid #ccc;
   border-radius: 0.5em;
   font-weight: 300;
@@ -360,9 +361,22 @@ select {
   width: 5ch;
 }
 
+.identity {
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+}
+
 .name {
   overflow: auto;
   white-space: nowrap;
+}
+
+.identity .name,
+.wcaId {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .best {
@@ -372,7 +386,9 @@ select {
 }
 
 .wcaId {
-  display: none;
+  margin-top: 0.15em;
+  color: #6b7880;
+  font-size: 0.75em;
 }
 
 .loaderBlob {
@@ -507,10 +523,6 @@ select {
 }
 
 @media only screen and (min-width: 500px) {
-  .wcaId {
-    display: block;
-  }
-
   .rank {
     margin-right: 1em;
   }
@@ -523,6 +535,56 @@ select {
 
   .regionPicker {
     grid-column: auto;
+  }
+}
+
+@media only screen and (max-width: 759px) {
+  .chooser {
+    width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5em;
+  }
+
+  .selectInput,
+  .regionPicker {
+    min-width: 0;
+  }
+
+  .selectInput select {
+    min-height: 40px;
+    padding: 0.75em 0.45em;
+    padding-right: 1.8em;
+    font-size: 0.75em;
+  }
+
+  .regionPicker {
+    grid-column: auto;
+  }
+
+  .regionPickerTrigger {
+    min-height: 40px;
+    padding: 0.75em 0.45em;
+    font-size: 0.75em;
+  }
+
+  .regionPickerValue {
+    min-width: 0;
+    gap: 0.3em;
+  }
+
+  .regionPickerValue > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .regionOptionIcon {
+    flex-basis: 1.1em;
+    font-size: 1em;
+  }
+
+  .regionPickerChevron {
+    font-size: 1em;
   }
 }
 

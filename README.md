@@ -66,14 +66,21 @@ docker compose run --rm app node /app/scripts/sync-wca-export.mjs
 
 The import downloads the export into temporary storage, streams the TSV files in batches, and leaves the previous published ranking tables untouched if anything fails.
 
-To keep the self-hosted database current, install the included systemd timer as root after copying the repository to `/srv/wcarankings`:
+To keep the self-hosted database current, install the included systemd timer and failure alert as root after copying the repository to `/srv/wcarankings`:
 
 ```bash
 install -m 0644 ops/wcarankings-sync.service /etc/systemd/system/
 install -m 0644 ops/wcarankings-sync.timer /etc/systemd/system/
+install -m 0644 ops/wcarankings-sync-alert.service /etc/systemd/system/
+install -m 0755 ops/wcarankings-sync-alert.sh /usr/local/bin/wcarankings-sync-alert
+install -d -m 0700 /etc/wcarankings
+# Create /etc/wcarankings/ntfy.env with: NTFY_TOPIC=your-private-topic
+chmod 600 /etc/wcarankings/ntfy.env
 systemctl daemon-reload
 systemctl enable --now wcarankings-sync.timer
 ```
+
+The sync service triggers `wcarankings-sync-alert.service` on failure. The alert service reads the private topic from `/etc/wcarankings/ntfy.env` and publishes to ntfy.sh.
 
 ## WCA sign-in
 

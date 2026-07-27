@@ -1,6 +1,5 @@
 import { queryMysql } from "./api/rankings/route";
 import { RankingsExplorer } from "./components/RankingsExplorer";
-import { makeDemoRankings } from "@/lib/demo-data";
 import { getRegions } from "@/lib/regions";
 import { isEventId, isRankingType, isValidRegexPattern, parseRegionQuery } from "@/lib/wca";
 import { redirect } from "next/navigation";
@@ -74,60 +73,39 @@ async function getInitialRankings(searchParams: Record<string, string | string[]
     locate: "",
   } as const;
 
-  try {
-    const searchResult = search
-      ? await queryMysql({ ...queryOptions, startRank: 1, limit: PAGE_SIZE, search, regexSearch, searchLimit: 500, paged: false })
-      : null;
-    const searchMatches = searchResult && "entries" in searchResult && Array.isArray(searchResult.entries)
-      ? searchResult.entries
-      : [];
-    const firstMatch = searchMatches[0];
-    const startRank = firstMatch ? searchPageStartForRank(firstMatch.subRank) : 1;
-    const page = await queryMysql({
-      ...queryOptions,
-      startRank,
-      limit: PAGE_SIZE,
-      search: "",
-      searchLimit: 500,
-      paged: true,
-      focusPersonId: firstMatch?.personId ?? "",
-    });
+  const searchResult = search
+    ? await queryMysql({ ...queryOptions, startRank: 1, limit: PAGE_SIZE, search, regexSearch, searchLimit: 500, paged: false })
+    : null;
+  const searchMatches = searchResult && "entries" in searchResult && Array.isArray(searchResult.entries)
+    ? searchResult.entries
+    : [];
+  const firstMatch = searchMatches[0];
+  const startRank = firstMatch ? searchPageStartForRank(firstMatch.subRank) : 1;
+  const page = await queryMysql({
+    ...queryOptions,
+    startRank,
+    limit: PAGE_SIZE,
+    search: "",
+    searchLimit: 500,
+    paged: true,
+    focusPersonId: firstMatch?.personId ?? "",
+  });
 
-    if (!("entries" in page) || !Array.isArray(page.entries)) throw new Error("Initial ranking page was unavailable.");
-    return {
-      entries: page.entries,
-      hasMore: page.hasMore ?? false,
-      nextPageStart: page.nextPageStart ?? null,
-      previousPageStart: page.previousPageStart ?? null,
-      startPosition: page.startPosition ?? Math.max(0, startRank - 1),
-      lastRank: page.lastRank ?? null,
-      total: page.total ?? 0,
-      fetchedAt: page.fetchedAt ?? page.exportDate ?? null,
-      startRank,
-      searchMatches,
-      initialMatchPersonId: firstMatch?.personId ?? "",
-      regexSearch,
-    };
-  } catch {
-    const entries = makeDemoRankings({ eventId, type: rankingType, scope, regionId, startRank: 1, limit: PAGE_SIZE });
-    const searchMatches = search
-      ? entries.filter((entry) => entry.personName.toLocaleLowerCase().includes(search.toLocaleLowerCase()) || entry.personId.toLocaleLowerCase().includes(search.toLocaleLowerCase()))
-      : [];
-    return {
-      entries,
-      hasMore: true,
-      nextPageStart: PAGE_SIZE + 1,
-      previousPageStart: null,
-      startPosition: 0,
-      lastRank: 248_392,
-      total: 248_392,
-      fetchedAt: null,
-      startRank: 1,
-      searchMatches,
-      initialMatchPersonId: searchMatches[0]?.personId ?? "",
-      regexSearch: false,
-    };
-  }
+  if (!("entries" in page) || !Array.isArray(page.entries)) throw new Error("Initial ranking page was unavailable.");
+  return {
+    entries: page.entries,
+    hasMore: page.hasMore ?? false,
+    nextPageStart: page.nextPageStart ?? null,
+    previousPageStart: page.previousPageStart ?? null,
+    startPosition: page.startPosition ?? Math.max(0, startRank - 1),
+    lastRank: page.lastRank ?? null,
+    total: page.total ?? 0,
+    fetchedAt: page.fetchedAt ?? page.exportDate ?? null,
+    startRank,
+    searchMatches,
+    initialMatchPersonId: firstMatch?.personId ?? "",
+    regexSearch,
+  };
 }
 
 export default async function Home({

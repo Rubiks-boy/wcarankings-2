@@ -1,5 +1,4 @@
 import { query } from "@/db";
-import { makeDemoRankings } from "@/lib/demo-data";
 import {
   isEventId,
   isRankingType,
@@ -384,40 +383,9 @@ export async function GET(request: Request) {
     });
     return Response.json(data, { headers: { "Cache-Control": "public, max-age=60, s-maxage=3600" } });
   } catch {
-    const demoStartRank = paged ? startRank : (cursorRank ? cursorRank + 1 : startRank);
-    const entries = makeDemoRankings({ eventId, type, scope, regionId, startRank: demoStartRank, limit });
-    const located = locate
-      ? entries.find((entry) => entry.personId === locate) ??
-        makeDemoRankings({ eventId, type, scope, regionId, startRank: 1, limit: 40 }).find(
-          (entry) => entry.personId === locate,
-        ) ??
-        null
-      : undefined;
-
-    if (locate) {
-      return Response.json({ located, source: "demo" });
-    }
-
-    if (search) {
-      const normalizedSearch = search.toLocaleLowerCase();
-      const searchEntries = makeDemoRankings({ eventId, type, scope, regionId, startRank: 1, limit: searchLimit })
-        .filter((entry) => entry.personName.toLocaleLowerCase().includes(normalizedSearch) || entry.personId.toLocaleLowerCase().includes(normalizedSearch));
-      return Response.json({ entries: searchEntries, total: searchEntries.length, source: "demo" });
-    }
-
-    const last = entries.at(-1);
-    const hasMore = startRank + limit <= 248_392;
-    return Response.json({
-      entries,
-      hasMore,
-      nextPageStart: hasMore ? startRank + limit : null,
-      previousPageStart: startRank > 1 ? Math.max(1, startRank - limit) : null,
-      startPosition: Math.max(0, startRank - 1),
-      lastRank: 248_392,
-      nextCursor: last ? { rank: last.rank, personId: last.personId } : null,
-      total: 248_392,
-      exportDate: null,
-      source: "demo",
-    });
+    return Response.json(
+      { error: "Rankings are unavailable." },
+      { status: 503 },
+    );
   }
 }

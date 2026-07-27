@@ -139,6 +139,20 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(rankingsRoute, /const limitParameter = paged \? "" :/);
 });
 
+test("does not replace SQL failures with synthetic ranking data", async () => {
+  const [page, rankingsRoute, readme] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/rankings/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../README.md", import.meta.url), "utf8"),
+  ]);
+
+  assert.doesNotMatch(page, /demo-data|makeDemoRankings/);
+  assert.doesNotMatch(rankingsRoute, /demo-data|makeDemoRankings|source: "demo"/);
+  assert.match(rankingsRoute, /status: 503/);
+  assert.doesNotMatch(readme, /preview rows/);
+  await assert.rejects(access(new URL("../lib/demo-data.ts", import.meta.url)));
+});
+
 test("uses the copied WCA Rankings visual language", async () => {
   const [css, page, layout, manifest, pwaRegistration, serviceWorker, packageJson] = await Promise.all([
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),

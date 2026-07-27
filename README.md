@@ -20,7 +20,7 @@ docker compose up -d db
 npm run dev
 ```
 
-Open `http://localhost:3000`. Until the first WCA import, ranking routes use clearly labeled preview rows. Import the current export with:
+Open `http://localhost:3000`. Ranking data is available after the first WCA import. Import the current export with:
 
 ```bash
 npm run sync:wca:local

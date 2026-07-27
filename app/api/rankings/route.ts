@@ -234,9 +234,9 @@ export async function GET(request: Request) {
   const requestedLimit = Number(url.searchParams.get("limit")) || (paged ? 100 : 80);
   const limit = Math.min(MAX_PAGE_SIZE, Math.max(20, requestedLimit));
   const requestedStartRank = Math.max(1, Number(url.searchParams.get("start")) || 1);
-  const startRank = paged
-    ? Math.floor((requestedStartRank - 1) / limit) * limit + 1
-    : requestedStartRank;
+  // The caller chooses the page anchor. Search jumps use an exact rank window
+  // so rank gaps cannot leave the matched competitor just outside the page.
+  const startRank = requestedStartRank;
   const cursorRank = Number(url.searchParams.get("cursorRank")) || null;
   const cursorId = url.searchParams.get("cursorId") ?? "";
   const locate = (url.searchParams.get("locate") ?? "").trim().toUpperCase();

@@ -97,13 +97,17 @@ function pageStartForRank(rank: number) {
   return Math.floor((Math.max(1, rank) - 1) / PAGE_SIZE) * PAGE_SIZE + 1;
 }
 
+function searchPageStartForRank(rank: number) {
+  return Math.max(1, Math.max(1, rank) - Math.floor(PAGE_SIZE / 2));
+}
+
 function getPage(
   eventId: string,
   rankingType: "single" | "average",
   start: number,
   selection: RegionSelection,
 ) {
-  const pageStart = pageStartForRank(start);
+  const pageStart = Math.max(1, Math.floor(start));
   const params = new URLSearchParams({
     event: eventId,
     type: rankingType,
@@ -598,7 +602,7 @@ export function RankingsExplorer({
     const currentRank = getCurrentViewportRank(listRef.current, entriesRef.current, startRankRef.current);
     pendingScrollDirectionRef.current = match.rank < currentRank ? -1 : match.rank > currentRank ? 1 : null;
     setHighlightedPersonId(match.personId);
-    const nextStart = pageStartForRank(match.rank);
+    const nextStart = searchPageStartForRank(match.rank);
     if (nextStart === startRankRef.current) {
       const targetIndex = entriesRef.current.findIndex((entry) => entry.personId === match.personId);
       if (targetIndex >= 0) {
@@ -699,7 +703,10 @@ export function RankingsExplorer({
         event.preventDefault();
         setFindOpen(true);
         if (!findQuery.trim()) resetFind();
-        window.requestAnimationFrame(() => findInputRef.current?.focus());
+        window.requestAnimationFrame(() => {
+          findInputRef.current?.focus();
+          findInputRef.current?.select();
+        });
       } else if ((event.ctrlKey || event.metaKey) && key === "g") {
         event.preventDefault();
         setFindOpen(true);

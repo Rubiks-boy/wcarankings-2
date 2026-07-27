@@ -7,8 +7,8 @@ export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 100;
 
-function pageStartForRank(rank: number) {
-  return Math.floor((Math.max(1, rank) - 1) / PAGE_SIZE) * PAGE_SIZE + 1;
+function searchPageStartForRank(rank: number) {
+  return Math.max(1, Math.max(1, rank) - Math.floor(PAGE_SIZE / 2));
 }
 
 function getSearchParam(
@@ -44,7 +44,7 @@ async function getInitialRankings(searchParams: Record<string, string | string[]
       : null;
     const searchMatches = searchResult && "entries" in searchResult ? searchResult.entries : [];
     const firstMatch = searchMatches[0];
-    const startRank = firstMatch ? pageStartForRank(firstMatch.rank) : 1;
+    const startRank = firstMatch ? searchPageStartForRank(firstMatch.rank) : 1;
     const page = await queryMysql({
       ...queryOptions,
       startRank,

@@ -48,6 +48,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /history\.replaceState/);
   assert.match(component, /cycleFind/);
   assert.match(component, /key === "f"/);
+  assert.match(component, /findInputRef\.current\?\.select\(\)/);
   assert.match(component, /key === "g"/);
   assert.match(component, /window\.innerHeight/);
   assert.match(component, /useIsomorphicLayoutEffect/);
@@ -91,9 +92,9 @@ test("uses the copied WCA Rankings visual language", async () => {
 
   assert.match(page, /<RankingsExplorer initialData=\{initialRankings\}/);
   assert.match(page, /queryMysql/);
-  assert.match(page, /pageStartForRank/);
+  assert.match(page, /searchPageStartForRank/);
   assert.match(page, /searchParams/);
-  assert.match(page, /const startRank = firstMatch \? pageStartForRank\(firstMatch\.rank\) : 1/);
+  assert.match(page, /const startRank = firstMatch \? searchPageStartForRank\(firstMatch\.rank\) : 1/);
   assert.match(layout, /title:\s*"WCA Rankings"/);
   assert.match(layout, /PwaRegistration/);
   assert.match(manifest, /display: "standalone"/);

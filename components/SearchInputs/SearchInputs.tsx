@@ -1,7 +1,7 @@
 "use client";
 
 import type { FocusEvent, KeyboardEvent, Ref } from "react";
-import { SearchIcon } from "../SearchIcon/SearchIcon";
+import { Icon } from "../Icon/Icon";
 import {
   formatRankingNumber,
   type RankingEntry,
@@ -49,7 +49,7 @@ export function SearchInputs({
         aria-label="Search names or WCA IDs"
         title="Search names or WCA IDs (Ctrl+F)"
       >
-        <SearchIcon />
+        <Icon name="search" />
       </button>
     );
   }
@@ -85,7 +85,7 @@ export function SearchInputs({
       onBlur={handleBlur}
     >
       <span className="findIcon" aria-hidden="true">
-        <SearchIcon />
+        <Icon name="search" />
       </span>
       <input
         className="findInput"

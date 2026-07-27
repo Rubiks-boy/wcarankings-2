@@ -1,4 +1,4 @@
-import { Arrow } from "../Arrow/Arrow";
+import { Icon } from "../Icon/Icon";
 import { formatRankingNumber } from "../RankingsExplorer/types";
 
 export function JumpControls({
@@ -26,9 +26,9 @@ export function JumpControls({
   return (
     <div className={`Jump Jump--${direction}${visible ? " visible" : ""}`}>
       <button className="Jump-button" onClick={onJump} type="button">
-        <Arrow direction={direction} />
+        <Icon name="arrow" direction={direction} />
         <span>{label}</span>
-        <Arrow direction={direction} />
+        <Icon name="arrow" direction={direction} />
       </button>
     </div>
   );

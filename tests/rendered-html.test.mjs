@@ -18,6 +18,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
       "../components/VimSearchInput/VimSearchInput.tsx",
       "../components/VimHelp/VimHelp.tsx",
       "../components/JumpControls/JumpControls.tsx",
+      "../components/Icon/Icon.tsx",
     ].map((path) => readFile(new URL(path, import.meta.url), "utf8"))).then((files) => files.join("\n")),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/rankings/route.ts", import.meta.url), "utf8"),

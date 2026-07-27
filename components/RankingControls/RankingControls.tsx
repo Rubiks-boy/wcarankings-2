@@ -1,7 +1,7 @@
 "use client";
 
 import { WCA_EVENTS } from "@/lib/wca";
-import { SelectArrow } from "../SelectArrow/SelectArrow";
+import { Icon } from "../Icon/Icon";
 import { RegionPicker } from "../RegionPicker/RegionPicker";
 import type { RegionOption, RegionSelection } from "../RankingsExplorer/types";
 
@@ -38,7 +38,7 @@ export function RankingControls({
             </option>
           ))}
         </select>
-        <SelectArrow />
+        <Icon name="select" />
       </div>
       <fieldset className="rankingTypeToggle" aria-label="Ranking type">
         <legend className="visuallyHidden">Ranking type</legend>

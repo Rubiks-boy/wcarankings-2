@@ -79,4 +79,4 @@ jobs:
       - name: Verify deployment
         run: |
           ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
-            'cd /srv/wcarankings && docker compose ps && curl --fail --silent http://127.0.0.1:3000/ >/dev/null'
+            'cd /srv/wcarankings && docker compose ps && for attempt in $(seq 1 30); do curl --fail --silent http://127.0.0.1:3000/ >/dev/null && exit 0; sleep 2; done; docker compose logs --tail=80 app; exit 1'

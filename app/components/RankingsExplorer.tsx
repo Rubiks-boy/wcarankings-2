@@ -1215,19 +1215,14 @@ export function RankingsExplorer({
         return;
       }
       if (vimMode) return;
-      if ((event.ctrlKey || event.metaKey) && key === "g") {
-        event.preventDefault();
-        setFindOpen(true);
-        if (findQuery.trim()) cycleFind();
-        else resetFind();
-      } else if (event.key === "Escape" && findOpen) {
+      if (event.key === "Escape" && findOpen) {
         event.preventDefault();
         setFindOpen(false);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [cycleFind, findOpen, findQuery, resetFind, vimMode]);
+  }, [findOpen, findQuery, resetFind, vimMode]);
 
   useEffect(() => {
     if (!findOpen) return;
@@ -1729,6 +1724,19 @@ export function RankingsExplorer({
         }
         return;
       }
+
+      const editingVimSearch =
+        isEditable && vimCommand.startsWith("/");
+      if (editingVimSearch && event.key !== "Enter" && event.key !== "Escape") {
+        return;
+      }
+
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (
+        event.key.length !== 1 &&
+        !["Enter", "Escape", "Backspace"].includes(event.key)
+      )
+        return;
 
       event.preventDefault();
       if (vimCommand.startsWith("/")) {

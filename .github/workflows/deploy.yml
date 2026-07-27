@@ -46,17 +46,35 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
 
-      - name: Copy source to the droplet
-        run: |
-          rsync -az --delete \
-            --exclude='.env' \
-            --exclude='.git/' \
-            ./ "$DEPLOY_USER@$DEPLOY_HOST:/srv/wcarankings/"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Build and restart production services
+      - name: Build Docker image in GitHub Actions
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: wcarankings-app:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Copy deployment configuration
         run: |
           ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
-            'cd /srv/wcarankings && docker compose up -d --build --remove-orphans app proxy'
+            'install -d -m 0755 /srv/wcarankings/ops'
+          scp -q -o BatchMode=yes docker-compose.yml \
+            "$DEPLOY_USER@$DEPLOY_HOST:/srv/wcarankings/docker-compose.yml"
+          scp -q -o BatchMode=yes ops/Caddyfile \
+            "$DEPLOY_USER@$DEPLOY_HOST:/srv/wcarankings/ops/Caddyfile"
+
+      - name: Load image and switch production services
+        run: |
+          docker save "wcarankings-app:${GITHUB_SHA}" \
+            | gzip -1 \
+            | ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+                'gzip -d | docker load'
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            "docker tag wcarankings-app:${GITHUB_SHA} wcarankings-app:latest && cd /srv/wcarankings && docker compose up -d --no-build --remove-orphans app proxy"
 
       - name: Verify deployment
         run: |

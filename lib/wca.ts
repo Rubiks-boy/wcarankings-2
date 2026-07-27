@@ -10,6 +10,8 @@ export type RankingEntry = {
   countryIso2: string;
   continentId: string;
   best: number;
+  competitionId: string;
+  competitionName: string;
 };
 
 export type RankingCursor = {
@@ -111,4 +113,3 @@ export function flagEmoji(iso2: string) {
   if (!/^[A-Z]{2}$/.test(iso2)) return "🌐";
   return String.fromCodePoint(...[...iso2].map((char) => 127397 + char.charCodeAt(0)));
 }
-

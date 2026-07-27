@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
+import { PwaRegistration } from "./components/PwaRegistration";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -23,7 +24,13 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase,
     title: "WCA Rankings",
     description: "Browse official World Cube Association rankings by event and result type.",
-    icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
+    manifest: "/manifest.webmanifest",
+    appleWebApp: {
+      capable: true,
+      title: "WCA Rankings",
+      statusBarStyle: "default",
+    },
+    icons: { icon: "/favicon.svg", shortcut: "/favicon.svg", apple: "/icon-192.png" },
     openGraph: {
       title: "WCA Rankings",
       description: "Browse official World Cube Association rankings.",
@@ -40,6 +47,12 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#fffcff",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -50,6 +63,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <PwaRegistration />
         {children}
       </body>
     </html>

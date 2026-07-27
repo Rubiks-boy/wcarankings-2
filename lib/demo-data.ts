@@ -79,6 +79,8 @@ export function makeDemoRankings({
         countryIso2: country[2],
         continentId: country[3],
         best: eventBase + growth,
+        competitionId: "",
+        competitionName: "",
       });
     }
 
@@ -87,4 +89,3 @@ export function makeDemoRankings({
 
   return rows;
 }
-

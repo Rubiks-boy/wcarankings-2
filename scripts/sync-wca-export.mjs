@@ -104,6 +104,41 @@ async function readReferenceData(directory) {
   return { people, countries };
 }
 
+async function readBestCompetitions(directory, people) {
+  const bestCompetitions = new Map();
+  process.stdout.write("Reading personal-best competitions…\n");
+  const competitions = new Map();
+  await forEachTsvRow(findEntry(directory, "competitions"), async (row) => {
+    const competitionId = readValue(row, "id");
+    const name = readValue(row, "name");
+    if (competitionId && name) competitions.set(competitionId, name);
+  });
+  await forEachTsvRow(findEntry(directory, "results"), async (row) => {
+    const personId = readValue(row, "person_id", "personId");
+    const eventId = readValue(row, "event_id", "eventId");
+    const competitionId = readValue(row, "competition_id", "competitionId");
+    if (!personId || !eventId || !competitionId || !people.has(personId)) return;
+
+    const key = `${personId}\t${eventId}`;
+    const current = bestCompetitions.get(key) ?? {};
+    for (const [rankingType, value] of [
+      ["single", Number(readValue(row, "best"))],
+      ["average", Number(readValue(row, "average"))],
+    ]) {
+      if (!Number.isFinite(value) || value <= 0) continue;
+      if (!current[rankingType] || value < current[rankingType].value) {
+        current[rankingType] = {
+          value,
+          competitionId,
+          competitionName: competitions.get(competitionId) ?? competitionId,
+        };
+      }
+    }
+    bestCompetitions.set(key, current);
+  });
+  return bestCompetitions;
+}
+
 const rankingColumns = [
   "event_id",
   "ranking_type",
@@ -114,6 +149,8 @@ const rankingColumns = [
   "country_iso2",
   "continent_id",
   "best",
+  "competition_id",
+  "competition_name",
   "world_rank",
   "continent_rank",
   "country_rank",
@@ -130,7 +167,7 @@ async function insertBatch(client, batch) {
   );
 }
 
-async function writeRankTable({ entry, rankingType, people, countries, client }) {
+async function writeRankTable({ entry, rankingType, people, countries, bestCompetitions, client }) {
   let batch = [];
   let processed = 0;
 
@@ -149,6 +186,8 @@ async function writeRankTable({ entry, rankingType, people, countries, client })
       iso2: "",
       continentId: "",
     };
+    const competitionId = bestCompetitions.get(`${personId}\t${eventId}`)?.[rankingType]?.competitionId ?? "";
+    const competitionName = bestCompetitions.get(`${personId}\t${eventId}`)?.[rankingType]?.competitionName ?? "";
     batch.push([
       eventId,
       rankingType,
@@ -159,6 +198,8 @@ async function writeRankTable({ entry, rankingType, people, countries, client })
       country.iso2,
       country.continentId,
       Number(readValue(row, "best")) || 0,
+      competitionId,
+      competitionName,
       Number(readValue(row, "world_rank", "worldRank")) || 0,
       Number(readValue(row, "continent_rank", "continentRank")) || 0,
       Number(readValue(row, "country_rank", "countryRank")) || 0,
@@ -185,6 +226,8 @@ async function createProjectionTables(client) {
       country_iso2 TEXT NOT NULL,
       continent_id TEXT NOT NULL,
       best INTEGER NOT NULL,
+      competition_id TEXT NOT NULL,
+      competition_name TEXT NOT NULL,
       world_rank INTEGER NOT NULL,
       continent_rank INTEGER NOT NULL,
       country_rank INTEGER NOT NULL,
@@ -229,9 +272,9 @@ async function finishProjection(client, exportInfo) {
   `);
   await client.query(`
     INSERT INTO export_metadata (key, value) VALUES
-      ('export_date', $1), ('export_format_version', $2)
+      ('export_date', $1), ('export_format_version', $2), ('fetched_at', $3)
     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-  `, [String(exportInfo.exportDate), String(exportInfo.version)]);
+  `, [String(exportInfo.exportDate), String(exportInfo.version), new Date().toISOString()]);
 }
 
 async function alreadyImported(client, exportDate) {
@@ -270,12 +313,13 @@ async function main() {
     }
 
     const { people, countries } = await readReferenceData(directory);
+    const bestCompetitions = await readBestCompetitions(directory, people);
     await client.query("BEGIN");
     try {
       await createProjectionTables(client);
       process.stdout.write("Projecting rank tables…\n");
-      await writeRankTable({ entry: findEntry(directory, "ranks_single"), rankingType: "single", people, countries, client });
-      await writeRankTable({ entry: findEntry(directory, "ranks_average"), rankingType: "average", people, countries, client });
+      await writeRankTable({ entry: findEntry(directory, "ranks_single"), rankingType: "single", people, countries, bestCompetitions, client });
+      await writeRankTable({ entry: findEntry(directory, "ranks_average"), rankingType: "average", people, countries, bestCompetitions, client });
       await finishProjection(client, latest);
       await client.query("COMMIT");
     } catch (error) {

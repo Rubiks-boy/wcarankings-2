@@ -23,6 +23,8 @@ type RankingRow = {
   country_iso2: string;
   continent_id: string;
   best: number;
+  competition_id: string;
+  competition_name: string;
 };
 
 function toRankingEntry(row: RankingRow): RankingEntry {
@@ -35,6 +37,8 @@ function toRankingEntry(row: RankingRow): RankingEntry {
     countryIso2: row.country_iso2,
     continentId: row.continent_id,
     best: Number(row.best),
+    competitionId: row.competition_id,
+    competitionName: row.competition_name,
   };
 }
 
@@ -76,7 +80,7 @@ function makeFilters({
   return { rankColumn, conditions, values };
 }
 
-async function queryPostgres({
+export async function queryPostgres({
   eventId,
   type,
   scope,
@@ -111,7 +115,7 @@ async function queryPostgres({
     const locateParameter = addParameter(values, locate);
     const located = await query<RankingRow>(
       `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
-        country_iso2, continent_id, best
+        country_iso2, continent_id, best, competition_id, competition_name
       FROM ranking_entries
       WHERE ${conditions.join(" AND ")} AND person_id = ${locateParameter}
       LIMIT 1`,
@@ -126,7 +130,7 @@ async function queryPostgres({
     const searchParameter = addParameter(values, `%${search}%`);
     const searchResult = await query<RankingRow>(
       `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
-        country_iso2, continent_id, best
+        country_iso2, continent_id, best, competition_id, competition_name
       FROM ranking_entries
       WHERE ${conditions.join(" AND ")}
         AND (person_name ILIKE ${searchParameter} OR person_id ILIKE ${searchParameter})
@@ -157,7 +161,7 @@ async function queryPostgres({
   pageConditions.push(cursorClause.slice(5));
   const limitParameter = paged ? "" : ` LIMIT ${addParameter(values, limit + 1)}`;
   const querySql = `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
-      country_iso2, continent_id, best
+      country_iso2, continent_id, best, competition_id, competition_name
     FROM ranking_entries
     WHERE ${pageConditions.join(" AND ")}
     ORDER BY ${rankColumn}, person_id${limitParameter}`;
@@ -176,13 +180,14 @@ async function queryPostgres({
     : Promise.resolve(null);
 
   const countValues = [eventId, type, scope, regionId];
-  const [result, countResult, exportDateResult, nextRankRow, previousRankRow] = await Promise.all([
+  const [result, countResult, exportDateResult, fetchedAtResult, nextRankRow, previousRankRow] = await Promise.all([
     query<RankingRow>(querySql, values),
     query<{ count: number }>(
       `SELECT count FROM ranking_counts WHERE event_id = $1 AND ranking_type = $2 AND scope = $3 AND region_id = $4`,
       countValues,
     ),
     query<{ value: string }>("SELECT value FROM export_metadata WHERE key = 'export_date'"),
+    query<{ value: string }>("SELECT value FROM export_metadata WHERE key = 'fetched_at'"),
     nextPageRank,
     previousPageRank,
   ]);
@@ -190,6 +195,7 @@ async function queryPostgres({
   const rows = result.rows.map(toRankingEntry);
   const countRow = countResult.rows[0];
   const exportDateRow = exportDateResult.rows[0];
+  const fetchedAtRow = fetchedAtResult.rows[0];
   const total = Number(countRow?.count ?? 0);
   const nextPageStart = nextRankRow?.rank
     ? Math.floor((Number(nextRankRow.rank) - 1) / limit) * limit + 1
@@ -209,6 +215,7 @@ async function queryPostgres({
     nextCursor: last ? { rank: last.rank, personId: last.personId } : null,
     total,
     exportDate: exportDateRow?.value ?? null,
+    fetchedAt: fetchedAtRow?.value ?? exportDateRow?.value ?? null,
     source: "wca" as const,
   };
 }

@@ -12,6 +12,8 @@ export const rankingEntries = pgTable(
     countryIso2: text("country_iso2").notNull(),
     continentId: text("continent_id").notNull(),
     best: integer("best").notNull(),
+    competitionId: text("competition_id").notNull(),
+    competitionName: text("competition_name").notNull(),
     worldRank: integer("world_rank").notNull(),
     continentRank: integer("continent_rank").notNull(),
     countryRank: integer("country_rank").notNull(),

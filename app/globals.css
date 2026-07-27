@@ -21,13 +21,14 @@ ul {
 
 .app {
   min-height: 100vh;
-  padding: 1em;
+  padding: 1em 1em 3.5em;
   background-color: #fffcff;
   --font-family: "Fira Sans", Arial, sans-serif;
 }
 
 .app,
 button,
+input,
 select {
   font-family: var(--font-family);
 }
@@ -46,30 +47,43 @@ select {
   margin: 0.5em 0;
 }
 
+.headerTitle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 1em;
+}
+
 .findBar {
-  position: fixed;
+  position: relative;
   z-index: 4;
-  top: 3.5em;
-  left: 50%;
   display: flex;
   align-items: center;
-  width: min(calc(100% - 2em), 32em);
-  min-height: 2.75em;
+  width: min(20em, calc(100vw - 2em));
+  flex: 0 0 auto;
+  min-width: 0;
+  height: 3.25em;
+  min-height: 0;
   padding: 0.2em 0.35em 0.2em 0.7em;
   border: 1px solid #b9cbd4;
   border-radius: 0.4em;
   background: #fff;
   box-shadow: 0 4px 16px rgba(24, 48, 61, 0.18);
-  transform: translateX(-50%);
 }
 
 .findIcon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
   color: #6b7880;
-  font-size: 1.25em;
 }
 
 .findInput {
+  height: 100%;
   min-width: 0;
+  min-height: 0;
   flex: 1;
   padding: 0.45em 0.55em;
   border: 0;
@@ -111,11 +125,35 @@ select {
   font-size: 2em;
 }
 
+.header h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+
 .chooser {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   align-items: center;
   gap: 1em;
+}
+
+.searchButton {
+  display: inline-grid;
+  height: 3.25em;
+  min-height: 0;
+  padding: 0.5em;
+  place-items: center;
+  border: none;
+  border-radius: 0.5em;
+  background: #fff;
+  color: #17202a;
+  cursor: pointer;
+}
+
+.searchButton:hover,
+.searchButton:focus-visible {
+  box-shadow: 0 0 5px rgba(107, 169, 203, 0.25);
+  outline: none;
 }
 
 .regionPicker {
@@ -135,8 +173,10 @@ select {
   border-radius: 0.5em;
   background: #fff;
   color: #111;
-  cursor: pointer;
+  cursor: text;
   font-size: 0.85em;
+  font: inherit;
+  appearance: none;
   text-align: left;
 }
 
@@ -150,20 +190,6 @@ select {
 .regionOption {
   display: flex;
   align-items: center;
-  gap: 0.6em;
-}
-
-.regionOptionIcon {
-  display: inline-grid;
-  flex: 0 0 1.4em;
-  place-items: center;
-  font-size: 1.15em;
-}
-
-.regionPickerChevron {
-  color: #5d6970;
-  font-size: 1.2em;
-  line-height: 1;
 }
 
 .regionPickerMenu {
@@ -179,26 +205,10 @@ select {
   box-shadow: 0 8px 24px rgba(24, 48, 61, 0.18);
 }
 
-.regionSearch {
-  display: block;
-  width: calc(100% - 1em);
-  margin: 0.5em;
-  padding: 0.65em 0.75em;
-  border: 1px solid #d5dce0;
-  border-radius: 0.35em;
-  color: #111;
-  outline: none;
-  font-size: 0.9em;
-}
-
-.regionSearch:focus {
-  border-color: #6ba9cb;
-  box-shadow: 0 0 0 2px rgba(107, 169, 203, 0.18);
-}
-
 .regionOptions {
-  max-height: min(24em, 55vh);
+  max-height: min(30em, 70vh);
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .regionGroupLabel {
@@ -341,14 +351,14 @@ select {
   border: 1px solid #ccc;
   border-radius: 0.5em;
   font-weight: 300;
-  transition: opacity var(--t-duration) ease var(--t-animation-delay), background-color 150ms ease;
+  transition: opacity var(--t-duration) ease var(--t-animation-delay), background-color 40ms ease;
 }
 
 .row--alternate {
   background-color: #f7f7f7;
 }
 
-.row:hover {
+.listItem:hover .row {
   background-color: #eaf4fa;
 }
 
@@ -379,10 +389,27 @@ select {
   text-overflow: ellipsis;
 }
 
-.best {
-  width: 8ch;
+.result {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 8ch;
   margin-left: auto;
   text-align: right;
+}
+
+.best {
+  width: auto;
+}
+
+.competitionName {
+  max-width: none;
+  overflow: visible;
+  margin-top: 0.1em;
+  color: #6b7880;
+  font-size: 0.75em;
+  white-space: nowrap;
 }
 
 .wcaId {
@@ -423,38 +450,29 @@ select {
 }
 
 .siteFooter {
-  display: none;
   position: fixed;
   z-index: 2;
-  bottom: 0.5em;
-  left: 0.75em;
-  justify-content: center;
-  gap: 0.75em;
-  padding: 0.15em 0.25em;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  width: 100%;
+  min-height: 2.5em;
+  padding: 0.45em 1em;
+  border-top: 1px solid #e1e7ea;
+  background: rgba(255, 252, 255, 0.94);
   color: #999;
-  font-size: 0.65em;
+  font-size: 0.75em;
   pointer-events: none;
+  box-shadow: 0 -4px 16px rgba(24, 48, 61, 0.14);
   backdrop-filter: blur(4px);
 }
 
-@media only screen and (min-width: 500px) {
-  .siteFooter {
-    display: flex;
-  }
-}
-
-@media only screen and (max-width: 499px) {
-  .findBar {
-    top: 1em;
-  }
-}
-
-.siteFooter span + span::before {
-  content: "·";
-  margin-right: 0.75em;
+.siteFooter span:last-child {
+  text-align: right;
 }
 
 .loadingList {
@@ -481,7 +499,7 @@ select {
 }
 
 .Jump--down {
-  bottom: 1em;
+  bottom: 4em;
   transform: translateY(1em);
 }
 
@@ -502,7 +520,11 @@ select {
   background-color: transparent;
   color: #222;
   fill: #222;
+  padding: 0.35em 0.75em;
+  border-radius: 2em;
+  background: rgba(255, 255, 255, 0.94);
   font-size: 0.9em;
+  box-shadow: 0 4px 14px rgba(24, 48, 61, 0.18), 0 1px 3px rgba(24, 48, 61, 0.12);
   transition: color 150ms ease, fill 150ms ease;
 }
 
@@ -539,10 +561,35 @@ select {
 }
 
 @media only screen and (max-width: 759px) {
-  .chooser {
+  .headerTitle {
     width: 100%;
+    flex: 0 0 100%;
+  }
+
+  .chooser {
+    width: min(100%, 28em);
+    margin-inline: auto;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.5em;
+  }
+
+  .searchButton {
+    height: 40px;
+    min-height: 40px;
+    width: 40px;
+  }
+
+  .searchButton.searchButton--floating {
+    position: fixed;
+    z-index: 10;
+    top: 1em;
+    right: 1em;
+  }
+
+  .findBar {
+    width: min(20em, calc(100% - 8em));
+    height: 40px;
+    min-height: 40px;
   }
 
   .selectInput,
@@ -557,6 +604,18 @@ select {
     font-size: 0.75em;
   }
 
+  .selectInput select[name="Event Id"] {
+    height: 40px;
+    min-height: 40px;
+    padding-block: 0.5em;
+    font-size: 0.85em;
+  }
+
+  .rankingTypeInput {
+    width: calc(100% - 0.5em);
+    justify-self: center;
+  }
+
   .regionPicker {
     grid-column: auto;
   }
@@ -567,25 +626,6 @@ select {
     font-size: 0.75em;
   }
 
-  .regionPickerValue {
-    min-width: 0;
-    gap: 0.3em;
-  }
-
-  .regionPickerValue > span:last-child {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .regionOptionIcon {
-    flex-basis: 1.1em;
-    font-size: 1em;
-  }
-
-  .regionPickerChevron {
-    font-size: 1em;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -595,4 +635,13 @@ select {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+.findBar.findBar--floating {
+  position: fixed;
+  z-index: 10;
+  top: 1em;
+  right: 1em;
+  left: auto;
+  width: min(20em, calc(100vw - 2em));
 }

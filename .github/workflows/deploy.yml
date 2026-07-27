@@ -88,3 +88,8 @@ jobs:
         run: |
           ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
             'cd /srv/wcarankings && docker compose run --rm app node /app/scripts/sync-wca-export.mjs'
+
+      - name: Re-run migrations and ranking projections
+        run: |
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            'cd /srv/wcarankings && docker compose run --rm app node /app/scripts/migrate.mjs && docker compose run --rm app node /app/scripts/refresh-rankings.mjs'

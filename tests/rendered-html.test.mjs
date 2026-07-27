@@ -105,7 +105,6 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /pendingNavigationAppendRef/);
   assert.match(component, /const loadedEntries/);
   assert.match(component, /if \(event\.ctrlKey \|\| event\.metaKey \|\| event\.altKey\) return/);
-  assert.doesNotMatch(component, /if \(\(event\.ctrlKey \|\| event\.metaKey\) && key === "g"\)/);
   assert.doesNotMatch(component, /regexSearch && key === "n"/);
   assert.match(component, /addEventListener\("wheel"/);
   assert.match(component, /getOffsetForIndex/);

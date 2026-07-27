@@ -22,7 +22,8 @@
     "next": "16.2.6",
     "pg": "^8.16.3",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "unzipper": "^0.12.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.2.1",
@@ -39,7 +40,6 @@
     "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
-    "unzipper": "^0.12.5",
     "vinext": "0.0.50",
     "vite": "8.0.13"
   },

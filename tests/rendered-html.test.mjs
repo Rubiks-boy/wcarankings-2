@@ -20,6 +20,11 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /EVENTS_MAP/);
   assert.match(component, /className="chooser"/);
   assert.match(component, /className="selectInput"/);
+  assert.match(component, /RegionPicker/);
+  assert.match(component, /Search regions/);
+  assert.match(component, /kind=continent/);
+  assert.match(component, /kind=country/);
+  assert.match(component, /flagEmoji/);
   assert.match(component, /className=\{`Jump Jump--up/);
   assert.match(component, /Jump 5000/);
   assert.match(component, /Jump to top/);
@@ -28,7 +33,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /window\.scrollBy/);
   assert.match(component, /listItem/);
   assert.match(component, /className="loader"/);
-  assert.match(component, /className="row"/);
+  assert.match(component, /className=.*row/);
   assert.doesNotMatch(component, /header-controls|collapsed-filter-summary|table-quick-jump/);
   assert.match(rankingsRoute, /SELECT MIN\(\$\{rankColumn\}\) AS rank/);
   assert.match(rankingsRoute, /SELECT MAX\(\$\{rankColumn\}\) AS rank/);
@@ -54,6 +59,10 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(css, /\.listItem/);
   assert.match(css, /\.loaderBlob/);
   assert.match(css, /\.Jump/);
+  assert.match(css, /\.row--alternate/);
+  assert.match(css, /\.row:hover/);
+  assert.match(css, /\.regionPickerMenu/);
+  assert.match(css, /\.regionSearch/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.doesNotMatch(css, /app-header|table-quick-jump|jump-overlay/);
   assert.doesNotMatch(layout, /codex-preview|_sites-preview|Starter Project/);

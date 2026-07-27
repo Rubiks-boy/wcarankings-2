@@ -2,7 +2,13 @@
 
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formatWcaResult } from "@/lib/wca";
+import {
+  FALLBACK_CONTINENTS,
+  FALLBACK_COUNTRIES,
+  flagEmoji,
+  formatWcaResult,
+  type RegionScope,
+} from "@/lib/wca";
 
 const EVENTS_MAP = {
   "333": "3x3",
@@ -21,7 +27,7 @@ const EVENTS_MAP = {
 } as const;
 
 const PAGE_SIZE = 100;
-const ROW_HEIGHT = 61.2;
+const ROW_HEIGHT = 54.8;
 const VISIBLE_AFTER_NUM_ENTRIES = 40;
 
 type RankingEntry = {
@@ -39,18 +45,34 @@ type RankingPage = {
   total: number;
 };
 
+type RegionOption = {
+  key: string;
+  scope: RegionScope;
+  regionId: string;
+  label: string;
+  iso2?: string;
+};
+
+type RegionSelection = Pick<RegionOption, "scope" | "regionId">;
+
 const pageCache = new Map<string, Promise<RankingPage>>();
 
 function pageStartForRank(rank: number) {
   return Math.floor((Math.max(1, rank) - 1) / PAGE_SIZE) * PAGE_SIZE + 1;
 }
 
-function getPage(eventId: string, rankingType: "single" | "average", start: number) {
+function getPage(
+  eventId: string,
+  rankingType: "single" | "average",
+  start: number,
+  selection: RegionSelection,
+) {
   const pageStart = pageStartForRank(start);
   const params = new URLSearchParams({
     event: eventId,
     type: rankingType,
-    scope: "world",
+    scope: selection.scope,
+    region: selection.regionId,
     start: String(pageStart),
     limit: String(PAGE_SIZE),
     paged: "1",
@@ -115,6 +137,103 @@ function SelectArrow() {
   );
 }
 
+function RegionPicker({
+  options,
+  selected,
+  onChange,
+}: {
+  options: RegionOption[];
+  selected: RegionSelection;
+  onChange: (option: RegionOption) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const selectedOption = options.find(
+    (option) => option.scope === selected.scope && option.regionId === selected.regionId,
+  ) ?? options[0];
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filteredOptions = normalizedQuery
+    ? options.filter((option) => option.label.toLocaleLowerCase().includes(normalizedQuery))
+    : options;
+  const continents = filteredOptions.filter((option) => option.scope === "continent");
+  const countries = filteredOptions.filter((option) => option.scope === "country");
+
+  useEffect(() => {
+    if (!open) return;
+    searchRef.current?.focus();
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!pickerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, [open]);
+
+  const choose = (option: RegionOption) => {
+    onChange(option);
+    setQuery("");
+    setOpen(false);
+  };
+
+  const renderOption = (option: RegionOption) => (
+    <button
+      className={`regionOption${selectedOption?.key === option.key ? " isSelected" : ""}`}
+      type="button"
+      role="option"
+      aria-selected={selectedOption?.key === option.key}
+      onClick={() => choose(option)}
+      key={option.key}
+    >
+      <span className="regionOptionIcon">{option.iso2 ? flagEmoji(option.iso2) : option.scope === "world" ? "🌐" : "🌍"}</span>
+      <span>{option.label}</span>
+    </button>
+  );
+
+  return (
+    <div className="regionPicker" ref={pickerRef}>
+      <button
+        className="regionPickerTrigger"
+        id="region-picker-button"
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="regionPickerValue">
+          <span className="regionOptionIcon">{selectedOption?.iso2 ? flagEmoji(selectedOption.iso2) : selectedOption?.scope === "world" ? "🌐" : "🌍"}</span>
+          <span>{selectedOption?.label ?? "All regions"}</span>
+        </span>
+        <span className="regionPickerChevron">⌄</span>
+      </button>
+      {open && (
+        <div className="regionPickerMenu" role="listbox" aria-label="Region">
+          <input
+            className="regionSearch"
+            ref={searchRef}
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search regions"
+            aria-label="Search regions"
+          />
+          {filteredOptions.length === 0 ? (
+            <div className="regionEmpty">No matching regions</div>
+          ) : (
+            <div className="regionOptions">
+              {renderOption(options[0])}
+              {continents.length > 0 && <div className="regionGroupLabel">Continents</div>}
+              {continents.map(renderOption)}
+              {countries.length > 0 && <div className="regionGroupLabel">Countries</div>}
+              {countries.map(renderOption)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RankingRow({ entry, eventId, loading, animationIndex }: { entry: RankingEntry | null; eventId: string; loading: boolean; animationIndex: number }) {
   const style = { "--t-animation-delay": `${animationIndex * 10}ms` } as React.CSSProperties;
   const rank = entry?.rank ?? 0;
@@ -128,7 +247,7 @@ function RankingRow({ entry, eventId, loading, animationIndex }: { entry: Rankin
         <div className="name loaderBlob" />
         <div className="best loaderBlob" />
       </div>
-      <div className="row">
+      <div className={`row${animationIndex % 2 === 1 ? " row--alternate" : ""}`}>
         <span className="rank">{rank}</span>
         <span className="name">{name}</span>
         <span className="wcaId">({id})</span>
@@ -141,6 +260,8 @@ function RankingRow({ entry, eventId, loading, animationIndex }: { entry: Rankin
 export function RankingsExplorer() {
   const [eventId, setEventId] = useState("333");
   const [rankingType, setRankingType] = useState<"single" | "average">("single");
+  const [regionSelection, setRegionSelection] = useState<RegionSelection>({ scope: "world", regionId: "" });
+  const [regions, setRegions] = useState<RegionOption[]>([]);
   const [entries, setEntries] = useState<RankingEntry[]>([]);
   const [startRank, setStartRank] = useState(1);
   const [nextPageStart, setNextPageStart] = useState<number | null>(null);
@@ -170,7 +291,45 @@ export function RankingsExplorer() {
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [eventId, rankingType, loading]);
+  }, [eventId, rankingType, loading, regionSelection]);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      fetch("/api/regions?kind=continent").then((response) => response.json() as Promise<{ regions?: Array<{ id: string; name: string }> }>),
+      fetch("/api/regions?kind=country").then((response) => response.json() as Promise<{ regions?: Array<{ id: string; name: string; iso2?: string }> }>),
+    ]).then(([continentData, countryData]) => {
+      if (!active) return;
+      const continents = (continentData.regions?.length ? continentData.regions : FALLBACK_CONTINENTS).map((region) => ({
+        key: `continent:${region.id}`,
+        scope: "continent" as const,
+        regionId: region.id,
+        label: region.name.replace(/^_/, ""),
+      }));
+      const countryRegions: Array<{ id: string; name: string; iso2?: string }> =
+        countryData.regions?.length ? countryData.regions : FALLBACK_COUNTRIES;
+      const countries = countryRegions.map((region) => ({
+        key: `country:${region.id}`,
+        scope: "country" as const,
+        regionId: region.id,
+        label: region.name,
+        iso2: region.iso2,
+      }));
+      setRegions([
+        { key: "world", scope: "world", regionId: "", label: "All regions" },
+        ...continents,
+        ...countries,
+      ]);
+    }).catch(() => {
+      if (!active) return;
+      setRegions([
+        { key: "world", scope: "world", regionId: "", label: "All regions" },
+        ...FALLBACK_CONTINENTS.map((region) => ({ key: `continent:${region.id}`, scope: "continent" as const, regionId: region.id, label: region.name.replace(/^_/, "") })),
+        ...FALLBACK_COUNTRIES.map((region) => ({ key: `country:${region.id}`, scope: "country" as const, regionId: region.id, label: region.name })),
+      ]);
+    });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -187,7 +346,7 @@ export function RankingsExplorer() {
     previousRequestRef.current = false;
     window.scrollTo({ top: 0, behavior: "auto" });
 
-    getPage(eventId, rankingType, startRank)
+    getPage(eventId, rankingType, startRank, regionSelection)
       .then((data) => {
         if (!active) return;
         setEntries(data.entries);
@@ -207,14 +366,14 @@ export function RankingsExplorer() {
       });
 
     return () => { active = false; };
-  }, [eventId, rankingType, startRank]);
+  }, [eventId, rankingType, regionSelection, startRank]);
 
   const loadMore = useCallback(async () => {
     if (!nextPageStart || !hasMore || moreRequestRef.current || loading) return;
     moreRequestRef.current = true;
     setLoadingMore(true);
     try {
-      const data = await getPage(eventId, rankingType, nextPageStart);
+      const data = await getPage(eventId, rankingType, nextPageStart, regionSelection);
       setEntries((current) => [...current, ...data.entries.filter((entry) => !current.some((item) => item.personId === entry.personId))]);
       setNextPageStart(data.nextPageStart);
       setHasMore(data.hasMore);
@@ -225,14 +384,14 @@ export function RankingsExplorer() {
       moreRequestRef.current = false;
       setLoadingMore(false);
     }
-  }, [eventId, hasMore, loading, nextPageStart, rankingType]);
+  }, [eventId, hasMore, loading, nextPageStart, rankingType, regionSelection]);
 
   const loadPrevious = useCallback(async () => {
     if (!previousPageStart || previousRequestRef.current || loading) return;
     previousRequestRef.current = true;
     setLoadingPrevious(true);
     try {
-      const data = await getPage(eventId, rankingType, previousPageStart);
+      const data = await getPage(eventId, rankingType, previousPageStart, regionSelection);
       const addedCount = data.entries.length;
       setEntries((current) => [...data.entries.filter((entry) => !current.some((item) => item.personId === entry.personId)), ...current]);
       setPreviousPageStart(data.previousPageStart);
@@ -243,7 +402,7 @@ export function RankingsExplorer() {
       previousRequestRef.current = false;
       setLoadingPrevious(false);
     }
-  }, [eventId, loading, previousPageStart, rankingType]);
+  }, [eventId, loading, previousPageStart, rankingType, regionSelection]);
 
   useEffect(() => {
     const lastVirtualRow = virtualRows.at(-1);
@@ -293,14 +452,25 @@ export function RankingsExplorer() {
             </select>
             <SelectArrow />
           </div>
-          <div className="selectInput">
-            <select name="Ranking type" onChange={toggleSingle} value={rankingType}>
-              <option value="single">Single</option>
-              <option value="average">Average</option>
-            </select>
-            <SelectArrow />
-          </div>
-        </div>
+              <div className="selectInput">
+                <select name="Ranking type" onChange={toggleSingle} value={rankingType}>
+                  <option value="single">Single</option>
+                  <option value="average">Average</option>
+                </select>
+                <SelectArrow />
+              </div>
+              {regions.length > 0 && (
+                <RegionPicker
+                  options={regions}
+                  selected={regionSelection}
+                  onChange={(option) => {
+                    pendingRankRef.current = 1;
+                    setStartRank(1);
+                    setRegionSelection({ scope: option.scope, regionId: option.regionId });
+                  }}
+                />
+              )}
+            </div>
       </header>
 
       <main>
@@ -334,8 +504,12 @@ export function RankingsExplorer() {
           <button className="Jump-button" onClick={() => resetToRank(visibleRank < total - 5000 ? visibleRank + 5000 : total)}>
             <Arrow direction="down" /><span>{visibleRank < total - 5000 ? "Jump 5000" : "Jump to end"}</span><Arrow direction="down" />
           </button>
-        </div>
-      </main>
-    </div>
+          </div>
+        </main>
+        <footer className="siteFooter">
+          <span>UI by Adam Walker</span>
+          <span>Backend by Cailyn Sinclair</span>
+        </footer>
+      </div>
   );
 }

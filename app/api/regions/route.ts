@@ -9,8 +9,9 @@ export async function GET(request: Request) {
   try {
     const idColumn = kind === "continent" ? "continent_id" : "country_id";
     const nameColumn = kind === "continent" ? "continent_id" : "country_name";
-    const result = await query<{ id: string; name: string }>(
-      `SELECT DISTINCT ${idColumn} AS id, ${nameColumn} AS name
+    const isoColumn = kind === "continent" ? "''" : "country_iso2";
+    const result = await query<{ id: string; name: string; iso2: string }>(
+      `SELECT DISTINCT ${idColumn} AS id, ${nameColumn} AS name, ${isoColumn} AS iso2
        FROM ranking_entries
        ORDER BY name`,
     );

@@ -59,6 +59,120 @@ select {
   gap: 1em;
 }
 
+.regionPicker {
+  position: relative;
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.regionPickerTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 3.25em;
+  padding: 0.75em 1em;
+  border: 1px solid #9cc9e2;
+  border-radius: 0.5em;
+  background: #fff;
+  color: #111;
+  cursor: pointer;
+  font-size: 0.85em;
+  text-align: left;
+}
+
+.regionPickerTrigger:hover,
+.regionPickerTrigger[aria-expanded="true"] {
+  border-color: #6ba9cb;
+  box-shadow: 0 0 5px rgba(107, 169, 203, 0.25);
+}
+
+.regionPickerValue,
+.regionOption {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+}
+
+.regionOptionIcon {
+  display: inline-grid;
+  flex: 0 0 1.4em;
+  place-items: center;
+  font-size: 1.15em;
+}
+
+.regionPickerChevron {
+  color: #5d6970;
+  font-size: 1.2em;
+  line-height: 1;
+}
+
+.regionPickerMenu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.35em);
+  right: 0;
+  left: 0;
+  overflow: hidden;
+  border: 1px solid #9cc9e2;
+  border-radius: 0.5em;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(24, 48, 61, 0.18);
+}
+
+.regionSearch {
+  display: block;
+  width: calc(100% - 1em);
+  margin: 0.5em;
+  padding: 0.65em 0.75em;
+  border: 1px solid #d5dce0;
+  border-radius: 0.35em;
+  color: #111;
+  outline: none;
+  font-size: 0.9em;
+}
+
+.regionSearch:focus {
+  border-color: #6ba9cb;
+  box-shadow: 0 0 0 2px rgba(107, 169, 203, 0.18);
+}
+
+.regionOptions {
+  max-height: min(24em, 55vh);
+  overflow-y: auto;
+}
+
+.regionGroupLabel {
+  padding: 0.65em 1em 0.4em;
+  color: #999;
+  background: #f7f7f7;
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+.regionOption {
+  width: 100%;
+  padding: 0.7em 1em;
+  border: 0;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fff;
+  color: #17202a;
+  cursor: pointer;
+  font-size: 0.95em;
+  text-align: left;
+}
+
+.regionOption:hover,
+.regionOption.isSelected {
+  background: #f0f7fb;
+}
+
+.regionEmpty {
+  padding: 1em;
+  color: #777;
+  font-size: 0.9em;
+}
+
 .selectInput {
   position: relative;
 }
@@ -163,11 +277,19 @@ select {
   display: flex;
   gap: 0.5em;
   padding: 1em;
-  margin-bottom: 0.5em;
+  margin-bottom: 0.1em;
   border: 1px solid #ccc;
   border-radius: 0.5em;
   font-weight: 300;
-  transition: opacity var(--t-duration) ease var(--t-animation-delay);
+  transition: opacity var(--t-duration) ease var(--t-animation-delay), background-color 150ms ease;
+}
+
+.row--alternate {
+  background-color: #f7f7f7;
+}
+
+.row:hover {
+  background-color: #eaf4fa;
 }
 
 .rank {
@@ -218,6 +340,29 @@ select {
   padding: 2rem;
   color: #666;
   text-align: center;
+}
+
+.siteFooter {
+  position: fixed;
+  z-index: 2;
+  bottom: 0.5em;
+  left: 0.75em;
+  display: flex;
+  justify-content: center;
+  gap: 0.75em;
+  padding: 0.35em 0.7em;
+  border: 1px solid rgba(204, 204, 204, 0.7);
+  border-radius: 999px;
+  background: rgba(255, 252, 255, 0.88);
+  color: #999;
+  font-size: 0.65em;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+
+.siteFooter span + span::before {
+  content: "·";
+  margin-right: 0.75em;
 }
 
 .loadingList {
@@ -292,6 +437,16 @@ select {
 
   .rank {
     margin-right: 1em;
+  }
+}
+
+@media only screen and (min-width: 760px) {
+  .chooser {
+    grid-template-columns: repeat(3, minmax(10em, 1fr));
+  }
+
+  .regionPicker {
+    grid-column: auto;
   }
 }
 

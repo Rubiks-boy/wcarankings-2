@@ -31,12 +31,20 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /Jump to end/);
   assert.match(component, /loadPrevious/);
   assert.match(component, /window\.scrollBy/);
+  assert.match(component, /findBar/);
+  assert.match(component, /Ctrl\+F/);
+  assert.match(component, /Find a name or WCA ID/);
+  assert.match(component, /searchRankings/);
+  assert.match(component, /cycleFind/);
   assert.match(component, /listItem/);
   assert.match(component, /className="loader"/);
   assert.match(component, /className=.*row/);
   assert.doesNotMatch(component, /header-controls|collapsed-filter-summary|table-quick-jump/);
   assert.match(rankingsRoute, /SELECT MIN\(\$\{rankColumn\}\) AS rank/);
   assert.match(rankingsRoute, /SELECT MAX\(\$\{rankColumn\}\) AS rank/);
+  assert.match(rankingsRoute, /person_name ILIKE/);
+  assert.match(rankingsRoute, /person_id ILIKE/);
+  assert.match(rankingsRoute, /ORDER BY \$\{rankColumn\}, person_id/);
   assert.match(rankingsRoute, /const limitParameter = paged \? "" :/);
 });
 
@@ -63,6 +71,8 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(css, /\.row:hover/);
   assert.match(css, /\.regionPickerMenu/);
   assert.match(css, /\.regionSearch/);
+  assert.match(css, /\.findBar/);
+  assert.match(css, /\.row--searchMatch/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.doesNotMatch(css, /app-header|table-quick-jump|jump-overlay/);
   assert.doesNotMatch(layout, /codex-preview|_sites-preview|Starter Project/);

@@ -12,9 +12,9 @@ const INDEXES = [
 ];
 
 const PROJECTION_INDEXES = [
-  ["idx_ranking_entries_world", "(`event_id`, `ranking_type`, `world_rank`, `person_id`)"],
-  ["idx_ranking_entries_continent", "(`event_id`, `ranking_type`, `continent_id`, `continent_rank`, `person_id`)"],
-  ["idx_ranking_entries_country", "(`event_id`, `ranking_type`, `country_id`, `country_rank`, `person_id`)"],
+  ["idx_ranking_entries_world", "(`event_id`, `ranking_type`, `world_sub_rank`, `person_id`)"],
+  ["idx_ranking_entries_continent", "(`event_id`, `ranking_type`, `continent_id`, `continent_sub_rank`, `person_id`)"],
+  ["idx_ranking_entries_country", "(`event_id`, `ranking_type`, `country_id`, `country_sub_rank`, `person_id`)"],
   ["idx_ranking_entries_person", "(`person_id`, `event_id`, `ranking_type`)"],
 ];
 
@@ -52,7 +52,19 @@ const VIEW_STATEMENTS = [
      COALESCE(comp.name, '') AS competition_name,
      r.world_rank,
      r.continent_rank,
-     r.country_rank
+     r.country_rank,
+     ROW_NUMBER() OVER (
+       PARTITION BY r.event_id
+       ORDER BY r.world_rank, COALESCE(p.name, r.person_id), r.person_id
+     ) AS world_sub_rank,
+     ROW_NUMBER() OVER (
+       PARTITION BY r.event_id, COALESCE(c.continent_id, '')
+       ORDER BY r.continent_rank, COALESCE(p.name, r.person_id), r.person_id
+     ) AS continent_sub_rank,
+     ROW_NUMBER() OVER (
+       PARTITION BY r.event_id, COALESCE(p.country_id, '')
+       ORDER BY r.country_rank, COALESCE(p.name, r.person_id), r.person_id
+     ) AS country_sub_rank
    FROM ranks_single r
    LEFT JOIN persons p ON p.wca_id = r.person_id AND p.sub_id = 1
    LEFT JOIN countries c ON c.id = p.country_id
@@ -73,7 +85,19 @@ const VIEW_STATEMENTS = [
      COALESCE(comp.name, '') AS competition_name,
      r.world_rank,
      r.continent_rank,
-     r.country_rank
+     r.country_rank,
+     ROW_NUMBER() OVER (
+       PARTITION BY r.event_id
+       ORDER BY r.world_rank, COALESCE(p.name, r.person_id), r.person_id
+     ) AS world_sub_rank,
+     ROW_NUMBER() OVER (
+       PARTITION BY r.event_id, COALESCE(c.continent_id, '')
+       ORDER BY r.continent_rank, COALESCE(p.name, r.person_id), r.person_id
+     ) AS continent_sub_rank,
+     ROW_NUMBER() OVER (
+       PARTITION BY r.event_id, COALESCE(p.country_id, '')
+       ORDER BY r.country_rank, COALESCE(p.name, r.person_id), r.person_id
+     ) AS country_sub_rank
    FROM ranks_average r
    LEFT JOIN persons p ON p.wca_id = r.person_id AND p.sub_id = 1
    LEFT JOIN countries c ON c.id = p.country_id

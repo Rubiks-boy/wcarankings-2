@@ -62,6 +62,7 @@ function setSearchQueryParam(value: string) {
 
 type RankingEntry = {
   rank: number;
+  subRank: number;
   personId: string;
   personName: string;
   best: number;
@@ -112,6 +113,16 @@ const pageCache = new Map<string, Promise<RankingPage>>();
 
 function searchPageStartForRank(rank: number) {
   return Math.max(1, Math.max(1, rank) - Math.floor(PAGE_SIZE / 2));
+}
+
+function orderSearchMatches(matches: RankingEntry[]) {
+  return [...matches].sort(
+    (left, right) =>
+      left.subRank - right.subRank ||
+      left.rank - right.rank ||
+      left.personName.localeCompare(right.personName) ||
+      left.personId.localeCompare(right.personId)
+  );
 }
 
 function getPage(
@@ -176,7 +187,7 @@ function searchRankings(
     search,
     searchLimit: "500",
   });
-  if (regexSearch) params.set("regex", "1");
+  if (regexSearch) params.set("mode", "vim");
   if (selection.scope !== "world") params.set("region", selection.regionId);
 
   return fetch(`/api/rankings?${params}`, { signal }).then(async (response) => {
@@ -327,18 +338,18 @@ function getCurrentViewportPosition(
   return startPosition + index;
 }
 
-function getCurrentViewportRank(
+function getCurrentViewportSubRank(
   list: HTMLDivElement | null,
   entries: RankingEntry[],
-  fallbackRank: number
+  fallbackSubRank: number
 ) {
-  if (!list || entries.length === 0) return fallbackRank;
+  if (!list || entries.length === 0) return fallbackSubRank;
   const listTop = list.getBoundingClientRect().top;
   const index = Math.max(
     0,
     Math.min(entries.length - 1, Math.floor(-listTop / ROW_HEIGHT))
   );
-  return entries[index]?.rank ?? fallbackRank;
+  return entries[index]?.subRank ?? fallbackSubRank;
 }
 
 function Arrow({ direction }: { direction: "up" | "down" }) {
@@ -658,11 +669,11 @@ export function RankingsExplorer({
   const [loadingPrevious, setLoadingPrevious] = useState(false);
   const [error, setError] = useState("");
   const [listOffset, setListOffset] = useState(0);
-  const [findOpen, setFindOpen] = useState(Boolean(normalizedInitialSearch));
+  const [findOpen, setFindOpen] = useState(Boolean(normalizedInitialSearch && !initialRegexSearch));
   const [findQuery, setFindQuery] = useState(initialSearch);
   const [regexSearch, setRegexSearch] = useState(initialRegexSearch);
   const [findMatches, setFindMatches] = useState<RankingEntry[]>(
-    initialData?.searchMatches ?? []
+    orderSearchMatches(initialData?.searchMatches ?? [])
   );
   const [findIndex, setFindIndex] = useState(
     initialData?.searchMatches.length ? 0 : -1
@@ -680,12 +691,18 @@ export function RankingsExplorer({
   const [vimMode, setVimMode] = useState(false);
   const [vimCommand, setVimCommand] = useState(":");
   const [vimHelpOpen, setVimHelpOpen] = useState(false);
+  const [vimSearchActive, setVimSearchActive] = useState(initialRegexSearch);
+  const [vimSearchQuery, setVimSearchQuery] = useState(
+    initialRegexSearch ? initialSearch : ""
+  );
   const [jumpUpArmed, setJumpUpArmed] = useState(false);
   const [jumpDownArmed, setJumpDownArmed] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const findBarRef = useRef<HTMLDivElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
+  const vimInputRef = useRef<HTMLInputElement>(null);
+  const vimCommandRef = useRef(vimCommand);
   const moreRequestRef = useRef(false);
   const previousRequestRef = useRef(false);
   const navigationEpochRef = useRef(0);
@@ -712,7 +729,7 @@ export function RankingsExplorer({
     Boolean(initialData && normalizedInitialSearch)
   );
   const findMatchesRef = useRef<RankingEntry[]>(
-    initialData?.searchMatches ?? []
+    orderSearchMatches(initialData?.searchMatches ?? [])
   );
   const findIndexRef = useRef(initialData?.searchMatches.length ? 0 : -1);
   const entriesRef = useRef(entries);
@@ -816,8 +833,11 @@ export function RankingsExplorer({
       setRankingType(resolvedRankingType);
       setRegionSelection({ scope, regionId });
       setFindQuery(search);
-      setRegexSearch(url.searchParams.get("regex") === "1" && Boolean(search.trim()));
-      setFindOpen(Boolean(search.trim()));
+      const nextRegexSearch = url.searchParams.get("mode") === "vim" && Boolean(search.trim());
+      setRegexSearch(nextRegexSearch);
+      setVimSearchActive(nextRegexSearch);
+      setVimSearchQuery(nextRegexSearch ? search : "");
+      setFindOpen(Boolean(search.trim() && !nextRegexSearch));
       updateQueryParams({
         eventId: resolvedEventId === "333" ? null : resolvedEventId,
         result: resolvedRankingType === "single" ? null : resolvedRankingType,
@@ -950,7 +970,7 @@ export function RankingsExplorer({
           : focusLast
           ? Math.max(0, loadedEntries.length - 1)
           : loadedEntries.findIndex(
-              (entry) => entry.rank >= pendingRankRef.current
+              (entry) => entry.subRank >= pendingRankRef.current
             );
         const targetIndex =
           requestedTargetIndex >= 0
@@ -1033,8 +1053,8 @@ export function RankingsExplorer({
       navigationEpochRef.current += 1;
       cancelScrollAnimation(scrollAnimationStateRef.current);
       pendingNavigationAppendRef.current = false;
-      pendingRankRef.current = match.rank;
-      navigationTargetRankRef.current = match.rank;
+      pendingRankRef.current = match.subRank;
+      navigationTargetRankRef.current = match.subRank;
       pendingPersonIdRef.current = match.personId;
       pendingFocusPersonIdRef.current = match.personId;
       const currentPosition = getCurrentViewportPosition(
@@ -1044,13 +1064,13 @@ export function RankingsExplorer({
         startPositionRef.current,
         rowVirtualizer.getVirtualItems()[0]?.index
       );
-      const currentRank = getCurrentViewportRank(
+      const currentRank = getCurrentViewportSubRank(
         listRef.current,
         entriesRef.current,
         startRankRef.current
       );
       pendingScrollDirectionRef.current =
-        match.rank < currentRank ? -1 : match.rank > currentRank ? 1 : null;
+        match.subRank < currentRank ? -1 : match.subRank > currentRank ? 1 : null;
       setHighlightedPersonId(match.personId);
       const targetIndex = entriesRef.current.findIndex(
         (entry) => entry.personId === match.personId
@@ -1075,7 +1095,7 @@ export function RankingsExplorer({
         pendingScrollDirectionRef.current = null;
         return;
       }
-      const nextStart = searchPageStartForRank(match.rank);
+      const nextStart = searchPageStartForRank(match.subRank);
       preserveListDuringLoadRef.current = true;
       setPreserveListDuringLoad(true);
       setStartRank(nextStart);
@@ -1105,9 +1125,11 @@ export function RankingsExplorer({
     findMatchesRef.current = [];
     findIndexRef.current = -1;
     setSearchQueryParam("");
-    updateQueryParams({ regex: null });
+    updateQueryParams({ mode: null });
     setFindQuery("");
     setRegexSearch(false);
+    setVimSearchActive(false);
+    setVimSearchQuery("");
     setFindMatches([]);
     setFindIndex(-1);
     setFindLoading(false);
@@ -1116,6 +1138,14 @@ export function RankingsExplorer({
     setHighlightedPersonId("");
     pendingScrollDirectionRef.current = null;
   }, []);
+
+  const cancelVimSearch = useCallback(() => {
+    resetFind();
+    setFindOpen(false);
+    setVimMode(false);
+    setVimHelpOpen(false);
+    setVimCommand(":");
+  }, [resetFind]);
 
   useEffect(() => {
     const normalizedQuery = findQuery.trim();
@@ -1156,9 +1186,10 @@ export function RankingsExplorer({
           .then((data) => {
             if (controller.signal.aborted) return;
             setFindResolvedQuery(normalizedQuery);
-            findMatchesRef.current = data.entries;
-            setFindMatches(data.entries);
-            if (data.entries.length > 0) {
+            const orderedMatches = orderSearchMatches(data.entries);
+            findMatchesRef.current = orderedMatches;
+            setFindMatches(orderedMatches);
+            if (orderedMatches.length > 0) {
               findIndexRef.current = 0;
               setFindIndex(0);
               jumpToMatch(data.entries[0]);
@@ -1198,16 +1229,22 @@ export function RankingsExplorer({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLocaleLowerCase();
+      const target = event.target as HTMLElement | null;
+      const isEditable = target?.matches(
+        "input, textarea, select, [contenteditable='true']"
+      );
       if ((event.ctrlKey || event.metaKey) && key === "f") {
         event.preventDefault();
         if (vimMode) {
           setVimMode(false);
           setVimCommand(":");
         }
+        if (vimSearchActive || regexSearch) resetFind();
+        setVimSearchActive(false);
+        setVimSearchQuery("");
         setRegexSearch(false);
-        updateQueryParams({ regex: null });
+        updateQueryParams({ mode: null });
         setFindOpen(true);
-        if (!findQuery.trim()) resetFind();
         window.requestAnimationFrame(() => {
           findInputRef.current?.focus();
           findInputRef.current?.select();
@@ -1215,6 +1252,25 @@ export function RankingsExplorer({
         return;
       }
       if (vimMode) return;
+      if (vimSearchActive && key === "n" && !isEditable) {
+        event.preventDefault();
+        setFindOpen(false);
+        cycleFind();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && key === "g") {
+        event.preventDefault();
+        const direction = event.shiftKey ? -1 : 1;
+        if (vimSearchActive) {
+          setFindOpen(false);
+          if (findQuery.trim()) cycleFind(direction);
+        } else {
+          setFindOpen(true);
+          if (findQuery.trim()) cycleFind(direction);
+          else resetFind();
+        }
+        return;
+      }
       if (event.key === "Escape" && findOpen) {
         event.preventDefault();
         setFindOpen(false);
@@ -1222,7 +1278,15 @@ export function RankingsExplorer({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [findOpen, findQuery, resetFind, vimMode]);
+  }, [
+    cycleFind,
+    findOpen,
+    findQuery,
+    regexSearch,
+    resetFind,
+    vimMode,
+    vimSearchActive,
+  ]);
 
   useEffect(() => {
     if (!findOpen) return;
@@ -1403,7 +1467,8 @@ export function RankingsExplorer({
     []
   );
 
-  const visibleRank = entries[virtualRows[0]?.index ?? 0]?.rank ?? startRank;
+  const visibleSubRank =
+    entries[virtualRows[0]?.index ?? 0]?.subRank ?? startRank;
   const renderedRows = hydrated
     ? virtualRows
     : entries.map((_, index) => ({
@@ -1417,12 +1482,13 @@ export function RankingsExplorer({
 
   const resetToRank = useCallback(
     (rank: number) => {
+      // Vim and jump controls pass the internal sub_rank, never the displayed rank.
       navigationEpochRef.current += 1;
       cancelScrollAnimation(scrollAnimationStateRef.current);
       pendingNavigationAppendRef.current = false;
       const maximumRank = lastRank ?? (Number.isFinite(total) ? total : rank);
       const normalizedRank = Math.max(1, Math.min(rank, maximumRank));
-      const currentRank = getCurrentViewportRank(
+      const currentRank = getCurrentViewportSubRank(
         listRef.current,
         entriesRef.current,
         startRankRef.current
@@ -1477,14 +1543,14 @@ export function RankingsExplorer({
         pendingScrollDirectionRef.current === 1
           ? Math.max(1, normalizedRank - PAGE_SIZE + 1)
           : normalizedRank;
-      const firstLoadedRank = entries[0]?.rank ?? Number.POSITIVE_INFINITY;
-      const lastLoadedRank = entries.at(-1)?.rank ?? 0;
+      const firstLoadedRank = entries[0]?.subRank ?? Number.POSITIVE_INFINITY;
+      const lastLoadedRank = entries.at(-1)?.subRank ?? 0;
       if (
         normalizedRank >= firstLoadedRank &&
         normalizedRank <= lastLoadedRank
       ) {
         const requestedTargetIndex = entries.findIndex(
-          (entry) => entry.rank >= normalizedRank
+          (entry) => entry.subRank >= normalizedRank
         );
         const targetIndex =
           requestedTargetIndex >= 0
@@ -1528,9 +1594,9 @@ export function RankingsExplorer({
     navigationEpochRef.current += 1;
     cancelScrollAnimation(scrollAnimationStateRef.current);
     pendingNavigationAppendRef.current = false;
-    const endRank = lastRank ?? (Number.isFinite(total) ? total : visibleRank);
+    const endRank = lastRank ?? (Number.isFinite(total) ? total : visibleSubRank);
     const nextStart = Math.max(1, endRank - PAGE_SIZE + 1);
-    const currentRank = getCurrentViewportRank(
+    const currentRank = getCurrentViewportSubRank(
       listRef.current,
       entriesRef.current,
       startRankRef.current
@@ -1579,11 +1645,11 @@ export function RankingsExplorer({
     rowVirtualizer,
     startPosition,
     total,
-    visibleRank,
+    visibleSubRank,
   ]);
 
   const handleJumpUp = () => {
-    if (visibleRank <= 5000) {
+    if (visibleSubRank <= 5000) {
       if (jumpUpTimerRef.current !== null)
         window.clearTimeout(jumpUpTimerRef.current);
       jumpUpTimerRef.current = null;
@@ -1613,11 +1679,11 @@ export function RankingsExplorer({
       setJumpUpArmed(false);
     }, 500);
     setJumpUpArmed(true);
-    resetToRank((navigationTargetRankRef.current ?? visibleRank) - 5000);
+    resetToRank((navigationTargetRankRef.current ?? visibleSubRank) - 5000);
   };
 
   const handleJumpDown = () => {
-    if (Number.isFinite(total) && visibleRank >= total - 5000) {
+    if (Number.isFinite(total) && visibleSubRank >= total - 5000) {
       if (jumpDownTimerRef.current !== null)
         window.clearTimeout(jumpDownTimerRef.current);
       jumpDownTimerRef.current = null;
@@ -1647,7 +1713,7 @@ export function RankingsExplorer({
       setJumpDownArmed(false);
     }, 500);
     setJumpDownArmed(true);
-    resetToRank((navigationTargetRankRef.current ?? visibleRank) + 5000);
+    resetToRank((navigationTargetRankRef.current ?? visibleSubRank) + 5000);
   };
 
   useEffect(
@@ -1673,7 +1739,7 @@ export function RankingsExplorer({
     (rawCommand: string) => {
       const command = rawCommand.trim();
       const lowerCommand = command.toLocaleLowerCase();
-      const currentRank = navigationTargetRankRef.current ?? visibleRank;
+      const currentRank = navigationTargetRankRef.current ?? visibleSubRank;
 
       if (command === "G" || command === "$" || lowerCommand === "end") {
         jumpToEndRef.current();
@@ -1685,21 +1751,21 @@ export function RankingsExplorer({
         lowerCommand === "down" ||
         lowerCommand === "pagedown"
       ) {
-        resetToRankRef.current(currentRank + PAGE_SIZE);
+        resetToRankRef.current(currentRank - PAGE_SIZE);
       } else if (
         command === "k" ||
         command === "u" ||
         lowerCommand === "up" ||
         lowerCommand === "pageup"
       ) {
-        resetToRankRef.current(currentRank - PAGE_SIZE);
+        resetToRankRef.current(currentRank + PAGE_SIZE);
       } else if (/^[+-]\d+$/.test(command)) {
         resetToRankRef.current(currentRank + Number(command));
       } else if (/^\d[\d,]*$/.test(command)) {
         resetToRankRef.current(Number(command.replaceAll(",", "")));
       }
     },
-    [visibleRank]
+    [visibleSubRank]
   );
 
   useEffect(() => {
@@ -1708,6 +1774,12 @@ export function RankingsExplorer({
       const isEditable = target?.matches(
         "input, textarea, select, [contenteditable='true']"
       );
+
+      if (event.key === "Escape" && (vimMode || vimSearchActive)) {
+        event.preventDefault();
+        cancelVimSearch();
+        return;
+      }
 
       if (!vimMode) {
         if (
@@ -1720,7 +1792,13 @@ export function RankingsExplorer({
           event.preventDefault();
           setVimMode(true);
           setVimHelpOpen(false);
-          setVimCommand(event.key);
+          setFindOpen(false);
+          if (event.key === "/" && !vimSearchActive) resetFind();
+          setVimCommand(
+            event.key === "/" && vimSearchActive
+              ? `/${vimSearchQuery}`
+              : event.key
+          );
         }
         return;
       }
@@ -1740,17 +1818,17 @@ export function RankingsExplorer({
 
       event.preventDefault();
       if (vimCommand.startsWith("/")) {
-        if (event.key === "Escape") {
-          setVimMode(false);
-          setVimCommand(":");
-        } else if (event.key === "Enter") {
+        if (event.key === "Enter") {
           const regexQuery = vimCommand.slice(1).trim();
           if (regexQuery) {
             setRegexSearch(true);
-            updateQueryParams({ search: regexQuery, regex: "1" });
+            updateQueryParams({ search: regexQuery, mode: "vim" });
             setFindResolvedQuery("");
             setFindQuery(regexQuery);
-            setFindOpen(true);
+            setVimSearchActive(true);
+            setVimSearchQuery(regexQuery);
+            setFindOpen(false);
+            vimInputRef.current?.blur();
           }
           setVimMode(false);
           setVimCommand(":");
@@ -1766,8 +1844,13 @@ export function RankingsExplorer({
         }
         return;
       }
-      if (vimCommand === ":" && ["j", "k", "d", "u", "G"].includes(event.key)) {
-        executeVimCommand(event.key);
+      const directVimCommand =
+        event.key === "G" ? "G" : event.key.toLocaleLowerCase();
+      if (
+        vimCommand === ":" &&
+        ["j", "k", "d", "u", "G"].includes(directVimCommand)
+      ) {
+        executeVimCommand(directVimCommand);
         setVimCommand(":");
         return;
       }
@@ -1800,7 +1883,28 @@ export function RankingsExplorer({
 
     window.addEventListener("keydown", onVimKeyDown);
     return () => window.removeEventListener("keydown", onVimKeyDown);
-  }, [executeVimCommand, vimCommand, vimMode]);
+  }, [
+    cancelVimSearch,
+    executeVimCommand,
+    resetFind,
+    vimCommand,
+    vimMode,
+    vimSearchActive,
+    vimSearchQuery,
+  ]);
+
+  useEffect(() => {
+    vimCommandRef.current = vimCommand;
+  }, [vimCommand]);
+
+  useEffect(() => {
+    if (!vimMode || !vimCommandRef.current.startsWith("/")) return;
+    window.requestAnimationFrame(() => {
+      vimInputRef.current?.focus();
+      const end = vimInputRef.current?.value.length ?? 0;
+      vimInputRef.current?.setSelectionRange(end, end);
+    });
+  }, [vimMode]);
 
   const changeRankingType = (nextRankingType: "single" | "average") => {
     if (
@@ -1853,15 +1957,22 @@ export function RankingsExplorer({
   };
 
   const openFind = () => {
+    if (vimMode || vimSearchActive || regexSearch) resetFind();
+    setVimSearchActive(false);
+    setVimSearchQuery("");
+    setRegexSearch(false);
+    updateQueryParams({ mode: null });
     setFindOpen(true);
     window.requestAnimationFrame(() => findInputRef.current?.focus());
   };
 
   const findPending =
     Boolean(findQuery.trim()) && findQuery.trim() !== findResolvedQuery;
+  const vimInputValue = vimMode ? vimCommand : `/${vimSearchQuery}`;
+  const activeFindMatch = findMatches[findIndex] ?? null;
 
   return (
-    <div className={`app${vimMode ? " app--vimMode" : ""}`}>
+    <div className={`app${vimMode || vimSearchActive ? " app--vimMode" : ""}`}>
       <header className="header" ref={headerRef}>
         <div className="headerTitle">
           <h1 className="title">
@@ -1890,9 +2001,11 @@ export function RankingsExplorer({
                 type="search"
                 value={findQuery}
                 onChange={(event) => {
+                  setVimSearchActive(false);
+                  setVimSearchQuery("");
                   setRegexSearch(false);
                   setFindResolvedQuery("");
-                  updateQueryParams({ search: event.target.value.trim() ? event.target.value : null, regex: null });
+                  updateQueryParams({ search: event.target.value.trim() ? event.target.value : null, mode: null });
                   setFindQuery(event.target.value);
                 }}
                 onKeyDown={(event) => {
@@ -1919,6 +2032,14 @@ export function RankingsExplorer({
                       : "No matches"
                     : "")}
               </span>
+              {activeFindMatch && !findLoading && (
+                <span
+                  className="findMatchSummary"
+                  title={activeFindMatch.personName}
+                >
+                  Rank {formatRankingNumber(activeFindMatch.rank)} · sub-rank {formatRankingNumber(activeFindMatch.subRank)}
+                </span>
+              )}
               <button
                 className="findClose"
                 type="button"
@@ -1999,7 +2120,7 @@ export function RankingsExplorer({
       <main>
         <div
           className={`Jump Jump--up${
-            visibleRank > 1 || jumpUpArmed ? " visible" : ""
+          visibleSubRank > 1 || jumpUpArmed ? " visible" : ""
           }`}
         >
           <button className="Jump-button" onClick={handleJumpUp}>
@@ -2007,7 +2128,7 @@ export function RankingsExplorer({
             <span>
               {jumpUpArmed
                 ? "Jump to top"
-                : visibleRank <= 5000
+                : visibleSubRank <= 5000
                 ? "Jump to top"
                 : `Jump ${formatRankingNumber(5000)}`}
             </span>
@@ -2084,7 +2205,7 @@ export function RankingsExplorer({
 
         <div
           className={`Jump Jump--down${
-            jumpDownArmed || (Number.isFinite(total) && visibleRank < total)
+            jumpDownArmed || (Number.isFinite(total) && visibleSubRank < total)
               ? " visible"
               : ""
           }`}
@@ -2094,7 +2215,7 @@ export function RankingsExplorer({
             <span>
               {jumpDownArmed
                 ? "Jump to end"
-                : Number.isFinite(total) && visibleRank >= total - 5000
+                : Number.isFinite(total) && visibleSubRank >= total - 5000
                 ? "Jump to end"
                 : `Jump ${formatRankingNumber(5000)}`}
             </span>
@@ -2102,12 +2223,57 @@ export function RankingsExplorer({
           </button>
         </div>
       </main>
-      {vimMode && (
+      {(vimMode || vimSearchActive) && (
         <div className="vimCommandLine" role="status" aria-label="Vim command">
           <div className="vimCommandText">
-            <span>{vimCommand}</span>
-            <span className="vimCaret" aria-hidden="true" />
+            <input
+              ref={vimInputRef}
+              className="vimInput"
+              type="text"
+              value={vimInputValue}
+              readOnly={!vimMode}
+              aria-label={vimSearchActive && !vimMode ? "Vim regex search" : "Vim command"}
+              onChange={(event) => {
+                if (vimMode) setVimCommand(event.target.value);
+              }}
+              onFocus={(event) => {
+                if (!vimMode) event.currentTarget.blur();
+              }}
+              onKeyDown={(event) => {
+                if (
+                  vimSearchActive &&
+                  !vimMode &&
+                  (event.ctrlKey || event.metaKey) &&
+                  event.key.toLocaleLowerCase() === "g"
+                ) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setFindOpen(false);
+                  cycleFind(event.shiftKey ? -1 : 1);
+                  return;
+                }
+                if (
+                  ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) ||
+                  event.ctrlKey ||
+                  event.metaKey ||
+                  event.altKey
+                ) {
+                  event.stopPropagation();
+                }
+              }}
+            />
           </div>
+          {vimSearchActive && (
+            <span className="vimMatchStatus" aria-live="polite">
+              {findLoading || findPending
+                ? "Searching…"
+                : findQuery.trim()
+                ? activeFindMatch
+                  ? `${activeFindMatch.personName} · rank ${formatRankingNumber(activeFindMatch.rank)} · sub-rank ${formatRankingNumber(activeFindMatch.subRank)}`
+                  : `${findMatches.length} ${findMatches.length === 1 ? "match" : "matches"}`
+                : ""}
+            </span>
+          )}
           <button
             className="vimHelpButton"
             type="button"
@@ -2120,7 +2286,7 @@ export function RankingsExplorer({
           </button>
         </div>
       )}
-      {vimMode && vimHelpOpen && (
+      {(vimMode || vimSearchActive) && vimHelpOpen && (
         <div
           className="vimHelpPopup"
           id="vim-help-popup"
@@ -2140,9 +2306,9 @@ export function RankingsExplorer({
           </div>
           <dl>
             <dt>j / d</dt>
-            <dd>Jump down 100 ranks</dd>
+                <dd>Scroll up 100 people</dd>
             <dt>k / u</dt>
-            <dd>Jump up 100 ranks</dd>
+                <dd>Scroll down 100 people</dd>
             <dt>gg</dt>
             <dd>Jump to the top</dd>
             <dt>G</dt>
@@ -2151,9 +2317,13 @@ export function RankingsExplorer({
             <dd>Jump to a specific rank</dd>
               <dt>:+500</dt>
               <dd>Jump relative to the current rank</dd>
-              <dt>/pattern</dt>
-              <dd>Search names and WCA IDs with regex</dd>
-            </dl>
+            <dt>/pattern</dt>
+            <dd>Search names and WCA IDs with regex</dd>
+            <dt>Ctrl+G</dt>
+            <dd>Next search result</dd>
+            <dt>Ctrl+Shift+G</dt>
+            <dd>Previous search result</dd>
+          </dl>
         </div>
       )}
       <footer className="siteFooter">

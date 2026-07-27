@@ -28,6 +28,11 @@ npm run sync:wca:local
 
 The importer compares export dates before downloading, so repeated runs are safe. Use `--force` when an explicit re-import is needed.
 
+App migrations are independent from the WCA import. Run `npm run db:migrate` for
+app-owned tables only, or run `npm run db:refresh-rankings` to rebuild the
+derived ranking projections from raw WCA tables already in MariaDB. A full WCA
+sync performs both steps after importing the raw export.
+
 Useful checks:
 
 ```bash

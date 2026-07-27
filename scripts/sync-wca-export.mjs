@@ -6,7 +6,7 @@ import { pipeline } from "node:stream/promises";
 import mysql from "mysql2/promise";
 import * as unzipper from "unzipper";
 import { migrateDatabase } from "./migrate.mjs";
-import { dropManagedObject } from "./mysql-schema.mjs";
+import { dropManagedObject, refreshMysqlSchema } from "./mysql-schema.mjs";
 
 const EXPORT_API = "https://www.worldcubeassociation.org/api/v0/export/public";
 const force = process.argv.includes("--force");
@@ -171,6 +171,15 @@ async function writeExportMetadata(latest) {
   }
 }
 
+async function refreshRankingsSchema() {
+  const connection = await mysql.createConnection(databaseOptions());
+  try {
+    await refreshMysqlSchema(connection);
+  } finally {
+    await connection.end();
+  }
+}
+
 async function main() {
   const suppliedPath = argumentValue("sql-path") || process.env.WCA_SQL_EXPORT_PATH;
   let latest;
@@ -195,8 +204,9 @@ async function main() {
   await dropRankingViews();
   process.stdout.write("Importing WCA SQL tables into MariaDB…\n");
   await importSqlExport(zipPath);
-  process.stdout.write("Running MySQL migrations and refreshing ranking views…\n");
+  process.stdout.write("Running app migrations and refreshing ranking projections…\n");
   await migrateDatabase();
+  await refreshRankingsSchema();
   await writeExportMetadata(latest);
   process.stdout.write(`WCA rankings are current through ${latest.exportDate}.\n`);
 }

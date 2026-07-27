@@ -71,6 +71,9 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /searchParams\.get\("search"/);
   assert.match(component, /history\.replaceState/);
   assert.match(component, /cycleFind/);
+  assert.match(component, /orderSearchMatches/);
+  assert.match(component, /activeFindMatch\.subRank/);
+  assert.match(component, /event\.shiftKey \? -1 : 1/);
   assert.match(component, /key === "f"/);
   assert.match(component, /setVimMode\(false\)/);
   assert.match(component, /findInputRef\.current\?\.select\(\)/);
@@ -117,11 +120,14 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /rankingNumberFormatter/);
   assert.match(component, /formatRankingNumber\(rank\)/);
   assert.match(component, /formatWcaResult\(eventId, entry\.best, rankingType\)/);
+  assert.match(component, /command === "j"[\s\S]*currentRank - PAGE_SIZE/);
+  assert.match(component, /command === "k"[\s\S]*currentRank \+ PAGE_SIZE/);
+  assert.match(component, /const directVimCommand/);
   assert.match(wca, /rankingType === "average" \? \(value \/ 100\)\.toFixed\(2\)/);
   assert.match(component, /const nextStart = [\s\S]*normalizedRank/);
   assert.doesNotMatch(component, /header-controls|collapsed-filter-summary|table-quick-jump/);
-  assert.match(rankingsRoute, /SELECT MIN\(\$\{rankColumn\}\) AS rank/);
-  assert.match(rankingsRoute, /SELECT MAX\(\$\{rankColumn\}\) AS rank/);
+  assert.match(rankingsRoute, /SELECT MIN\(\$\{subRankColumn\}\) AS rank/);
+  assert.match(rankingsRoute, /SELECT MAX\(\$\{subRankColumn\}\) AS rank/);
   assert.match(rankingsRoute, /person_name \$\{searchOperator\}/);
   assert.match(rankingsRoute, /person_id \$\{searchOperator\}/);
   assert.match(rankingsRoute, /searchNameParameter/);
@@ -130,7 +136,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(rankingsRoute, /fetched_at/);
   assert.match(rankingsRoute, /startPosition/);
   assert.match(rankingsRoute, /lastRank/);
-  assert.match(rankingsRoute, /ORDER BY \$\{rankColumn\}, person_id/);
+  assert.match(rankingsRoute, /ORDER BY \$\{subRankColumn\}/);
   assert.match(rankingsRoute, /const limitParameter = paged \? "" :/);
 });
 
@@ -165,7 +171,7 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.doesNotMatch(page, /getSearchParam\(resolvedSearchParams, "scope"\)/);
   assert.match(page, /searchPageStartForRank/);
   assert.match(page, /searchParams/);
-  assert.match(page, /const startRank = firstMatch \? searchPageStartForRank\(firstMatch\.rank\) : 1/);
+  assert.match(page, /const startRank = firstMatch \? searchPageStartForRank\(firstMatch\.subRank\) : 1/);
   assert.match(layout, /title:\s*"WCA Rankings"/);
   assert.match(layout, /PwaRegistration/);
   assert.match(manifest, /display: "standalone"/);
@@ -191,6 +197,8 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(css, /\.loaderBlob/);
   assert.match(css, /\.Jump/);
   assert.match(css, /\.row--alternate/);
+  assert.match(css, /\.virtualRow:not\(:last-child\) \.row/);
+  assert.match(css, /border-bottom: 1px solid #e5eaed/);
   assert.match(css, /\.listItem:hover \.row/);
   assert.match(css, /background-color 40ms ease/);
   assert.match(css, /\.competitionName \{[\s\S]*max-width: none;[\s\S]*overflow: visible;/);

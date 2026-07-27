@@ -3,6 +3,7 @@ export type RegionScope = "world" | "continent" | "country";
 
 export type RankingEntry = {
   rank: number;
+  subRank: number;
   personId: string;
   personName: string;
   countryId: string;

@@ -17,6 +17,7 @@ const MAX_SEARCH_RESULTS = 500;
 
 type RankingRow = {
   rank: number;
+  sub_rank: number;
   person_id: string;
   person_name: string;
   country_id: string;
@@ -31,6 +32,7 @@ type RankingRow = {
 function toRankingEntry(row: RankingRow): RankingEntry {
   return {
     rank: Number(row.rank),
+    subRank: Number(row.sub_rank),
     personId: row.person_id,
     personName: row.person_name,
     countryId: row.country_id,
@@ -45,17 +47,51 @@ function toRankingEntry(row: RankingRow): RankingEntry {
 
 function getQueryShape(scope: RegionScope) {
   if (scope === "continent") {
-    return { rankColumn: "continent_rank", regionColumn: "continent_id" } as const;
+    return { rankColumn: "continent_rank", subRankColumn: "continent_sub_rank", regionColumn: "continent_id" } as const;
   }
   if (scope === "country") {
-    return { rankColumn: "country_rank", regionColumn: "country_id" } as const;
+    return { rankColumn: "country_rank", subRankColumn: "country_sub_rank", regionColumn: "country_id" } as const;
   }
-  return { rankColumn: "world_rank", regionColumn: null } as const;
+  return { rankColumn: "world_rank", subRankColumn: "world_sub_rank", regionColumn: null } as const;
 }
 
 function addParameter(values: unknown[], value: unknown) {
   values.push(value);
   return "?";
+}
+
+async function hasStoredSubRank(column: string) {
+  const result = await query<{ count: number }>(
+    `SELECT COUNT(*) AS count
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name = 'ranking_entries'
+      AND column_name = ?`,
+    [column],
+  );
+  return Number(result.rows[0]?.count ?? 0) > 0;
+}
+
+function getSubRankPartition(scope: RegionScope) {
+  if (scope === "continent") return "event_id, ranking_type, continent_id";
+  if (scope === "country") return "event_id, ranking_type, country_id";
+  return "event_id, ranking_type";
+}
+
+function getRankingSource(
+  scope: RegionScope,
+  rankColumn: string,
+  subRankColumn: string,
+  storedSubRank: boolean,
+) {
+  if (storedSubRank) return "ranking_entries";
+  const partition = getSubRankPartition(scope);
+  return `(SELECT ranking_entries.*,
+      ROW_NUMBER() OVER (
+        PARTITION BY ${partition}
+        ORDER BY ${rankColumn}, person_name, person_id
+      ) AS ${subRankColumn}
+    FROM ranking_entries) AS ranking_entries`;
 }
 
 function makeFilters({
@@ -69,7 +105,7 @@ function makeFilters({
   scope: RegionScope;
   regionId: string;
 }) {
-  const { rankColumn, regionColumn } = getQueryShape(scope);
+  const { rankColumn, subRankColumn, regionColumn } = getQueryShape(scope);
   const values: unknown[] = [];
   const conditions = [
     `event_id = ${addParameter(values, eventId)}`,
@@ -78,7 +114,7 @@ function makeFilters({
   if (regionColumn) {
     conditions.push(`${regionColumn} = ${addParameter(values, regionId)}`);
   }
-  return { rankColumn, conditions, values };
+  return { rankColumn, subRankColumn, conditions, values };
 }
 
 export async function queryMysql({
@@ -115,15 +151,23 @@ export async function queryMysql({
   focusBefore?: number;
 }) {
   const filter = makeFilters({ eventId, type, scope, regionId });
-  const { rankColumn, conditions } = filter;
+  const { rankColumn, subRankColumn: storedSubRankColumn, conditions } = filter;
+  const storedSubRank = await hasStoredSubRank(storedSubRankColumn);
+  const subRankColumn = storedSubRank ? storedSubRankColumn : "sub_rank";
+  const rankingSource = getRankingSource(
+    scope,
+    rankColumn,
+    subRankColumn,
+    storedSubRank,
+  );
 
   if (locate) {
     const values = [...filter.values];
     const locateParameter = addParameter(values, locate);
     const located = await query<RankingRow>(
-      `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
+      `SELECT ${rankColumn} AS rank, ${subRankColumn} AS sub_rank, person_id, person_name, country_id, country_name,
         country_iso2, continent_id, best, competition_id, competition_name
-      FROM ranking_entries
+      FROM ${rankingSource}
       WHERE ${conditions.join(" AND ")} AND person_id = ${locateParameter}
       LIMIT 1`,
       values,
@@ -142,12 +186,12 @@ export async function queryMysql({
     const searchIdParameter = addParameter(values, searchPattern);
     const searchOperator = regexSearch ? "REGEXP" : "LIKE";
     const searchResult = await query<RankingRow>(
-      `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
+      `SELECT ${rankColumn} AS rank, ${subRankColumn} AS sub_rank, person_id, person_name, country_id, country_name,
         country_iso2, continent_id, best, competition_id, competition_name
-      FROM ranking_entries
+      FROM ${rankingSource}
       WHERE ${conditions.join(" AND ")}
         AND (person_name ${searchOperator} ${searchNameParameter} OR person_id ${searchOperator} ${searchIdParameter})
-      ORDER BY ${rankColumn}, person_id
+      ORDER BY ${subRankColumn}
       LIMIT ${addParameter(values, searchLimit)}`,
       values,
     );
@@ -164,12 +208,13 @@ export async function queryMysql({
     };
   }
 
+  // The public row rank stays in `rank`; all paging coordinates use sub_rank.
   let pageStartRank = startRank;
   let focusedRowsPromise: Promise<{ rows: RankingRow[]; rowCount: number }> | null = null;
   if (paged && focusPersonId) {
     const focusResult = await query<{ rank: number }>(
-      `SELECT ${rankColumn} AS rank
-      FROM ranking_entries
+      `SELECT ${subRankColumn} AS rank
+      FROM ${rankingSource}
       WHERE ${conditions.join(" AND ")} AND person_id = ?
       LIMIT 1`,
       [...filter.values, focusPersonId],
@@ -179,25 +224,25 @@ export async function queryMysql({
       const beforeCount = Math.min(limit - 1, Math.max(0, Math.floor(focusBefore)));
       pageStartRank = Math.max(1, focusRank - beforeCount);
       const selectColumns = `
-        ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
+        ${rankColumn} AS rank, ${subRankColumn} AS sub_rank, person_id, person_name, country_id, country_name,
         country_iso2, continent_id, best, competition_id, competition_name`;
       const before = query<RankingRow>(
         `SELECT ${selectColumns}
-        FROM ranking_entries
+        FROM ${rankingSource}
         WHERE ${conditions.join(" AND ")}
-          AND (${rankColumn} < ? OR (${rankColumn} = ? AND person_id < ?))
-        ORDER BY ${rankColumn} DESC, person_id DESC
+          AND ${subRankColumn} < ?
+        ORDER BY ${subRankColumn} DESC
         LIMIT ?`,
-        [...filter.values, focusRank, focusRank, focusPersonId, beforeCount],
+        [...filter.values, focusRank, beforeCount],
       );
       const after = query<RankingRow>(
         `SELECT ${selectColumns}
-        FROM ranking_entries
+        FROM ${rankingSource}
         WHERE ${conditions.join(" AND ")}
-          AND (${rankColumn} > ? OR (${rankColumn} = ? AND person_id >= ?))
-        ORDER BY ${rankColumn}, person_id
+          AND ${subRankColumn} >= ?
+        ORDER BY ${subRankColumn}
         LIMIT ?`,
-        [...filter.values, focusRank, focusRank, focusPersonId, limit - beforeCount],
+        [...filter.values, focusRank, limit - beforeCount],
       );
       focusedRowsPromise = Promise.all([before, after]).then(([beforeRows, afterRows]) => ({
         rows: [...beforeRows.rows.reverse(), ...afterRows.rows],
@@ -209,27 +254,27 @@ export async function queryMysql({
   const values = [...filter.values];
   const pageConditions = [...conditions];
   const cursorClause = paged
-    ? ` AND ${rankColumn} >= ${addParameter(values, pageStartRank)} AND ${rankColumn} < ${addParameter(values, pageStartRank + limit)}`
+    ? ` AND ${subRankColumn} >= ${addParameter(values, pageStartRank)} AND ${subRankColumn} < ${addParameter(values, pageStartRank + limit)}`
     : cursorRank
-      ? ` AND (${rankColumn} > ${addParameter(values, cursorRank)} OR (${rankColumn} = ${addParameter(values, cursorRank)} AND person_id > ${addParameter(values, cursorId)}))`
-      : ` AND ${rankColumn} >= ${addParameter(values, startRank)}`;
+      ? ` AND (${subRankColumn} > ${addParameter(values, cursorRank)} OR (${subRankColumn} = ${addParameter(values, cursorRank)} AND person_id > ${addParameter(values, cursorId)}))`
+      : ` AND ${subRankColumn} >= ${addParameter(values, startRank)}`;
   pageConditions.push(cursorClause.slice(5));
   const limitParameter = paged ? "" : ` LIMIT ${addParameter(values, limit + 1)}`;
-  const querySql = `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
+  const querySql = `SELECT ${rankColumn} AS rank, ${subRankColumn} AS sub_rank, person_id, person_name, country_id, country_name,
       country_iso2, continent_id, best, competition_id, competition_name
-    FROM ranking_entries
+    FROM ${rankingSource}
     WHERE ${pageConditions.join(" AND ")}
-    ORDER BY ${rankColumn}, person_id${limitParameter}`;
+    ORDER BY ${subRankColumn}${limitParameter}`;
 
   const nextPageRank = paged
     ? query<{ rank: number | null }>(
-      `SELECT MIN(${rankColumn}) AS rank FROM ranking_entries WHERE ${conditions.join(" AND ")} AND ${rankColumn} >= ?`,
+      `SELECT MIN(${subRankColumn}) AS rank FROM ${rankingSource} WHERE ${conditions.join(" AND ")} AND ${subRankColumn} >= ?`,
       [...filter.values, pageStartRank + limit],
     ).then((result) => result.rows[0] ?? null)
     : Promise.resolve(null);
   const previousPageRank = paged && pageStartRank > 1
     ? query<{ rank: number | null }>(
-      `SELECT MAX(${rankColumn}) AS rank FROM ranking_entries WHERE ${conditions.join(" AND ")} AND ${rankColumn} < ?`,
+      `SELECT MAX(${subRankColumn}) AS rank FROM ${rankingSource} WHERE ${conditions.join(" AND ")} AND ${subRankColumn} < ?`,
       [...filter.values, pageStartRank],
     ).then((result) => result.rows[0] ?? null)
     : Promise.resolve(null);
@@ -247,12 +292,12 @@ export async function queryMysql({
     previousPageRank,
     paged
       ? query<{ count: number }>(
-        `SELECT COUNT(*) AS count FROM ranking_entries WHERE ${conditions.join(" AND ")} AND ${rankColumn} < ?`,
+        `SELECT COUNT(*) AS count FROM ${rankingSource} WHERE ${conditions.join(" AND ")} AND ${subRankColumn} < ?`,
         [...filter.values, pageStartRank],
       ).then((result) => result.rows[0] ?? null)
       : Promise.resolve({ count: 0 }),
     query<{ rank: number | null }>(
-      `SELECT MAX(${rankColumn}) AS rank FROM ranking_entries WHERE ${conditions.join(" AND ")}`,
+      `SELECT MAX(${subRankColumn}) AS rank FROM ${rankingSource} WHERE ${conditions.join(" AND ")}`,
       filter.values,
     ).then((result) => result.rows[0] ?? null),
   ]);
@@ -279,7 +324,7 @@ export async function queryMysql({
     previousPageStart,
     startPosition: Number(startPositionRow?.count ?? 0),
     lastRank: Number(lastRankRow?.rank ?? 0) || null,
-    nextCursor: last ? { rank: last.rank, personId: last.personId } : null,
+    nextCursor: last ? { rank: last.subRank, personId: last.personId } : null,
     total,
     exportDate: exportDateRow?.value ?? null,
     fetchedAt: fetchedAtRow?.value ?? exportDateRow?.value ?? null,
@@ -305,7 +350,7 @@ export async function GET(request: Request) {
   const cursorId = url.searchParams.get("cursorId") ?? "";
   const locate = (url.searchParams.get("locate") ?? "").trim().toUpperCase();
   const search = (url.searchParams.get("search") ?? "").trim().slice(0, 80);
-  const regexSearch = url.searchParams.get("regex") === "1";
+  const regexSearch = url.searchParams.get("mode") === "vim";
   const requestedSearchLimit = Number(url.searchParams.get("searchLimit")) || MAX_SEARCH_RESULTS;
   const searchLimit = Math.min(MAX_SEARCH_RESULTS, Math.max(1, requestedSearchLimit));
   const focusPersonId = (url.searchParams.get("focus") ?? "").trim().toUpperCase();

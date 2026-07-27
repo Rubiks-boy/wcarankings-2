@@ -44,6 +44,11 @@ competition-name lookups. Use `--force` to re-import an already recorded export.
 For a manually downloaded archive, set `WCA_SQL_EXPORT_PATH` in the environment or
 pass `--sql-path=/path/to/WCA_export.sql.zip`.
 
+App migrations and ranking projection refreshes are separate operations. To apply
+app-owned migrations without importing WCA data, run `node /app/scripts/migrate.mjs`.
+To rebuild ranking projections from raw WCA tables already present in MariaDB, run
+`node /app/scripts/refresh-rankings.mjs`.
+
 To keep the self-hosted database current, install the included systemd timer and
 failure alert as root after copying the repository to the deployment directory:
 

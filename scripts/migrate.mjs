@@ -2,7 +2,6 @@ import { readdir, readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import mysql from "mysql2/promise";
-import { refreshMysqlSchema } from "./mysql-schema.mjs";
 
 function databaseOptions(connectionString = process.env.DATABASE_URL) {
   if (!connectionString) throw new Error("DATABASE_URL is required");
@@ -46,8 +45,6 @@ export async function migrateDatabase(connectionString = process.env.DATABASE_UR
         throw error;
       }
     }
-
-    await refreshMysqlSchema(connection);
   } finally {
     await connection.end();
   }

@@ -120,6 +120,15 @@ select {
   color: #a33;
 }
 
+.findMatchSummary {
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: #607d8b;
+  font-size: 0.7em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .findClose {
   flex: 0 0 auto;
   padding: 0.25em 0.45em;
@@ -429,12 +438,16 @@ select {
   align-items: center;
   gap: 0.5em;
   padding: 0.75em;
-  /* Keep this in whole pixels so Chrome does not round the tiny gap away. */
-  margin-bottom: 2px;
-  border: 1px solid #ccc;
-  border-radius: 0.5em;
+  margin-bottom: 0;
+  border: 0;
+  border-radius: 0;
   font-weight: 300;
   transition: opacity var(--t-duration) ease var(--t-animation-delay), background-color 40ms ease;
+}
+
+.virtualRow:not(:last-child) .row,
+.loadingList .listItem:not(:last-child) .row {
+  border-bottom: 1px solid #e5eaed;
 }
 
 .row--alternate {
@@ -583,9 +596,31 @@ select {
 
 .vimCommandText {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 0.15em;
   min-width: 0;
+}
+
+.vimInput {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.vimInput:read-only {
+  cursor: default;
+}
+
+.vimMatchStatus {
+  flex: 0 0 auto;
+  color: #607d8b;
+  white-space: nowrap;
 }
 
 .vimHelpButton,

@@ -43,6 +43,7 @@ function getCanonicalSearchParams(
   params.delete("event");
   params.delete("type");
   params.delete("scope");
+  params.delete("regex");
   if (eventId === "333") params.delete("eventId");
   else params.set("eventId", eventId);
   if (rankingType === "single") params.delete("result");
@@ -50,8 +51,8 @@ function getCanonicalSearchParams(
   if (regionId) params.set("region", regionId);
   else params.delete("region");
   const search = getSearchParam(searchParams, "search").trim();
-  if (getSearchParam(searchParams, "regex") === "1" && search) params.set("regex", "1");
-  else params.delete("regex");
+  if (getSearchParam(searchParams, "mode") === "vim" && search) params.set("mode", "vim");
+  else params.delete("mode");
   return params;
 }
 
@@ -62,7 +63,7 @@ async function getInitialRankings(searchParams: Record<string, string | string[]
   const rankingType = eventId === "333mbf" ? "single" : isRankingType(rawRankingType) ? rawRankingType : "single";
   const { scope, regionId } = parseRegionQuery(getSearchParam(searchParams, "region"));
   const search = getSearchParam(searchParams, "search").trim().slice(0, 80);
-  const regexSearch = getSearchParam(searchParams, "regex") === "1" && isValidRegexPattern(search);
+  const regexSearch = getSearchParam(searchParams, "mode") === "vim" && isValidRegexPattern(search);
   const queryOptions = {
     eventId,
     type: rankingType,
@@ -81,7 +82,7 @@ async function getInitialRankings(searchParams: Record<string, string | string[]
       ? searchResult.entries
       : [];
     const firstMatch = searchMatches[0];
-    const startRank = firstMatch ? searchPageStartForRank(firstMatch.rank) : 1;
+    const startRank = firstMatch ? searchPageStartForRank(firstMatch.subRank) : 1;
     const page = await queryMysql({
       ...queryOptions,
       startRank,
@@ -156,7 +157,7 @@ export default async function Home({
     getRegions("country"),
   ]);
   const initialSearch = getSearchParam(resolvedSearchParams, "search").trim().slice(0, 80);
-  const initialRegexSearch = getSearchParam(resolvedSearchParams, "regex") === "1" && isValidRegexPattern(initialSearch);
+  const initialRegexSearch = getSearchParam(resolvedSearchParams, "mode") === "vim" && isValidRegexPattern(initialSearch);
   return (
     <RankingsExplorer
       initialData={initialRankings}

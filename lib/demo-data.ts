@@ -42,7 +42,8 @@ export function makeDemoRankings({
   limit: number;
 }): RankingEntry[] {
   const rows: RankingEntry[] = [];
-  let candidateRank = Math.max(1, startRank);
+  let candidateRank = 1;
+  let matchingSubRank = 0;
 
   while (rows.length < limit) {
     const index = candidateRank - 1;
@@ -56,6 +57,11 @@ export function makeDemoRankings({
       (scope === "country" && (!regionId || country[0] === regionId));
 
     if (matchesRegion) {
+      matchingSubRank += 1;
+      if (matchingSubRank < startRank) {
+        candidateRank += 1;
+        continue;
+      }
       const personName = featured
         ? featured[0]
         : `${givenNames[index % givenNames.length]} ${familyNames[(index * 3) % familyNames.length]}`;
@@ -72,6 +78,7 @@ export function makeDemoRankings({
 
       rows.push({
         rank: candidateRank,
+        subRank: matchingSubRank,
         personId,
         personName,
         countryId: country[0],

@@ -70,6 +70,8 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(rankingsRoute, /SELECT MAX\(\$\{rankColumn\}\) AS rank/);
   assert.match(rankingsRoute, /person_name LIKE/);
   assert.match(rankingsRoute, /person_id LIKE/);
+  assert.match(rankingsRoute, /searchNameParameter/);
+  assert.match(rankingsRoute, /searchIdParameter/);
   assert.match(rankingsRoute, /competition_id/);
   assert.match(rankingsRoute, /fetched_at/);
   assert.match(rankingsRoute, /ORDER BY \$\{rankColumn\}, person_id/);
@@ -98,6 +100,8 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(manifest, /icon-192\.png/);
   assert.match(manifest, /icon-512\.png/);
   assert.match(pwaRegistration, /serviceWorker\.register\("\/sw\.js"/);
+  assert.match(pwaRegistration, /process\.env\.NODE_ENV/);
+  assert.match(pwaRegistration, /unregister\(\)/);
   assert.match(serviceWorker, /CACHE_NAME/);
   assert.match(serviceWorker, /caches\.match/);
   assert.match(packageJson, /"name": "wcarankings-2"/);

@@ -127,13 +127,14 @@ export async function queryMysql({
 
   if (search) {
     const values = [...filter.values];
-    const searchParameter = addParameter(values, `%${search}%`);
+    const searchNameParameter = addParameter(values, `%${search}%`);
+    const searchIdParameter = addParameter(values, `%${search}%`);
     const searchResult = await query<RankingRow>(
       `SELECT ${rankColumn} AS rank, person_id, person_name, country_id, country_name,
         country_iso2, continent_id, best, competition_id, competition_name
       FROM ranking_entries
       WHERE ${conditions.join(" AND ")}
-        AND (person_name LIKE ${searchParameter} OR person_id LIKE ${searchParameter})
+        AND (person_name LIKE ${searchNameParameter} OR person_id LIKE ${searchIdParameter})
       ORDER BY ${rankColumn}, person_id
       LIMIT ${addParameter(values, searchLimit)}`,
       values,

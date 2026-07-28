@@ -226,6 +226,8 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(css, /\.rankingTypeOption/);
   assert.match(css, /\.selectInput select,[\s\S]*\.rankingTypeToggle,[\s\S]*\.regionPickerTrigger/);
   assert.match(css, /\.listItem/);
+  assert.match(css, /\.result \{[\s\S]*display: grid;[\s\S]*grid-template-columns: 8ch 5\.5ch;/);
+  assert.match(css, /\.competitionName \{[\s\S]*grid-column: 1;[\s\S]*width: 8ch;/);
   assert.match(css, /overflow-anchor: none/);
   assert.match(css, /\.loaderBlob/);
   assert.match(css, /\.Jump/);

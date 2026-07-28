@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import type { RankingEntry } from "../RankingsExplorer/types";
 import { RankingRow } from "./RankingRow";
 
-const entry = {
+const entry: RankingEntry = {
   rank: 42,
   subRank: 42,
   personId: "2024WALK01",

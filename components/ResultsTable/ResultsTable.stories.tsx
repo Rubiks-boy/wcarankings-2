@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import type { RankingEntry } from "../RankingsExplorer/types";
 import { ResultsTable } from "./ResultsTable";
 
-const entries = [
+const entries: RankingEntry[] = [
   {
     rank: 1,
     subRank: 1,

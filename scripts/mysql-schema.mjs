@@ -53,17 +53,20 @@ const VIEW_STATEMENTS = [
      r.world_rank,
      r.continent_rank,
      r.country_rank,
-     ROW_NUMBER() OVER (
+     SUM(CASE WHEN r.world_rank > 0 THEN 1 ELSE 0 END) OVER (
        PARTITION BY r.event_id
        ORDER BY r.world_rank, COALESCE(p.name, r.person_id), r.person_id
+       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
      ) AS world_sub_rank,
-     ROW_NUMBER() OVER (
+     SUM(CASE WHEN r.continent_rank > 0 THEN 1 ELSE 0 END) OVER (
        PARTITION BY r.event_id, COALESCE(c.continent_id, '')
        ORDER BY r.continent_rank, COALESCE(p.name, r.person_id), r.person_id
+       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
      ) AS continent_sub_rank,
-     ROW_NUMBER() OVER (
+     SUM(CASE WHEN r.country_rank > 0 THEN 1 ELSE 0 END) OVER (
        PARTITION BY r.event_id, COALESCE(p.country_id, '')
        ORDER BY r.country_rank, COALESCE(p.name, r.person_id), r.person_id
+       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
      ) AS country_sub_rank
    FROM ranks_single r
    LEFT JOIN persons p ON p.wca_id = r.person_id AND p.sub_id = 1
@@ -86,17 +89,20 @@ const VIEW_STATEMENTS = [
      r.world_rank,
      r.continent_rank,
      r.country_rank,
-     ROW_NUMBER() OVER (
+     SUM(CASE WHEN r.world_rank > 0 THEN 1 ELSE 0 END) OVER (
        PARTITION BY r.event_id
        ORDER BY r.world_rank, COALESCE(p.name, r.person_id), r.person_id
+       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
      ) AS world_sub_rank,
-     ROW_NUMBER() OVER (
+     SUM(CASE WHEN r.continent_rank > 0 THEN 1 ELSE 0 END) OVER (
        PARTITION BY r.event_id, COALESCE(c.continent_id, '')
        ORDER BY r.continent_rank, COALESCE(p.name, r.person_id), r.person_id
+       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
      ) AS continent_sub_rank,
-     ROW_NUMBER() OVER (
+     SUM(CASE WHEN r.country_rank > 0 THEN 1 ELSE 0 END) OVER (
        PARTITION BY r.event_id, COALESCE(p.country_id, '')
        ORDER BY r.country_rank, COALESCE(p.name, r.person_id), r.person_id
+       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
      ) AS country_sub_rank
    FROM ranks_average r
    LEFT JOIN persons p ON p.wca_id = r.person_id AND p.sub_id = 1
@@ -144,14 +150,17 @@ export async function refreshMysqlSchema(connection) {
     CREATE TABLE ranking_counts AS
     SELECT event_id, ranking_type, 'world' AS scope, '' AS region_id, COUNT(*) AS count
     FROM ranking_entries
+    WHERE world_rank > 0
     GROUP BY event_id, ranking_type
     UNION ALL
     SELECT event_id, ranking_type, 'continent' AS scope, continent_id AS region_id, COUNT(*) AS count
     FROM ranking_entries
+    WHERE continent_rank > 0
     GROUP BY event_id, ranking_type, continent_id
     UNION ALL
     SELECT event_id, ranking_type, 'country' AS scope, country_id AS region_id, COUNT(*) AS count
     FROM ranking_entries
+    WHERE country_rank > 0
     GROUP BY event_id, ranking_type, country_id
   `);
   await connection.query("ALTER TABLE ranking_counts ADD PRIMARY KEY (event_id, ranking_type, scope, region_id)");

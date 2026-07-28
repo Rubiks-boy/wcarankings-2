@@ -144,6 +144,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(rankingsRoute, /searchNameParameter/);
   assert.match(rankingsRoute, /searchIdParameter/);
   assert.match(rankingsRoute, /competition_id/);
+  assert.match(rankingsRoute, /conditions\.push\(`\$\{rankColumn\} > 0`\)/);
   assert.match(rankingsRoute, /fetched_at/);
   assert.match(rankingsRoute, /startPosition/);
   assert.match(rankingsRoute, /lastRank/);

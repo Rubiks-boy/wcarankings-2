@@ -113,6 +113,7 @@ function makeFilters({
   if (regionColumn) {
     conditions.push(`${regionColumn} = ${addParameter(values, regionId)}`);
   }
+  conditions.push(`${rankColumn} > 0`);
   return { rankColumn, subRankColumn, conditions, values };
 }
 

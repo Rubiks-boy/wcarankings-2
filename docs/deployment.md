@@ -149,7 +149,9 @@ The GitHub Actions workflow expects these repository secrets:
 - `DEPLOY_SSH_KEY`: private key for the deployment account.
 - `DEPLOY_KNOWN_HOSTS`: SSH host verification entries.
 
-The workflow replaces the app container after loading the new image, while keeping
-the previous image available until health checks and migrations succeed. MariaDB,
+The workflow runs Flyway migrations and then checks the candidate image against the
+current ranking projections before replacing the app container. If the projection
+check fails, it prints the projection-only rebuild command and leaves traffic on the
+current app. The previous image remains available until health checks succeed. MariaDB,
 the export cache, Caddy certificates, and their data survive because they are stored
 in named Docker volumes.

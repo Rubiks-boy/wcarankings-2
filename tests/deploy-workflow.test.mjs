@@ -18,4 +18,5 @@ test("builds deploy images from main when PR images are unavailable", () => {
     workflow,
     /if: steps\.pull-images\.outputs\.available != 'true'[\s\S]*tags: wcarankings-app:\$\{\{ github\.sha \}\}/,
   );
+  assert.match(workflow, /V3__projection_build_timing\.sql/);
 });

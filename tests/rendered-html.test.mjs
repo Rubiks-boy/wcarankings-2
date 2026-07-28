@@ -229,7 +229,8 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(manifest, /display: "standalone"/);
   assert.match(manifest, /icon-192\.png/);
   assert.match(manifest, /icon-512\.png/);
-  assert.match(pwaRegistration, /serviceWorker\.register\("\/sw\.js"/);
+  assert.match(pwaRegistration, /serviceWorker\.register\(SERVICE_WORKER_URL/);
+  assert.match(pwaRegistration, /updateViaCache: "none"/);
   assert.match(pwaRegistration, /process\.env\.NODE_ENV/);
   assert.match(pwaRegistration, /unregister\(\)/);
   assert.match(serviceWorker, /CACHE_NAME/);

@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 
+const SERVICE_WORKER_URL = "/sw.js?v=2";
+
 export function PwaRegistration() {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -12,7 +14,10 @@ export function PwaRegistration() {
       return;
     }
 
-    void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => undefined);
+    void navigator.serviceWorker.register(SERVICE_WORKER_URL, {
+      scope: "/",
+      updateViaCache: "none",
+    }).catch(() => undefined);
   }, []);
 
   return null;

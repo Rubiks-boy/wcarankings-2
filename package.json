@@ -17,7 +17,8 @@
     "test:unit": "node --import ./tests/register-asset-loader.mjs --import tsx --test components/*/*.test.tsx tests/*.test.ts",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern storybook-static",
     "sync:wca": "node scripts/sync-wca-export.mjs",
-    "sync:wca:local": "docker compose --env-file .env.local run --rm flyway migrate && node --env-file=.env.local scripts/sync-wca-export.mjs"
+    "sync:wca:local": "docker compose --env-file .env.local run --rm flyway migrate && node --env-file=.env.local scripts/sync-wca-export.mjs",
+    "load:rankings": "node scripts/load-rankings.mjs"
   },
   "dependencies": {
     "@cubing/icons": "^3.0.5",

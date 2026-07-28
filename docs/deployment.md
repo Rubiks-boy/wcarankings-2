@@ -101,6 +101,47 @@ WCA data and do not rebuild ranking projections. The daily systemd sync owns tha
 slower data operation. The app entrypoint only starts the server, so a fresh host
 should be imported before it is considered ready for ranking traffic.
 
+## Ranking performance verification
+
+`GET /api/health/live` checks process liveness and `GET /api/health/ready`
+checks database and projection readiness. Both are `no-store`; deployment waits
+for readiness before rendering the page.
+
+Run the repeatable local traffic mix after starting the app:
+
+```bash
+npm run load:rankings
+```
+
+It covers normal browsing, distant pages, incremental search typing, and unique
+queries. It defaults to localhost; a remote target requires
+`--target=https://example.com --allow-remote`. Its JSON report includes request
+and status counts, p50/p95 latency, cache outcomes, and Server-Timing samples.
+
+Inspect an indexed production path without changing data (use a representative
+cohort):
+
+```sql
+EXPLAIN ANALYZE SELECT world_rank, world_sub_rank, person_id
+FROM ranking_entries_single
+WHERE event_id = '333' AND world_rank > 0
+  AND world_sub_rank >= 5001 AND world_sub_rank < 5051
+ORDER BY world_sub_rank;
+```
+
+For a short slow-query observation, enable the MariaDB global log, inspect it
+using the host's normal log-access procedure, then disable it again. Ensure the
+configured log path has space and do not commit log contents.
+
+```sql
+SET GLOBAL slow_query_log = 1;
+SET GLOBAL long_query_time = 0.2;
+SHOW GLOBAL STATUS LIKE 'Slow_queries';
+SET GLOBAL slow_query_log = 0;
+```
+
+Restore the previous `long_query_time` if it was changed.
+
 The GitHub Actions workflow expects these repository secrets:
 
 - `SERVER_IP`: SSH address for the deployment host.

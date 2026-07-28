@@ -1,5 +1,4 @@
-import { query } from "@/db";
-import { WCA_EVENTS, type RankingType, type RegionScope } from "@/lib/wca";
+import { type RankingType, type RegionScope } from "@/lib/wca";
 
 export const RANKINGS_CACHE_REFRESH_MS = 60_000;
 export const RANKINGS_CACHE_CAPACITY_333 = 512;
@@ -51,6 +50,10 @@ export class RankingsPageCache<T> {
   }
 
   async get(key: RankingsPageKey, load: () => Promise<T>) {
+    return (await this.getWithStatus(key, load)).value;
+  }
+
+  async getWithStatus(key: RankingsPageKey, load: () => Promise<T>) {
     const normalized = { ...key, startRank: Math.max(1, Math.floor(key.startRank)) };
     const cacheKey = `${normalized.eventId}:${keyFor(normalized)}`;
     const pool = this.pool(normalized.eventId);
@@ -60,10 +63,10 @@ export class RankingsPageCache<T> {
         pool.delete(keyFor(normalized));
         pool.set(keyFor(normalized), cached);
       }
-      return cached.value;
+      return { value: cached.value, outcome: "hit" as const };
     }
     const inFlight = this.pending.get(cacheKey);
-    if (inFlight) return inFlight;
+    if (inFlight) return { value: await inFlight, outcome: "coalesced" as const };
 
     const request = load().then((value) => {
       this.put(normalized, value);
@@ -71,7 +74,7 @@ export class RankingsPageCache<T> {
     });
     this.pending.set(cacheKey, request);
     try {
-      return await request;
+      return { value: await request, outcome: "miss" as const };
     } finally {
       this.pending.delete(cacheKey);
     }
@@ -95,48 +98,6 @@ export class RankingsPageCache<T> {
 
 export const rankingsPageCache = new RankingsPageCache<unknown>();
 
-let generation: string | null = null;
-let lastGenerationCheck = 0;
-let prewarm: (() => Promise<void>) | null = null;
-let invalidate: (() => void) | null = null;
-
-export function setRankingsCachePrewarmer(callback: () => Promise<void>) {
-  prewarm = callback;
-}
-
-export function setRankingsCacheInvalidator(callback: () => void) {
-  invalidate = callback;
-}
-
-export async function refreshRankingsCacheGeneration() {
-  const now = Date.now();
-  if (now - lastGenerationCheck < RANKINGS_CACHE_REFRESH_MS) return generation;
-  lastGenerationCheck = now;
-  try {
-    const result = await query<{ value: string }>(
-      "SELECT value FROM export_metadata WHERE `key` = 'fetched_at'",
-    );
-    const next = result.rows[0]?.value ?? "unknown";
-    if (generation !== null && next !== generation) {
-      rankingsPageCache.clear();
-      invalidate?.();
-      void prewarm?.().catch(() => undefined);
-    }
-    generation = next;
-  } catch {
-    // A temporary metadata outage must not discard a usable prior generation.
-  }
-  return generation;
-}
-
 export function normalPageKey(input: RankingsPageKey) {
   return { ...input, startRank: Math.max(1, Math.floor(input.startRank)) };
-}
-
-export function prewarmPageKeys() {
-  return WCA_EVENTS.flatMap((event) =>
-    (["single", "average"] as const)
-      .filter((type) => !(event.id === "333mbf" && type === "average"))
-      .map((type) => ({ eventId: event.id, type, scope: "world" as const, regionId: "", startRank: 1 })),
-  );
 }

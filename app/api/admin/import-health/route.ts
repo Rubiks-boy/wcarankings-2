@@ -1,5 +1,5 @@
 import { query } from "@/db";
-import { getImportHealthStatus, getMigrationHealthStatus } from "@/lib/import-health";
+import { getImportHealthStatus } from "@/lib/import-health";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +11,9 @@ type ImportRunRow = {
   started_at: string;
   fetch_started_at: string | null;
   fetched_at: string | null;
+  projection_build_started_at: string | null;
+  projection_built_at: string | null;
+  projection_build_duration_ms: number | null;
   completed_at: string | null;
   duration_ms: number | null;
   failure_message: string | null;
@@ -23,18 +26,21 @@ type ImportRunRow = {
   aggregate_count: number | null;
 };
 
-type MigrationRow = {
-  installed_rank: number;
-  version: string | null;
-  description: string;
-  script: string;
-  installed_on: string;
-  execution_time: number;
-  success: number | boolean;
+type ProjectionTableRow = {
+  name: string;
 };
+
+const expectedProjectionTables = [
+  "ranking_entries_single",
+  "ranking_entries_average",
+  "ranking_counts",
+] as const;
 
 function serializeRun(run: ImportRunRow | null) {
   if (!run) return null;
+  const projectionBuildElapsedMs = run.projection_build_duration_ms == null && run.projection_build_started_at
+    ? Math.max(0, Date.now() - new Date(run.projection_build_started_at).getTime())
+    : run.projection_build_duration_ms;
   return {
     id: Number(run.id),
     exportDate: run.export_date,
@@ -43,6 +49,10 @@ function serializeRun(run: ImportRunRow | null) {
     startedAt: run.started_at,
     fetchStartedAt: run.fetch_started_at,
     fetchedAt: run.fetched_at,
+    projectionBuildStartedAt: run.projection_build_started_at,
+    projectionBuiltAt: run.projection_built_at,
+    projectionBuildDurationMs: run.projection_build_duration_ms == null ? null : Number(run.projection_build_duration_ms),
+    projectionBuildElapsedMs: projectionBuildElapsedMs == null ? null : Number(projectionBuildElapsedMs),
     completedAt: run.completed_at,
     durationMs: run.duration_ms == null ? null : Number(run.duration_ms),
     failureMessage: run.failure_message,
@@ -58,46 +68,27 @@ function serializeRun(run: ImportRunRow | null) {
   };
 }
 
-async function getMigrationHealth() {
-  try {
-    const migrations = await query<MigrationRow>(`
-      SELECT installed_rank, version, description, script, installed_on, execution_time, success
-      FROM flyway_schema_history
-      ORDER BY installed_rank DESC
-      LIMIT 1
-    `);
-    const latest = migrations.rows[0] ?? null;
-    return {
-      status: getMigrationHealthStatus(latest),
-      latest: latest ? {
-        installedRank: Number(latest.installed_rank),
-        version: latest.version,
-        description: latest.description,
-        script: latest.script,
-        installedOn: latest.installed_on,
-        executionTimeMs: Number(latest.execution_time),
-        success: Boolean(latest.success),
-      } : null,
-    };
-  } catch {
-    return {
-      status: "unavailable" as const,
-      latest: null,
-    };
-  }
-}
-
 export async function GET() {
   try {
-    const [metadata, latest, successful, failures, migrations] = await Promise.all([
+    const [metadata, latest, successful, failures, projectionTables] = await Promise.all([
       query<{ key: string; value: string }>("SELECT `key`, value FROM export_metadata WHERE `key` IN ('export_date', 'export_format_version', 'fetched_at')"),
       query<ImportRunRow>("SELECT * FROM import_runs ORDER BY id DESC LIMIT 1"),
       query<ImportRunRow>("SELECT * FROM import_runs WHERE status = 'succeeded' ORDER BY id DESC LIMIT 1"),
       query<ImportRunRow>("SELECT * FROM import_runs WHERE status = 'failed' ORDER BY id DESC LIMIT 5"),
-      getMigrationHealth(),
+      query<ProjectionTableRow>(`
+        SELECT table_name AS name
+        FROM information_schema.tables
+        WHERE table_schema = DATABASE()
+          AND table_name IN ('ranking_entries_single', 'ranking_entries_average', 'ranking_counts')
+      `),
     ]);
     const currentExport = Object.fromEntries(metadata.rows.map((row) => [row.key, row.value]));
     const latestRun = latest.rows[0] ?? null;
+    const presentProjectionTables = new Set(projectionTables.rows.map((table) => table.name));
+    const tableHealth = expectedProjectionTables.map((name) => ({
+      name,
+      present: presentProjectionTables.has(name),
+    }));
     return Response.json({
       status: getImportHealthStatus({ latestRun, currentExport: currentExport.export_date }),
       currentExport: currentExport.export_date ? {
@@ -108,10 +99,13 @@ export async function GET() {
       latestRun: serializeRun(latestRun),
       lastSuccessfulRun: serializeRun(successful.rows[0] ?? null),
       recentFailures: failures.rows.map(serializeRun),
-      migrations,
+      projectionTables: {
+        ready: latestRun?.projection_swap_status === "published" && tableHealth.every((table) => table.present),
+        tables: tableHealth,
+      },
       diagnostics: latestRun
-        ? `import_run_id=${latestRun.id}; status=${latestRun.status}; projection_swap=${latestRun.projection_swap_status}; migration=${migrations.status}; migration_version=${migrations.latest?.version ?? "none"}`
-        : `No import run has been recorded. migration=${migrations.status}; migration_version=${migrations.latest?.version ?? "none"}`,
+        ? `import_run_id=${latestRun.id}; status=${latestRun.status}; projection_swap=${latestRun.projection_swap_status}; projection_tables=${tableHealth.filter((table) => table.present).length}/${tableHealth.length}; projection_build_ms=${latestRun.projection_build_duration_ms ?? "running"}`
+        : `No import run has been recorded. projection_tables=${tableHealth.filter((table) => table.present).length}/${tableHealth.length}`,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return Response.json({
@@ -120,9 +114,9 @@ export async function GET() {
       latestRun: null,
       lastSuccessfulRun: null,
       recentFailures: [],
-      migrations: {
-        status: "unavailable",
-        latest: null,
+      projectionTables: {
+        ready: false,
+        tables: expectedProjectionTables.map((name) => ({ name, present: false })),
       },
       diagnostics: "Import health is unavailable because the application database could not be queried.",
     }, { status: 503, headers: { "Cache-Control": "no-store" } });

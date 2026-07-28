@@ -1,3 +1,4 @@
+import { LRUCache } from "lru-cache";
 import { type RankingType, type RegionScope } from "@/lib/wca";
 
 export const RANKINGS_CACHE_REFRESH_MS = 60_000;
@@ -12,7 +13,10 @@ export type RankingsPageKey = {
   startRank: number;
 };
 
-type CacheEntry<T> = { value: T; permanent: boolean };
+type CachePool<T> = {
+  cache: LRUCache<string, T>;
+  pinnedKeys: Set<string>;
+};
 
 function keyFor({ type, scope, regionId, startRank }: RankingsPageKey) {
   return `${type}:${scope}:${regionId}:${startRank}`;
@@ -24,13 +28,16 @@ function isPermanentPage(key: RankingsPageKey) {
 
 /** Process-local LRU pools. First world pages are pinned so warm navigation stays fast. */
 export class RankingsPageCache<T> {
-  private readonly pools = new Map<string, Map<string, CacheEntry<T>>>();
+  private readonly pools = new Map<string, CachePool<T>>();
   private readonly pending = new Map<string, Promise<T>>();
 
   private pool(eventId: string) {
     let pool = this.pools.get(eventId);
     if (!pool) {
-      pool = new Map();
+      const capacity = eventId === "333"
+        ? RANKINGS_CACHE_CAPACITY_333
+        : RANKINGS_CACHE_CAPACITY_DEFAULT;
+      pool = { cache: new LRUCache<string, T>({ max: capacity }), pinnedKeys: new Set() };
       this.pools.set(eventId, pool);
     }
     return pool;
@@ -42,11 +49,11 @@ export class RankingsPageCache<T> {
   }
 
   entryCount(eventId: string) {
-    return this.pools.get(eventId)?.size ?? 0;
+    return this.pools.get(eventId)?.cache.size ?? 0;
   }
 
   has(key: RankingsPageKey) {
-    return this.pools.get(key.eventId)?.has(keyFor(key)) ?? false;
+    return this.pools.get(key.eventId)?.cache.has(keyFor(key)) ?? false;
   }
 
   async get(key: RankingsPageKey, load: () => Promise<T>) {
@@ -57,13 +64,9 @@ export class RankingsPageCache<T> {
     const normalized = { ...key, startRank: Math.max(1, Math.floor(key.startRank)) };
     const cacheKey = `${normalized.eventId}:${keyFor(normalized)}`;
     const pool = this.pool(normalized.eventId);
-    const cached = pool.get(keyFor(normalized));
-    if (cached) {
-      if (!cached.permanent) {
-        pool.delete(keyFor(normalized));
-        pool.set(keyFor(normalized), cached);
-      }
-      return { value: cached.value, outcome: "hit" as const };
+    const cached = pool.cache.get(keyFor(normalized));
+    if (cached !== undefined) {
+      return { value: cached, outcome: "hit" as const };
     }
     const inFlight = this.pending.get(cacheKey);
     if (inFlight) return { value: await inFlight, outcome: "coalesced" as const };
@@ -83,16 +86,14 @@ export class RankingsPageCache<T> {
   private put(key: RankingsPageKey, value: T) {
     const pool = this.pool(key.eventId);
     const pageKey = keyFor(key);
-    pool.delete(pageKey);
-    pool.set(pageKey, { value, permanent: isPermanentPage(key) });
-    const capacity = key.eventId === "333"
-      ? RANKINGS_CACHE_CAPACITY_333
-      : RANKINGS_CACHE_CAPACITY_DEFAULT;
-    while (pool.size > capacity) {
-      const oldest = [...pool.entries()].find(([, entry]) => !entry.permanent);
-      if (!oldest) return;
-      pool.delete(oldest[0]);
+    if (isPermanentPage(key)) {
+      pool.pinnedKeys.add(pageKey);
+    } else {
+      // Refresh pinned first-world pages before insertion so the LRU package
+      // evicts an ordinary page first while preserving the fixed capacity.
+      for (const pinnedKey of pool.pinnedKeys) pool.cache.get(pinnedKey);
     }
+    pool.cache.set(pageKey, value);
   }
 }
 

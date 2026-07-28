@@ -160,6 +160,7 @@ export function scrollToEntry({
   list,
   index,
   alignment = "top",
+  bottomOffset = 0,
   requestedBehavior = "smooth",
   schedule = true,
   requestedDuration = DISTANT_SCROLL_DURATION_MS,
@@ -169,7 +170,8 @@ export function scrollToEntry({
   state: ScrollAnimationState;
   list: HTMLDivElement | null;
   index: number;
-  alignment?: "top" | "center";
+  alignment?: "top" | "center" | "bottom";
+  bottomOffset?: number;
   requestedBehavior?: ScrollBehavior;
   schedule?: boolean;
   requestedDuration?: number;
@@ -178,10 +180,15 @@ export function scrollToEntry({
 }) {
   const scroll = () => {
     const listTop = list?.getBoundingClientRect().top ?? 0;
-    const viewportOffset =
-      alignment === "center"
-        ? Math.max(0, (window.innerHeight - rowHeight) / 2)
-        : 0;
+    let viewportOffset = 0;
+    if (alignment === "center") {
+      viewportOffset = Math.max(0, (window.innerHeight - rowHeight) / 2);
+    } else if (alignment === "bottom") {
+      viewportOffset = Math.max(
+        0,
+        window.innerHeight - rowHeight - bottomOffset
+      );
+    }
     const fallbackRowTop =
       listTop +
       window.scrollY +

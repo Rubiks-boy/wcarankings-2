@@ -1,0 +1,191 @@
+.Jump {
+  position: relative;
+  display: flex;
+  width: max-content;
+  min-height: 40px;
+  align-items: center;
+  border-radius: 20px;
+  background: var(--rail-surface);
+  box-shadow: 0 4px 16px var(--shadow);
+}
+
+.Jump-button,
+.Jump-searchNavigationButton {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  padding: 0.5em 0.75em;
+  border: 0;
+  background: transparent;
+  color: var(--text-strong);
+  cursor: pointer;
+  font: inherit;
+  white-space: nowrap;
+  transition: color 150ms var(--cubic-move);
+}
+
+.Jump-buttonWrapper {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
+  opacity: 1;
+  transition: grid-template-columns 250ms var(--cubic-move),
+    opacity 150ms var(--cubic-enter);
+}
+
+.Jump-buttonClip {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.Jump[data-direction="up"] > .Jump-buttonWrapper {
+  box-shadow: inset -1px 0 var(--border-subtle);
+}
+
+.Jump[data-direction="down"] {
+  justify-content: center;
+}
+
+.Jump[data-direction="down"] > .Jump-buttonWrapper {
+  transition: grid-template-columns 250ms var(--cubic-move),
+    opacity 150ms var(--cubic-enter);
+}
+
+.Jump-button {
+  flex: none;
+}
+
+.Jump svg {
+  width: 22px;
+  height: 22px;
+}
+
+.Jump-button:hover,
+.Jump-searchNavigationButton:hover {
+  color: var(--focus);
+}
+
+.Jump-button:focus-visible,
+.Jump-searchNavigationButton:focus-visible {
+  color: var(--focus);
+  outline: none;
+}
+
+.Jump-searchNavigation {
+  display: grid;
+  grid-template-columns: minmax(0, 0fr);
+  overflow: hidden;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: grid-template-columns 250ms var(--cubic-move),
+    opacity 150ms var(--cubic-exit);
+}
+
+.Jump[data-search-navigation="true"] .Jump-searchNavigation {
+  grid-template-columns: minmax(0, 1fr);
+  opacity: 1;
+  pointer-events: auto;
+  transition: grid-template-columns 250ms var(--cubic-move),
+    opacity 150ms var(--cubic-enter);
+}
+
+.Jump[data-search-navigation="true"] > .Jump-buttonWrapper {
+  grid-template-columns: minmax(0, 0fr);
+  opacity: 0;
+  pointer-events: none;
+  transition: grid-template-columns 250ms var(--cubic-move),
+    opacity 150ms var(--cubic-exit);
+}
+
+.Jump-searchNavigationContent {
+  display: flex;
+  width: min(20em, calc(100vw - 2em));
+  min-width: 0;
+  flex: none;
+  overflow: hidden;
+}
+
+.Jump-searchNavigationButton {
+  flex: 1;
+}
+
+.Jump-searchNavigationButton + .Jump-searchNavigationButton {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.Jump .findBar--rail {
+  width: 44px;
+  height: 40px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 0 20px 20px 0;
+  background: var(--rail-surface);
+  box-shadow: none;
+  transition: width 250ms var(--cubic-move),
+    color 150ms var(--cubic-move);
+}
+
+.Jump .findBar--rail[data-has-text="true"],
+.Jump .findBar--rail:focus-within {
+  width: calc(min(22em, calc(100vw - 2em)) - 44px);
+}
+
+.Jump[data-direction="up"]:has(
+    .findBar--rail:is([data-has-text="true"], :focus-within)
+  ) > .Jump-buttonWrapper {
+  grid-template-columns: minmax(0, 0fr);
+  opacity: 0;
+}
+
+.Jump .findBar--rail .findIcon,
+.Jump .findBar--rail .findClose {
+  position: relative;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  flex: 0 0 40px;
+  aspect-ratio: 1;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-strong);
+  cursor: pointer;
+  transition: color 150ms var(--cubic-move);
+}
+
+.Jump .findBar--rail .findClose:hover {
+  color: var(--focus);
+}
+
+.Jump
+  .findBar--rail:not([data-has-text="true"]):not(:focus-within)
+  .findIcon:hover {
+  color: var(--focus);
+}
+
+.Jump .findBar--rail .findClose svg {
+  width: 20px;
+  height: 20px;
+}
+
+.Jump .findBar--rail .findClose:focus-visible {
+  color: var(--focus);
+  outline: none;
+}
+
+.Jump .findBar--rail .findInput,
+.Jump .findBar--rail .findStatus {
+  padding-inline: 0.25em;
+}
+
+.Jump .findBar--rail .findStatus {
+  padding-right: 0;
+}

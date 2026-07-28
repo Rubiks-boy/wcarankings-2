@@ -19,7 +19,10 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
       "../components/VimSearchInput/VimSearchInput.tsx",
       "../components/VimHelp/VimHelp.tsx",
       "../components/JumpControls/JumpControls.tsx",
-      "../components/Icon/Icon.tsx",
+      "../components/Icon/arrow-up.svg",
+      "../components/Icon/arrow-down.svg",
+      "../components/Icon/search.svg",
+      "../components/Icon/select-chevron.svg",
       "../lib/rankings-config.ts",
     ].map((path) => readFile(new URL(path, import.meta.url), "utf8"))).then((files) => files.join("\n")),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
@@ -74,7 +77,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /label: "World"/);
   assert.match(component, /flagEmoji/);
   assert.match(component, /recordBadges/);
-  assert.match(component, /Jump Jump--/);
+  assert.match(component, /data-direction=\{direction\}/);
   assert.match(component, /formatRankingNumber\(5000\)/);
   assert.match(component, /Jump to top/);
   assert.match(component, /Jump to end/);
@@ -134,7 +137,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /measureElement/);
   assert.match(component, /preserveListDuringLoad/);
   assert.match(component, /listItem/);
-  assert.match(component, /className="loader"/);
+  assert.doesNotMatch(component, /className="loader"/);
   assert.match(component, /className=.*row/);
   assert.match(component, /className="competitionName"/);
   assert.match(component, /\{entry\.competitionName\}/);
@@ -188,8 +191,9 @@ test("does not replace SQL failures with synthetic ranking data", async () => {
 });
 
 test("uses the copied WCA Rankings visual language", async () => {
-  const [css, page, layout, manifest, pwaRegistration, serviceWorker, packageJson] = await Promise.all([
+  const [globalCss, jumpCss, page, layout, manifest, pwaRegistration, serviceWorker, packageJson] = await Promise.all([
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../components/JumpControls/JumpControls.css", import.meta.url), "utf8"),
     readFile(new URL("../pages/index.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/manifest.ts", import.meta.url), "utf8"),
@@ -197,6 +201,7 @@ test("uses the copied WCA Rankings visual language", async () => {
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
+  const css = `${globalCss}\n${jumpCss}`;
 
   assert.match(page, /<RankingsExplorer/);
   assert.match(page, /initialData=\{initialRankings\}/);
@@ -250,7 +255,7 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(css, /\.resultValue \{[\s\S]*display: contents;/);
   assert.match(css, /\.competitionName \{[\s\S]*grid-column: 1;[\s\S]*width: max-content;[\s\S]*justify-self: end;/);
   assert.match(css, /overflow-anchor: none/);
-  assert.match(css, /\.loaderBlob/);
+  assert.doesNotMatch(css, /\.loaderBlob/);
   assert.match(css, /\.Jump/);
   assert.match(css, /\.row--alternate/);
   assert.doesNotMatch(css, /\.virtualRow:not\(:last-child\) \.row/);

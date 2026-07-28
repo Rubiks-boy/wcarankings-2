@@ -7,6 +7,9 @@
 :root,
 :root[data-theme="light"] {
   color-scheme: light;
+  --cubic-move: cubic-bezier(0.4, 0, 0.2, 1);
+  --cubic-enter: cubic-bezier(0, 0, 0.2, 1);
+  --cubic-exit: cubic-bezier(0.4, 0, 1, 1);
   --page: #fffcff;
   --rail-surface: var(--page);
   --surface: #fff;
@@ -31,7 +34,6 @@
   --error: #a33;
   --focus: rgb(136 15 211);
   --focus-ring: rgb(121 92 169 / 0.3);
-  --loader: #ccc;
   --shadow: rgb(24 48 61 / 0.18);
   --shadow-soft: rgb(24 48 61 / 0.12);
   --overlay: rgb(255 252 255 / 0.94);
@@ -64,7 +66,6 @@
   --error: #ff9494;
   --focus: #d2a8ff;
   --focus-ring: rgb(210 168 255 / 0.38);
-  --loader: #52606a;
   --shadow: rgb(0 0 0 / 0.42);
   --shadow-soft: rgb(0 0 0 / 0.3);
   --overlay: rgb(18 20 23 / 0.94);
@@ -98,7 +99,6 @@
     --error: #ff9494;
     --focus: #d2a8ff;
     --focus-ring: rgb(210 168 255 / 0.38);
-    --loader: #52606a;
     --shadow: rgb(0 0 0 / 0.42);
     --shadow-soft: rgb(0 0 0 / 0.3);
     --overlay: rgb(18 20 23 / 0.94);
@@ -126,7 +126,7 @@ body {
   overflow: visible;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
-  border: 0;
+  border: 1px solid transparent;
 }
 
 ol,
@@ -186,9 +186,9 @@ select {
 
 .headerTitle {
   display: flex;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   align-items: center;
-  min-width: 0;
+  min-width: max-content;
   gap: 0.75em;
 }
 
@@ -275,10 +275,108 @@ select {
   color: var(--text);
 }
 
+.findBar.findBar--header {
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 0.5em;
+  background-color: transparent;
+  box-shadow: none;
+  transition: width 250ms var(--cubic-move),
+    border-color 150ms var(--cubic-exit),
+    background-color 150ms var(--cubic-exit);
+}
+
+.findBar--header[data-has-text="true"],
+.findBar--header:focus-within {
+  width: min(20em, calc(100vw - 2em));
+  border-color: var(--border-strong);
+  background-color: var(--surface);
+  transition: width 250ms var(--cubic-move),
+    border-color 150ms var(--cubic-enter),
+    background-color 150ms var(--cubic-enter);
+}
+
+.findBar--header .findIcon {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 0;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-strong);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: color 150ms var(--cubic-move);
+}
+
+.findBar--header .findInput {
+  margin-left: 40px;
+}
+
+.findBar--header:not([data-has-text="true"]):not(:focus-within)
+  .findIcon:hover {
+  color: var(--focus);
+}
+
+.findBar--header .findClose {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  flex: 0 0 40px;
+  padding: 0;
+  place-items: center;
+  color: var(--text-strong);
+  font-size: inherit;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: color 150ms var(--cubic-move),
+    opacity 150ms var(--cubic-exit), visibility 0s linear 150ms;
+}
+
+.findBar--header .findStatus {
+  margin-right: 40px;
+}
+
+.findBar--header[data-has-text="true"] .findClose {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transition: color 150ms var(--cubic-move),
+    opacity 150ms var(--cubic-enter), visibility 0s;
+}
+
+.findBar--header .findClose svg {
+  width: 20px;
+  height: 20px;
+}
+
+.findBar--header .findClose:hover,
+.findBar--header .findClose:focus-visible {
+  color: var(--focus);
+  outline: none;
+}
+
 .header h1 {
   margin-block: 0.5em;
   font-weight: 200;
   font-size: 1.7em;
+  white-space: nowrap;
 }
 
 .header h1 a {
@@ -293,17 +391,17 @@ select {
   flex: 0 0 auto;
   padding: 0.5em;
   place-items: center;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 50%;
   background: var(--surface);
   color: var(--text-strong);
   cursor: pointer;
+  transition: color 150ms var(--cubic-move);
 }
 
 .themeToggle:hover,
 .themeToggle:focus-visible {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--focus-ring);
+  color: var(--focus);
   outline: none;
 }
 
@@ -325,8 +423,12 @@ select {
   display: flex;
   width: min(100%, 36em);
   align-items: center;
-  justify-self: center;
+  justify-self: start;
   gap: 1em;
+}
+
+.chooserEventPicker {
+  display: none;
 }
 
 .searchButton {
@@ -371,6 +473,8 @@ select {
   font: inherit;
   appearance: none;
   text-align: left;
+  transition: border-color 150ms var(--cubic-move),
+    box-shadow 150ms var(--cubic-move);
 }
 
 .regionPicker > svg {
@@ -381,10 +485,41 @@ select {
   transform: translateY(-50%);
 }
 
-.regionPickerTrigger:hover,
+.regionPickerClear {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-strong);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: color 150ms var(--cubic-move);
+}
+
+.regionPickerClear svg {
+  width: 20px;
+  height: 20px;
+}
+
+.regionPickerClear:hover,
+.regionPickerClear:focus-visible {
+  color: var(--focus);
+  outline: none;
+}
+
+.regionPickerTrigger:focus-visible,
 .regionPickerTrigger[aria-expanded="true"] {
-  border-color: var(--accent);
+  border-color: var(--focus);
   box-shadow: 0 0 5px var(--focus-ring);
+  outline: none;
 }
 
 .regionPickerValue,
@@ -396,14 +531,31 @@ select {
 .regionPickerMenu {
   position: absolute;
   z-index: 20;
-  top: calc(100% + 0.35em);
+  top: calc(100% + 0.5em);
   right: 0;
   left: 0;
   overflow: hidden;
-  border: 1px solid var(--border-accent);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.5em;
   background: var(--surface);
-  box-shadow: 0 8px 24px var(--shadow);
+  box-shadow: 0 4px 16px var(--shadow);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.97);
+  transform-origin: top left;
+  transition: opacity 150ms var(--cubic-exit),
+    transform 150ms var(--cubic-exit),
+    visibility 0s linear 150ms;
+}
+
+.regionPickerMenu[data-open="true"] {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+  transition: opacity 150ms var(--cubic-enter),
+    transform 150ms var(--cubic-enter), visibility 0s;
 }
 
 .regionOptions {
@@ -433,8 +585,12 @@ select {
 }
 
 .regionOption:hover,
-.regionOption.isSelected {
+.regionOption.isActive {
   background: var(--surface-hover);
+}
+
+.regionOption.isSelected {
+  color: var(--focus);
 }
 
 .regionEmpty {
@@ -490,6 +646,7 @@ select {
 
 .rankingTypeToggle {
   box-sizing: border-box;
+  position: relative;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: stretch;
@@ -504,6 +661,25 @@ select {
   overflow: hidden;
 }
 
+.rankingTypeToggle::before {
+  position: absolute;
+  z-index: 0;
+  top: 1px;
+  bottom: 1px;
+  left: 1px;
+  width: calc((100% - 2px) / 2);
+  border-radius: 0.35em;
+  background: var(--surface-selected);
+  content: "";
+  pointer-events: none;
+  transform: translateX(0);
+  transition: transform 250ms var(--cubic-move);
+}
+
+.rankingTypeToggle[data-ranking-type="average"]::before {
+  transform: translateX(100%);
+}
+
 .selectInput select,
 .rankingTypeToggle,
 .regionPickerTrigger {
@@ -511,9 +687,15 @@ select {
   min-height: 0;
 }
 
+.eventInput select {
+  height: 44px;
+  min-height: 44px;
+}
+
 .rankingTypeOption {
   box-sizing: border-box;
   position: relative;
+  z-index: 1;
   display: grid;
   width: 100%;
   min-width: 0;
@@ -524,7 +706,7 @@ select {
   color: var(--text-muted);
   cursor: pointer;
   font-size: 0.85em;
-  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+  transition: color 150ms ease;
 }
 
 .rankingTypeOption input {
@@ -535,7 +717,6 @@ select {
 }
 
 .rankingTypeOption.isSelected {
-  background: var(--surface-selected);
   color: var(--text-strong);
 }
 
@@ -548,9 +729,8 @@ select {
   opacity: 0.45;
 }
 
-.rankingTypeOption:focus-within {
-  box-shadow: 0 0 0 2px var(--focus-ring);
-  outline: none;
+.rankingTypeOption:has(input:focus-visible) {
+  color: var(--focus);
 }
 
 .selectInput select:focus-visible {
@@ -562,6 +742,8 @@ select {
 .outerListWrapper {
   display: flex;
   justify-content: center;
+  margin-right: -0.5em;
+  margin-left: -1em;
 }
 
 .listContainer {
@@ -598,44 +780,19 @@ select {
   transition: var(--t-transform);
 }
 
-.loadingList .listItem {
-  position: relative;
-}
-
-.listItem.isLoading {
-  transform: none;
-}
-
-.loader {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 0.5em;
-  width: 100%;
-  padding: 0.75em;
-}
-
-.isLoading .row {
-  opacity: 0;
-}
-
 .row {
   display: flex;
   align-items: center;
   gap: 0.5em;
   height: 100%;
-  padding: 0.75em;
+  padding-block: 0.75em;
+  padding-inline: 1rem;
   margin-bottom: 0;
   border: 0;
   border-radius: 0;
   font-size: 1.0625em;
   font-weight: 300;
   transition: opacity var(--t-duration) ease var(--t-animation-delay), background-color 40ms ease;
-}
-
-.loaderRow {
-  width: 100%;
-  min-height: 65.45px;
 }
 
 .row--alternate {
@@ -707,10 +864,11 @@ select {
 
 .result {
   display: grid;
-  grid-template-columns: 8ch 5.5ch;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 0.5em;
-  min-width: calc(8ch + 5.5ch + 0.5em);
+  column-gap: 6px;
+  min-width: 8ch;
+  max-width: 50%;
   margin-left: auto;
   text-align: right;
 }
@@ -721,26 +879,22 @@ select {
 
 .recordBadges {
   display: flex;
-  grid-column: 2;
-  width: 5.5ch;
-  min-height: 1.25em;
+  grid-column: 1;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: flex-end;
 }
 
 .recordBadge {
   display: inline-flex;
   align-items: center;
-  min-height: 1.25em;
-  padding: 0.2em 0.45em;
+  padding: 0.12em 0.3em;
   border-radius: 0.3em;
   background: #a16207;
   color: #fff;
-  font-size: 0.68em;
+  font-size: 0.64em;
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
-  transform: translate(-0.24em, -0.58em);
 }
 
 .recordBadge--WR {
@@ -752,18 +906,19 @@ select {
 }
 
 .best {
-  grid-column: 1;
-  width: 8ch;
+  grid-column: 2;
   font-size: 1.08em;
   font-weight: 500;
   text-align: right;
 }
 
 .competitionName {
-  grid-column: 1;
-  width: max-content;
-  max-width: none;
-  overflow: visible;
+  grid-column: 1 / -1;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   justify-self: end;
   margin-top: 0.1em;
   color: var(--text-muted);
@@ -775,31 +930,6 @@ select {
   margin-top: 0.15em;
   color: var(--text-muted);
   font-size: 0.75em;
-}
-
-.loaderBlob {
-  height: 1em;
-  padding: 0.5em;
-  margin-block: 0.1em;
-  border-radius: 0.5em;
-  background-color: var(--loader);
-  transform: scale(120%, 120%);
-  transition: transform var(--t-duration) ease var(--t-animation-delay);
-}
-
-.isLoading .loaderBlob {
-  transform: unset;
-}
-
-.loaderBlob.rank {
-  width: 4ch;
-  margin-right: 1em;
-}
-
-.loaderBlob.name {
-  width: 80%;
-  max-width: 500px;
-  margin-right: 1em;
 }
 
 .listMessage {
@@ -973,304 +1103,15 @@ select {
   50% { opacity: 0; }
 }
 
-.loadingList {
-  min-height: 10em;
-}
-
-.Jump {
-  position: fixed;
-  z-index: 1;
-  inset-inline: 0;
-  display: flex;
-  justify-content: center;
-  visibility: hidden;
-  opacity: 0;
-  transition: none;
-}
-
-.Jump--up {
-  top: 1em;
-  transform: translateY(-1em);
-}
-
-.Jump--down {
-  bottom: 4em;
-  transform: translateY(1em);
-}
-
-.Jump.visible {
-  visibility: visible;
-  opacity: 1;
-  transform: translateY(0);
-  transition: none;
-}
-
-.Jump--up {
-  transition: transform 400ms ease-out, opacity 400ms ease-out,
-    visibility 0s linear 400ms;
-}
-
-.Jump--up.visible {
-  transition: transform 400ms ease-out, opacity 400ms ease-out;
-}
-
-.Jump-rail {
-  position: relative;
-  display: flex;
-  min-width: 40px;
-  min-height: 40px;
-  align-items: center;
-  overflow: visible;
-  border-radius: 2em;
-  background: var(--rail-surface);
-  interpolate-size: allow-keywords;
-  transition: width 400ms ease;
-}
-
-.Jump .Jump-rail {
-  filter: drop-shadow(0 8px 24px var(--shadow)) drop-shadow(0 2px 6px var(--shadow-soft));
-}
-
-.Jump--up .Jump-rail--withEvent {
-  width: min(17em, calc(100vw - 2em));
-}
-
-.Jump-button,
-.Jump-searchButton {
-  display: flex;
-  align-items: center;
-  border: none;
-  background-color: transparent;
-  color: var(--text-strong);
-  fill: var(--text-strong);
-  font-size: 0.9em;
-}
-
-.Jump-button {
-  gap: 0.5em;
-  min-width: 0;
-  min-height: 40px;
-  max-width: 16em;
-  padding: 0.35em 0.75em;
-  overflow: hidden;
-  text-wrap: nowrap;
-}
-
-.Jump-rail--searchNavigation {
-  width: min(26em, calc(100vw - 2em));
-}
-
-.Jump-searchNavigation {
-  display: flex;
-  width: 0;
-  max-width: 0;
-  min-height: 40px;
-  flex: 0 1 0;
-  overflow: hidden;
-  opacity: 0;
-}
-
-.Jump-searchNavigation.isVisible {
-  width: min(26em, calc(100vw - 2em));
-  max-width: min(26em, calc(100vw - 2em));
-  flex: 0 1 auto;
-  opacity: 1;
-}
-
-.Jump-searchNavigationButton {
-  display: flex;
-  min-width: 0;
-  min-height: 40px;
-  flex: 1 1 50%;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45em;
-  padding: 0.35em 0.75em;
-  border: 0;
-  background: transparent;
-  color: var(--text-strong);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.9em;
-  white-space: nowrap;
-}
-
-.Jump-searchNavigationButton + .Jump-searchNavigationButton {
-  border-left: 1px solid var(--border-subtle);
-}
-
-.Jump-searchNavigationButton:hover,
-.Jump-searchNavigationButton:focus-visible {
-  color: var(--focus);
-  fill: var(--focus);
-  outline: none;
-}
-
-.Jump-button.isCollapsed {
-  flex: 0 1 auto;
-  max-width: 0;
-  padding-inline: 0;
-  gap: 0;
-  pointer-events: none;
-}
-
-.Jump-eventPreview {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  min-height: 40px;
-  flex: 0 0 40px;
-  box-sizing: border-box;
-  padding: 0;
-  place-items: center;
-  border: 0;
-  border-right: 1px solid var(--border-subtle);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 1.35em;
-  line-height: 1;
-}
-
-.Jump-eventPreview::before {
-  display: block;
-  vertical-align: baseline;
-}
-
-.Jump-eventPreview:hover,
-.Jump-eventPreview:focus-visible,
-.Jump-eventOption:hover,
-.Jump-eventOption.isSelected,
-.Jump-eventOption:focus-visible {
-  color: var(--focus);
-  outline: none;
-}
-
-.Jump-eventMenu {
-  position: absolute;
-  z-index: 1;
-  top: calc(100% + 0.5em);
-  left: 0;
-  display: grid;
-  grid-template-columns: repeat(5, 40px);
-  padding: 0.35em;
-  border: 1px solid var(--border-subtle);
-  border-radius: 0.75em;
-  background: var(--surface);
-  box-shadow: 0 8px 24px var(--shadow), 0 2px 6px var(--shadow-soft);
-}
-
-.Jump-eventOption {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  place-items: center;
-  border: 0;
-  border-radius: 0.5em;
-  background: transparent;
-  color: var(--text-strong);
-  cursor: pointer;
-  font-size: 1.25em;
-}
-
-.Jump-rail--withEvent .Jump-button {
-  border-radius: 0;
-}
-
-.Jump-searchButton {
-  justify-content: center;
-  width: 40px;
-  min-width: 40px;
-  min-height: 40px;
-  align-self: stretch;
-  border-left: 1px solid var(--border-subtle);
-  cursor: pointer;
-}
-
-.Jump .searchButton--rail {
-  width: 40px;
-  height: 40px;
-  min-height: 40px;
-  flex: 0 0 40px;
-  padding: 0;
-  border: 0;
-  border-left: 1px solid var(--border-subtle);
-  border-radius: 0 2em 2em 0;
-  background: var(--overlay);
-  color: var(--text-strong);
-  box-shadow: none;
-}
-
-.Jump .searchButton--rail:hover,
-.Jump .searchButton--rail:focus-visible {
-  color: var(--focus);
-  box-shadow: none;
-}
-
-.Jump .findBar--railOverlay {
-  position: absolute;
-  z-index: 2;
-  top: 0;
-  right: 0;
-  width: calc(100% - 40px);
-  height: 40px;
-  min-height: 40px;
-  overflow: hidden;
-  box-sizing: border-box;
-  padding: 0;
-  border: 0;
-  border-left: 1px solid var(--border-subtle);
-  border-radius: 0 2em 2em 0;
-  background: var(--rail-surface);
-  box-shadow: none;
-}
-
-.Jump--up .Jump-rail:has(.findBar--railOverlay) {
-  width: min(20em, calc(100vw - 2em));
-}
-
-.Jump .findBar--railOverlay .findIcon,
-.Jump .findBar--railOverlay .findClose {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
-  padding: 0;
-  place-items: center;
-}
-
-.Jump .findBar--railOverlay .findIcon svg,
-.Jump .findBar--railOverlay .findClose,
-.Jump .Jump-button svg,
-.Jump .searchButton--rail svg {
-  width: 24px;
-  height: 24px;
-}
-
-.Jump .findBar--railOverlay .findClose {
-  font-size: 24px;
-  line-height: 1;
-}
-
-.Jump .findBar--railOverlay .findInput,
-.Jump .findBar--railOverlay .findStatus {
-  padding-inline: 0.25em;
-}
-
-.Jump-button:hover,
-.Jump-searchButton:hover,
-.Jump-button:focus-visible,
-.Jump-searchButton:focus-visible {
-  color: var(--focus);
-  fill: var(--focus);
-  cursor: pointer;
-  outline: none;
-}
-
 @media only screen and (min-width: 500px) {
   .rank {
     margin-right: 1em;
+  }
+}
+
+@media only screen and (max-width: 600px) {
+  .competitionName {
+    display: none;
   }
 }
 
@@ -1282,6 +1123,30 @@ select {
   .chooser {
     width: 100%;
     gap: 0.5em;
+  }
+
+  .eventInput {
+    display: none;
+  }
+
+  .chooserEventPicker {
+    position: relative;
+    display: block;
+    flex: 0 0 44px;
+  }
+
+  .chooserEventPicker .EventPicker-preview {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding-left: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.5em;
+    background: var(--surface);
+  }
+
+  .chooserEventPicker .EventPicker-menu {
+    z-index: 20;
   }
 
   .headerTopRow {
@@ -1300,6 +1165,15 @@ select {
     min-height: 40px;
   }
 
+  .findBar.findBar--header {
+    width: 40px;
+  }
+
+  .findBar.findBar--header[data-has-text="true"],
+  .findBar.findBar--header:focus-within {
+    width: max(40px, min(20em, calc(100vw - 13em)));
+  }
+
   .selectInput,
   .regionPicker {
     min-width: 0;
@@ -1313,8 +1187,8 @@ select {
   }
 
   .selectInput select[name="Event Id"] {
-    height: 2.75em;
-    min-height: 2.75em;
+    height: 44px;
+    min-height: 44px;
     padding-block: 0.5em;
     font-size: 0.85em;
   }
@@ -1331,8 +1205,9 @@ select {
 
   .regionPickerTrigger {
     min-height: 40px;
-    padding: 0.75em 0.45em;
-    font-size: 0.75em;
+    padding: 0.75em;
+    padding-right: 44px;
+    font-size: 16px;
   }
 
   .selectInput select,
@@ -1342,6 +1217,36 @@ select {
     min-height: 2.75em;
   }
 
+  .regionPickerTrigger {
+    height: 44px;
+    min-height: 44px;
+  }
+
+}
+
+@media only screen and (max-width: 399px) {
+  .headerTopRow {
+    position: relative;
+  }
+
+  .headerActions .findBar.findBar--header {
+    position: absolute;
+    top: 50%;
+    right: calc(40px + 0.5em);
+    transform: translateY(-50%);
+  }
+
+  .headerTopRow:has(
+      .findBar--header:is([data-has-text="true"], :focus-within)
+    ) .headerActions .findBar.findBar--header {
+    right: 0;
+    width: 100%;
+    max-width: none;
+    height: 44px;
+    min-height: 44px;
+    border-color: var(--border-strong);
+    background-color: var(--surface);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

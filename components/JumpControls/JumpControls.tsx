@@ -1,132 +1,235 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { Icon } from "../Icon/Icon";
-import { formatRankingNumber } from "../RankingsExplorer/types";
+import "./JumpControls.css";
+import { useEffect, useRef, type KeyboardEvent, type Ref } from "react";
+import { EventPicker } from "../EventPicker/EventPicker";
+import ArrowDownIcon from "../Icon/arrow-down.svg?react";
+import ArrowUpIcon from "../Icon/arrow-up.svg?react";
+import CloseIcon from "../Icon/close.svg?react";
+import SearchIcon from "../Icon/search.svg?react";
+import {
+  formatRankingNumber,
+  type RankingEntry,
+} from "../RankingsExplorer/types";
+import { WCA_EVENTS } from "@/lib/wca";
 
-type EventOption = {
-  id: string;
-  name: string;
-};
+export function JumpUpControls({
+  armed,
+  currentPosition,
+  onJump,
+  event,
+  onEventChange,
+  searchInputRef,
+  findQuery,
+  findError,
+  findLoading,
+  findPending,
+  findMatches,
+  findIndex,
+  onSearchOpen,
+  onSearchClose,
+  onSearchQueryChange,
+  onSearchCycle,
+}: {
+  armed: boolean;
+  currentPosition: number;
+  onJump: () => void;
+  event: (typeof WCA_EVENTS)[number];
+  onEventChange: (eventId: (typeof WCA_EVENTS)[number]["id"]) => void;
+  searchInputRef?: Ref<HTMLInputElement>;
+  findQuery: string;
+  findError: string;
+  findLoading: boolean;
+  findPending: boolean;
+  findMatches: RankingEntry[];
+  findIndex: number;
+  onSearchOpen: () => void;
+  onSearchClose: () => void;
+  onSearchQueryChange: (query: string) => void;
+  onSearchCycle: (direction: -1 | 1) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const searchBarRef = useRef<HTMLDivElement>(null);
 
-export function JumpControls({
-  direction,
-  visible,
+  useEffect(() => {
+    const handleEscape = (keyboardEvent: globalThis.KeyboardEvent) => {
+      if (keyboardEvent.key !== "Escape") return;
+
+      const searchHasFocus = searchBarRef.current?.contains(document.activeElement);
+      if (!findQuery && !searchHasFocus) return;
+
+      keyboardEvent.preventDefault();
+      if (findQuery) onSearchQueryChange("");
+      inputRef.current?.blur();
+      onSearchClose();
+    };
+
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [findQuery, onSearchClose, onSearchQueryChange]);
+
+  const label =
+    armed || currentPosition <= 5000
+      ? "Jump to top"
+      : `Jump ${formatRankingNumber(5000)}`;
+  let searchStatus = "";
+  if (findError) searchStatus = findError;
+  else if (findLoading || findPending) searchStatus = "Searching…";
+  else if (findQuery.trim()) {
+    searchStatus = findMatches.length
+      ? `${findIndex + 1} of ${findMatches.length}`
+      : "No matches";
+  }
+
+  const handleSearchKeyDown = (keyboardEvent: KeyboardEvent<HTMLInputElement>) => {
+    if (keyboardEvent.key === "Enter") {
+      keyboardEvent.preventDefault();
+      onSearchCycle(keyboardEvent.shiftKey ? -1 : 1);
+    }
+  };
+
+  const setInputRef = (input: HTMLInputElement | null) => {
+    inputRef.current = input;
+    if (typeof searchInputRef === "function") searchInputRef(input);
+    else if (searchInputRef) searchInputRef.current = input;
+  };
+
+  const openSearch = () => {
+    onSearchOpen();
+    inputRef.current?.focus();
+    setTimeout(() => inputRef.current?.focus(), 25);
+  };
+
+  return (
+    <div className="Jump" data-direction="up">
+      <EventPicker event={event} onChange={onEventChange} />
+      <div className="Jump-buttonWrapper">
+        <div className="Jump-buttonClip">
+          <button className="Jump-button" onClick={onJump} type="button">
+            <ArrowUpIcon />
+            <span>{label}</span>
+            <ArrowUpIcon />
+          </button>
+        </div>
+      </div>
+      <div
+        ref={searchBarRef}
+        className="findBar findBar--rail"
+        data-has-text={findQuery.length > 0}
+        role="search"
+      >
+          <button
+            className="findIcon"
+            type="button"
+            tabIndex={-1}
+            onMouseDown={(mouseEvent) => mouseEvent.preventDefault()}
+            onClick={openSearch}
+            aria-label="Search names or WCA IDs"
+            title="Search names or WCA IDs (Ctrl+F)"
+          >
+            <SearchIcon />
+          </button>
+          <input
+            ref={setInputRef}
+            className="findInput"
+            type="text"
+            value={findQuery}
+            onFocus={onSearchOpen}
+            onChange={(inputEvent) => onSearchQueryChange(inputEvent.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            aria-label="Find a name or WCA ID"
+          />
+          <span
+            className={`findStatus${findError ? " isError" : ""}`}
+            aria-live="polite"
+          >
+            {searchStatus}
+          </span>
+          {findQuery.length > 0 && (
+            <button
+              className="findClose"
+              type="button"
+              onMouseDown={(mouseEvent) => mouseEvent.preventDefault()}
+              onClick={() => {
+                inputRef.current?.blur();
+                onSearchClose();
+              }}
+              aria-label="Close search"
+            >
+              <CloseIcon />
+            </button>
+          )}
+      </div>
+    </div>
+  );
+}
+
+export function JumpDownControls({
   armed,
   currentPosition,
   total,
   onJump,
-  searchControl,
   searchActive,
   onSearchPrevious,
   onSearchNext,
-  eventIcon,
-  eventLabel,
-  eventOptions,
-  onEventChange,
 }: {
-  direction: "up" | "down";
-  visible: boolean;
   armed: boolean;
   currentPosition: number;
   total: number;
   onJump: () => void;
-  searchControl?: ReactNode;
-  searchActive?: boolean;
-  onSearchPrevious?: () => void;
-  onSearchNext?: () => void;
-  eventIcon?: string;
-  eventLabel?: string;
-  eventOptions?: readonly EventOption[];
-  onEventChange?: (eventId: string) => void;
+  searchActive: boolean;
+  onSearchPrevious: () => void;
+  onSearchNext: () => void;
 }) {
-  const [eventMenuOpen, setEventMenuOpen] = useState(false);
-  const nearEdge =
-    direction === "up"
-      ? currentPosition <= 5000
-      : Number.isFinite(total) && currentPosition >= total - 5000;
-  let label = `Jump ${formatRankingNumber(5000)}`;
-  if (armed || nearEdge) label = direction === "up" ? "Jump to top" : "Jump to end";
-  const searchNavigation =
-    searchActive && onSearchPrevious !== undefined && onSearchNext !== undefined;
+  const nearEnd = Number.isFinite(total) && currentPosition >= total - 5000;
+  const label =
+    armed || nearEnd ? "Jump to end" : `Jump ${formatRankingNumber(5000)}`;
 
   return (
-    <div className={`Jump Jump--${direction}${visible ? " visible" : ""}`}>
-      <div
-        className={`Jump-rail${searchControl ? "" : " Jump-rail--single"}${
-          eventIcon ? " Jump-rail--withEvent" : ""
-        }${searchNavigation ? " Jump-rail--searchNavigation" : ""
-        }`}
-      >
-        {eventIcon && onEventChange && eventOptions && (
+    <div
+      className="Jump"
+      data-direction="down"
+      data-search-navigation={searchActive}
+    >
+      <div className="Jump-buttonWrapper">
+        <div className="Jump-buttonClip">
           <button
-            className={`Jump-eventPreview cubing-icon event-${eventIcon}`}
-            aria-label={eventLabel}
-            title={eventLabel}
-            aria-haspopup="listbox"
-            aria-expanded={eventMenuOpen}
+            className="Jump-button"
+            onClick={onJump}
             type="button"
-            onClick={() => setEventMenuOpen((open) => !open)}
-          />
-        )}
-        <button
-          className={`Jump-button${searchNavigation ? " isCollapsed" : ""}`}
-          onClick={onJump}
-          type="button"
-          disabled={searchNavigation}
-          aria-hidden={searchNavigation}
-        >
-          <Icon name="arrow" direction={direction} />
-          <span>{label}</span>
-          <Icon name="arrow" direction={direction} />
-        </button>
-        <div
-          className={`Jump-searchNavigation${
-            searchNavigation ? " isVisible" : ""
-          }`}
-          aria-hidden={!searchNavigation}
-        >
+            disabled={searchActive}
+            aria-hidden={searchActive}
+          >
+            <ArrowDownIcon />
+            <span>{label}</span>
+            <ArrowDownIcon />
+          </button>
+        </div>
+      </div>
+      <div
+        className="Jump-searchNavigation"
+        aria-hidden={!searchActive}
+      >
+        <div className="Jump-searchNavigationContent">
           <button
             className="Jump-searchNavigationButton"
             onClick={onSearchPrevious}
             type="button"
-            disabled={!searchNavigation}
+            disabled={!searchActive}
           >
-            <Icon name="arrow" direction="up" />
-            <span>Previous person</span>
+            <ArrowUpIcon />
+            <span>Previous</span>
           </button>
           <button
             className="Jump-searchNavigationButton"
             onClick={onSearchNext}
             type="button"
-            disabled={!searchNavigation}
+            disabled={!searchActive}
           >
-            <span>Next person</span>
-            <Icon name="arrow" direction="down" />
+            <span>Next</span>
+            <ArrowDownIcon />
           </button>
         </div>
-        {searchControl}
-        {eventMenuOpen && eventOptions && onEventChange && (
-          <div className="Jump-eventMenu" role="listbox" aria-label="Choose event">
-            {eventOptions.map((event) => (
-              <button
-                key={event.id}
-                className={`Jump-eventOption cubing-icon event-${event.id}${
-                  event.id === eventIcon ? " isSelected" : ""
-                }`}
-                type="button"
-                role="option"
-                aria-label={event.name}
-                aria-selected={event.id === eventIcon}
-                title={event.name}
-                onClick={() => {
-                  onEventChange(event.id);
-                  setEventMenuOpen(false);
-                }}
-              />
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );

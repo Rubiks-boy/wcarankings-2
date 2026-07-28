@@ -54,6 +54,7 @@ const meta = {
     rankingType: "single",
     loading: false,
     preserveListDuringLoad: false,
+    hasMore: true,
     loadingMore: false,
     highlightedPersonId: "",
     measureElement: () => undefined,

@@ -1,7 +1,8 @@
 "use client";
 
 import { WCA_EVENTS } from "@/lib/wca";
-import { Icon } from "../Icon/Icon";
+import { EventPicker } from "../EventPicker/EventPicker";
+import SelectChevronIcon from "../Icon/select-chevron.svg?react";
 import { RegionPicker } from "../RegionPicker/RegionPicker";
 import type { RegionOption, RegionSelection } from "../RankingsExplorer/types";
 
@@ -22,8 +23,13 @@ export function RankingControls({
   onRankingTypeChange: (rankingType: "single" | "average") => void;
   onRegionChange: (region: RegionOption) => void;
 }) {
+  const selectedEvent = WCA_EVENTS.find((event) => event.id === eventId)!;
+
   return (
     <div className="chooser">
+      <div className="chooserEventPicker">
+        <EventPicker event={selectedEvent} onChange={onEventChange} />
+      </div>
       <div className="selectInput eventInput">
         <select
           name="Event Id"
@@ -38,9 +44,13 @@ export function RankingControls({
             </option>
           ))}
         </select>
-        <Icon name="select" />
+        <SelectChevronIcon />
       </div>
-      <fieldset className="rankingTypeToggle" aria-label="Ranking type">
+      <fieldset
+        className="rankingTypeToggle"
+        data-ranking-type={rankingType}
+        aria-label="Ranking type"
+      >
         <legend className="visuallyHidden">Ranking type</legend>
         {(["single", "average"] as const).map((option) => (
           <label

@@ -18,6 +18,7 @@ export function ResultsTable({
   rankingType,
   loading,
   preserveListDuringLoad,
+  hasMore,
   loadingMore,
   highlightedPersonId,
   searchMatchPersonIds,
@@ -32,26 +33,14 @@ export function ResultsTable({
   rankingType: "single" | "average";
   loading: boolean;
   preserveListDuringLoad: boolean;
+  hasMore: boolean;
   loadingMore: boolean;
   highlightedPersonId: string;
   searchMatchPersonIds?: ReadonlySet<string>;
   measureElement: (element: Element | null) => void;
 }) {
   if (loading && !preserveListDuringLoad) {
-    return (
-      <ol className="list loadingList">
-        {Array.from({ length: 10 }, (_, index) => (
-          <RankingRow
-            key={index}
-            entry={null}
-            eventId={eventId}
-            rankingType={rankingType}
-            loading
-            animationIndex={index}
-          />
-        ))}
-      </ol>
-    );
+    return <div className="listMessage">Loading rankings…</div>;
   }
 
   return (
@@ -62,6 +51,33 @@ export function ResultsTable({
     >
       {renderedRows.map((virtualRow) => {
         const entry = entries[virtualRow.index] ?? null;
+        let content;
+
+        if (entry) {
+          content = (
+            <RankingRow
+              entry={entry}
+              eventId={eventId}
+              rankingType={rankingType}
+              animationIndex={virtualRow.index}
+              searchMatched={searchMatchPersonIds?.has(entry.personId)}
+              highlighted={entry.personId === highlightedPersonId}
+              rankIsDuplicate={
+                virtualRow.index > 0 &&
+                entries[virtualRow.index - 1]?.rank === entry.rank
+              }
+            />
+          );
+        } else if (hasMore) {
+          content = (
+            <div className="listMessage">
+              {loadingMore ? "Loading more results…" : "Keep scrolling…"}
+            </div>
+          );
+        } else {
+          content = <div className="listMessage">That’s all, folks</div>;
+        }
+
         return (
           <div
             ref={measureElement}
@@ -72,25 +88,7 @@ export function ResultsTable({
               transform: `translateY(${virtualRow.start - listOffset}px)`,
             }}
           >
-            {entry ? (
-              <RankingRow
-                entry={entry}
-                eventId={eventId}
-                rankingType={rankingType}
-                loading={false}
-                animationIndex={virtualRow.index}
-                searchMatched={searchMatchPersonIds?.has(entry.personId)}
-                highlighted={entry.personId === highlightedPersonId}
-                rankIsDuplicate={
-                  virtualRow.index > 0 &&
-                  entries[virtualRow.index - 1]?.rank === entry.rank
-                }
-              />
-            ) : (
-              <div className="listMessage">
-                {loadingMore ? "Loading more results…" : "Keep scrolling…"}
-              </div>
-            )}
+            {content}
           </div>
         );
       })}

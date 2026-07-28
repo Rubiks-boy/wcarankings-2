@@ -32,7 +32,11 @@ import {
   WCA_EVENTS,
 } from "@/lib/wca";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
-import { JumpControls } from "../JumpControls/JumpControls";
+import {
+  JumpDownControls,
+  JumpUpControls,
+} from "../JumpControls/JumpControls";
+import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVisibility";
 import { RankingControls } from "../RankingControls/RankingControls";
 import { ResultsTable } from "../ResultsTable/ResultsTable";
 import { SearchInputs } from "../SearchInputs/SearchInputs";
@@ -55,6 +59,7 @@ const SEARCH_ANIMATION_ROWS = 3;
 const VIM_JUMP_PAGE_COUNT = 2;
 const VIM_JUMP_SIZE = PAGE_SIZE * VIM_JUMP_PAGE_COUNT;
 const ROW_HEIGHT = 65.45;
+const END_MARKER_PEEK = ROW_HEIGHT + 40;
 
 export function centeredRowScrollTop(
   rowTop: number,
@@ -98,6 +103,15 @@ type SearchLayoutAnchor = {
   requestEpoch: number;
   personId: string;
   viewportTop: number;
+};
+
+type SearchSurface = "header" | "rail";
+
+type PendingSearchFocusHandoff = {
+  target: SearchSurface;
+  selectionStart: number | null;
+  selectionEnd: number | null;
+  selectionDirection: "forward" | "backward" | "none" | null;
 };
 
 const CLIENT_PAGE_CACHE_CAPACITY_333 = 512;
@@ -221,6 +235,40 @@ function getPage(
   pageCache.set(eventId, cacheKey, request, selection.scope === "world" && pageStart === 0);
   request.catch(() => pageCache.delete(eventId, cacheKey));
   return request;
+}
+
+async function getEndWindow(
+  eventId: string,
+  rankingType: "single" | "average",
+  selection: RegionSelection,
+  endSubRank: number
+) {
+  const finalPageStart = pageStartForSubRank(endSubRank);
+  const pageStarts = [
+    Math.max(0, finalPageStart - PAGE_SIZE),
+    finalPageStart,
+  ].filter((start, index, starts) => starts.indexOf(start) === index);
+  const pages = await Promise.all(
+    pageStarts.map((start) =>
+      getPage(eventId, rankingType, start + 1, selection)
+    )
+  );
+  const firstPage = pages[0];
+  const lastPage = pages.at(-1) ?? firstPage;
+  const seenPersonIds = new Set<string>();
+
+  return {
+    ...lastPage,
+    entries: pages.flatMap((page) =>
+      page.entries.filter((entry) => {
+        if (seenPersonIds.has(entry.personId)) return false;
+        seenPersonIds.add(entry.personId);
+        return true;
+      })
+    ),
+    startPosition: firstPage.startPosition,
+    previousPageStart: firstPage.previousPageStart,
+  };
 }
 
 async function getSearchWindow(
@@ -406,6 +454,9 @@ export function RankingsExplorer({
   const [entries, setEntries] = useState<RankingEntry[]>(
     initialData?.entries ?? []
   );
+  const [entriesRankingType, setEntriesRankingType] = useState(
+    initialRankingType
+  );
   const [startRank, setStartRank] = useState(initialData?.startRank ?? 1);
   const [startPosition, setStartPosition] = useState(
     initialData?.startPosition ?? 0
@@ -466,6 +517,12 @@ export function RankingsExplorer({
   const listRef = useRef<HTMLDivElement>(null);
   const headerFindInputRef = useRef<HTMLInputElement>(null);
   const railFindInputRef = useRef<HTMLInputElement>(null);
+  const tableReachedTopRef = useRef(false);
+  const pendingSearchFocusHandoffRef =
+    useRef<PendingSearchFocusHandoff | null>(null);
+  const searchCompositionActiveRef = useRef(false);
+  const searchFocusHandoffFrameRef = useRef<number | null>(null);
+  const searchFocusHandoffTimerRef = useRef<number | null>(null);
   const vimInputRef = useRef<HTMLInputElement>(null);
   const vimCommandRef = useRef(vimCommand);
   const moreRequestRef = useRef(false);
@@ -526,13 +583,102 @@ export function RankingsExplorer({
   });
 
   const rowVirtualizer = useWindowVirtualizer({
-    count: entries.length + (hasMore ? 1 : 0),
+    count: entries.length + 1,
     estimateSize: () => ROW_HEIGHT,
     overscan: 12,
     scrollMargin: listOffset,
   });
   const rowVirtualizerRef = useRef(rowVirtualizer);
   const virtualRows = rowVirtualizer.getVirtualItems();
+
+  const focusPendingSearchSurface = useCallback(() => {
+    const pending = pendingSearchFocusHandoffRef.current;
+    if (!pending || searchCompositionActiveRef.current) return false;
+
+    const targetShouldBeRail = tableReachedTopRef.current;
+    if ((pending.target === "rail") !== targetShouldBeRail) {
+      pendingSearchFocusHandoffRef.current = null;
+      return true;
+    }
+
+    const target =
+      pending.target === "rail"
+        ? railFindInputRef.current
+        : headerFindInputRef.current;
+    if (!target) return false;
+
+    target.focus({ preventScroll: true });
+    if (document.activeElement !== target) return false;
+
+    if (pending.selectionStart !== null && pending.selectionEnd !== null) {
+      try {
+        target.setSelectionRange(
+          pending.selectionStart,
+          pending.selectionEnd,
+          pending.selectionDirection ?? undefined
+        );
+      } catch {
+        // Some mobile browsers can reject selection changes during focus transfer.
+      }
+    }
+
+    pendingSearchFocusHandoffRef.current = null;
+    return true;
+  }, []);
+
+  const schedulePendingSearchFocus = useCallback(() => {
+    if (!pendingSearchFocusHandoffRef.current) return;
+
+    if (searchFocusHandoffFrameRef.current !== null) {
+      window.cancelAnimationFrame(searchFocusHandoffFrameRef.current);
+      searchFocusHandoffFrameRef.current = null;
+    }
+    if (searchFocusHandoffTimerRef.current !== null) {
+      window.clearTimeout(searchFocusHandoffTimerRef.current);
+      searchFocusHandoffTimerRef.current = null;
+    }
+
+    if (focusPendingSearchSurface()) return;
+    if (searchCompositionActiveRef.current) return;
+
+    searchFocusHandoffFrameRef.current = window.requestAnimationFrame(() => {
+      searchFocusHandoffFrameRef.current = null;
+      if (focusPendingSearchSurface()) return;
+
+      searchFocusHandoffTimerRef.current = window.setTimeout(() => {
+        searchFocusHandoffTimerRef.current = null;
+        focusPendingSearchSurface();
+      }, 25);
+    });
+  }, [focusPendingSearchSurface]);
+
+  useLayoutEffect(() => {
+    schedulePendingSearchFocus();
+  }, [schedulePendingSearchFocus, tableReachedTop]);
+
+  useEffect(() => {
+    const isFindInput = (target: EventTarget | null) =>
+      target === headerFindInputRef.current || target === railFindInputRef.current;
+    const handleCompositionStart = (event: CompositionEvent) => {
+      if (isFindInput(event.target)) searchCompositionActiveRef.current = true;
+    };
+    const handleCompositionEnd = (event: CompositionEvent) => {
+      if (!isFindInput(event.target)) return;
+      searchCompositionActiveRef.current = false;
+      schedulePendingSearchFocus();
+    };
+
+    document.addEventListener("compositionstart", handleCompositionStart);
+    document.addEventListener("compositionend", handleCompositionEnd);
+    return () => {
+      document.removeEventListener("compositionstart", handleCompositionStart);
+      document.removeEventListener("compositionend", handleCompositionEnd);
+      if (searchFocusHandoffFrameRef.current !== null)
+        window.cancelAnimationFrame(searchFocusHandoffFrameRef.current);
+      if (searchFocusHandoffTimerRef.current !== null)
+        window.clearTimeout(searchFocusHandoffTimerRef.current);
+    };
+  }, [schedulePendingSearchFocus]);
 
   useLayoutEffect(() => {
     const anchor = pendingSearchLayoutAnchorRef.current;
@@ -689,7 +835,23 @@ export function RankingsExplorer({
   useEffect(() => {
     const updateRailVisibility = () => {
       const tableTop = rankingListRef.current?.getBoundingClientRect().top;
-      setTableReachedTop((tableTop ?? Number.POSITIVE_INFINITY) <= 0);
+      const nextTableReachedTop =
+        (tableTop ?? Number.POSITIVE_INFINITY) <= 0;
+      if (nextTableReachedTop !== tableReachedTopRef.current) {
+        const source = nextTableReachedTop
+          ? headerFindInputRef.current
+          : railFindInputRef.current;
+        if (source && document.activeElement === source) {
+          pendingSearchFocusHandoffRef.current = {
+            target: nextTableReachedTop ? "rail" : "header",
+            selectionStart: source.selectionStart,
+            selectionEnd: source.selectionEnd,
+            selectionDirection: source.selectionDirection,
+          };
+        }
+        tableReachedTopRef.current = nextTableReachedTop;
+        setTableReachedTop(nextTableReachedTop);
+      }
       setAtPageEnd(
         window.scrollY + window.innerHeight >=
           document.documentElement.scrollHeight - 1
@@ -779,7 +941,10 @@ export function RankingsExplorer({
     previousRequestRef.current = false;
     const focusLast = pendingFocusLastRef.current;
     pendingFocusLastRef.current = false;
-    getPage(eventId, rankingType, startRank, regionSelection)
+    const pageRequest = focusLast
+      ? getEndWindow(eventId, rankingType, regionSelection, startRank)
+      : getPage(eventId, rankingType, startRank, regionSelection);
+    pageRequest
       .then((data) => {
         if (
           !active ||
@@ -839,6 +1004,7 @@ export function RankingsExplorer({
         pendingScrollToTopRef.current = false;
         pendingNavigationAppendRef.current = false;
         setEntries(loadedEntries);
+        setEntriesRankingType(rankingType);
         setStartPosition(
           appendNavigation ? loadedStartPosition : data.startPosition
         );
@@ -894,16 +1060,19 @@ export function RankingsExplorer({
               state: scrollAnimationStateRef.current,
               list: listRef.current,
               index: targetIndex,
-              alignment: "top",
+              alignment: focusLast ? "bottom" : "top",
+              bottomOffset: focusLast ? END_MARKER_PEEK : 0,
               requestedBehavior: "smooth",
               requestedDuration: getScrollAnimationDuration(
                 Math.abs(rankForStep - currentSubRank)
               ),
-              targetOffset: () =>
-                rowVirtualizerRef.current.getOffsetForIndex(
-                  targetIndex,
-                  "start"
-                )?.[0],
+              targetOffset: focusLast
+                ? undefined
+                : () =>
+                    rowVirtualizerRef.current.getOffsetForIndex(
+                      targetIndex,
+                      "start"
+                    )?.[0],
             });
           });
 
@@ -1766,13 +1935,12 @@ export function RankingsExplorer({
         state: scrollAnimationStateRef.current,
         list: listRef.current,
         index: targetIndex,
-        alignment: "top",
+        alignment: "bottom",
+        bottomOffset: END_MARKER_PEEK,
         requestedBehavior: "smooth",
         requestedDuration: getScrollAnimationDuration(
           Math.abs(endRank - currentRank)
         ),
-        targetOffset: () =>
-          rowVirtualizer.getOffsetForIndex(targetIndex, "start")?.[0],
       });
       pendingScrollDirectionRef.current = null;
       pendingFocusLastRef.current = false;
@@ -1785,7 +1953,6 @@ export function RankingsExplorer({
     entries.length,
     hasMore,
     lastRank,
-    rowVirtualizer,
     total,
     visibleSubRank,
   ]);
@@ -1890,6 +2057,36 @@ export function RankingsExplorer({
     resetToRankRef.current = resetToRank;
     jumpToEndRef.current = jumpToEnd;
   }, [jumpToEnd, resetToRank]);
+
+  useEffect(() => {
+    const onDocumentBoundaryKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      const isEditable =
+        target instanceof Element &&
+        target.matches("input, textarea, select, [contenteditable='true']");
+
+      if (isEditable || event.altKey || event.shiftKey) return;
+
+      const jumpToTop =
+        (event.metaKey && !event.ctrlKey && event.key === "ArrowUp") ||
+        (event.ctrlKey && !event.metaKey && event.key === "Home");
+      const jumpToBottom =
+        (event.metaKey && !event.ctrlKey && event.key === "ArrowDown") ||
+        (event.ctrlKey && !event.metaKey && event.key === "End");
+
+      if (!jumpToTop && !jumpToBottom) return;
+
+      event.preventDefault();
+      if (event.repeat) return;
+
+      if (jumpToTop) resetToRankRef.current(1);
+      else jumpToEndRef.current();
+    };
+
+    window.addEventListener("keydown", onDocumentBoundaryKeyDown);
+    return () =>
+      window.removeEventListener("keydown", onDocumentBoundaryKeyDown);
+  }, []);
 
   const executeVimCommand = useCallback(
     (rawCommand: string) => {
@@ -2084,8 +2281,8 @@ export function RankingsExplorer({
     pendingScrollToTopRef.current = true;
     pendingScrollDirectionRef.current = null;
     skipNextFindResetRef.current = true;
-    preserveListDuringLoadRef.current = false;
-    setPreserveListDuringLoad(false);
+    preserveListDuringLoadRef.current = true;
+    setPreserveListDuringLoad(true);
     setRankingType(nextRankingType);
     updateQueryParams({
       result: nextRankingType === "single" ? null : nextRankingType,
@@ -2126,13 +2323,17 @@ export function RankingsExplorer({
     });
   };
 
-  const openFind = () => {
+  const activateFind = () => {
     if (vimMode || vimSearchActive || regexSearch) resetFind();
     setVimSearchActive(false);
     setVimSearchQuery("");
     setRegexSearch(false);
     updateQueryParams({ mode: null });
     setFindOpen(true);
+  };
+
+  const openFind = () => {
+    activateFind();
     window.requestAnimationFrame(() =>
       (tableReachedTop
         ? railFindInputRef.current
@@ -2165,8 +2366,7 @@ export function RankingsExplorer({
     [findMatches, findResolvedQuery]
   );
   const activeFindMatch = findMatches[findIndex] ?? null;
-  const currentEvent = WCA_EVENTS.find((event) => event.id === eventId);
-  const eventLabel = `${currentEvent?.name ?? eventId}, ${rankingType === "single" ? "Single" : "Average"}`;
+  const currentEvent = WCA_EVENTS.find((event) => event.id === eventId)!;
 
   return (
     <div
@@ -2192,7 +2392,7 @@ export function RankingsExplorer({
               findMatches={findMatches}
               findIndex={findIndex}
               activeFindMatch={activeFindMatch}
-              onOpen={openFind}
+              onOpen={activateFind}
               onClose={closeFind}
               onQueryChange={changeFindQuery}
               onCycle={cycleFind}
@@ -2212,38 +2412,26 @@ export function RankingsExplorer({
       </header>
 
       <main>
-        <JumpControls
-          direction="up"
-          visible={tableReachedTop || jumpUpArmed}
+        <JumpControlsVisibility visible={tableReachedTop || jumpUpArmed}>
+          <JumpUpControls
           armed={jumpUpArmed}
           currentPosition={visibleSubRank}
-          total={total}
           onJump={handleJumpUp}
-          searchControl={
-            <SearchInputs
-              inputRef={railFindInputRef}
-              findOpen={findOpen}
-              findQuery={findQuery}
-              findError={findError}
-              findLoading={findLoading}
-              findPending={findPending}
-              findMatches={findMatches}
-              findIndex={findIndex}
-              activeFindMatch={activeFindMatch}
-              onOpen={openFind}
-              onClose={closeFind}
-              onQueryChange={changeFindQuery}
-              onCycle={cycleFind}
-              inRail
-            />
-          }
-          eventIcon={eventId}
-          eventLabel={eventLabel}
-          eventOptions={WCA_EVENTS}
-          onEventChange={(nextEventId) =>
-            changeEvent(nextEventId as (typeof WCA_EVENTS)[number]["id"])
-          }
-        />
+          event={currentEvent}
+          onEventChange={changeEvent}
+          searchInputRef={railFindInputRef}
+          findQuery={findQuery}
+          findError={findError}
+          findLoading={findLoading}
+          findPending={findPending}
+          findMatches={findMatches}
+          findIndex={findIndex}
+          onSearchOpen={activateFind}
+          onSearchClose={closeFind}
+          onSearchQueryChange={changeFindQuery}
+          onSearchCycle={cycleFind}
+          />
+        </JumpControlsVisibility>
 
         <div className="outerListWrapper" ref={listRef}>
           <div className="listContainer">
@@ -2260,9 +2448,10 @@ export function RankingsExplorer({
                 renderedListHeight={renderedListHeight}
                 listOffset={listOffset}
                 eventId={eventId}
-                rankingType={rankingType}
+                rankingType={entriesRankingType}
                 loading={loading}
                 preserveListDuringLoad={preserveListDuringLoad}
+                hasMore={hasMore}
                 loadingMore={loadingMore}
                 searchMatchPersonIds={searchMatchPersonIds}
                 highlightedPersonId={highlightedPersonId}
@@ -2272,20 +2461,22 @@ export function RankingsExplorer({
           </div>
         </div>
 
-        <JumpControls
-          direction="down"
+        <JumpControlsVisibility
           visible={
             jumpDownArmed ||
             (!atPageEnd && Number.isFinite(total) && visibleSubRank < total)
           }
+        >
+          <JumpDownControls
           armed={jumpDownArmed}
           currentPosition={visibleSubRank}
           total={total}
           onJump={handleJumpDown}
-          searchActive={findOpen}
+          searchActive={findOpen && findMatches.length > 0}
           onSearchPrevious={() => cycleFind(-1)}
           onSearchNext={() => cycleFind(1)}
-        />
+          />
+        </JumpControlsVisibility>
       </main>
       {(vimMode || vimSearchActive) && (
         <VimSearchInput

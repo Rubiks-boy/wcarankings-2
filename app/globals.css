@@ -489,29 +489,33 @@ select {
 }
 
 .rankingTypeToggle {
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: stretch;
   min-width: 0;
-  min-height: 3.25em;
+  min-height: 2.75em;
   margin: 0;
-  padding: 0.2em;
+  padding: 1px;
   border: 1px solid var(--border);
   border-radius: 0.5em;
   background: var(--surface);
   flex: 0.8 1 0;
+  overflow: hidden;
 }
 
 .selectInput select,
 .rankingTypeToggle,
 .regionPickerTrigger {
-  height: 3.25em;
+  height: 2.75em;
   min-height: 0;
 }
 
 .rankingTypeOption {
+  box-sizing: border-box;
   position: relative;
   display: grid;
+  width: 100%;
   min-width: 0;
   min-height: 2.5em;
   padding: 0.55em 0.65em;
@@ -1309,8 +1313,8 @@ select {
   }
 
   .selectInput select[name="Event Id"] {
-    height: 40px;
-    min-height: 40px;
+    height: 2.75em;
+    min-height: 2.75em;
     padding-block: 0.5em;
     font-size: 0.85em;
   }
@@ -1320,7 +1324,7 @@ select {
   }
 
   .rankingTypeOption {
-    min-height: 40px;
+    min-height: 2.5em;
     padding-block: 0.5em;
     font-size: 0.75em;
   }
@@ -1334,8 +1338,8 @@ select {
   .selectInput select,
   .rankingTypeToggle,
   .regionPickerTrigger {
-    height: 40px;
-    min-height: 40px;
+    height: 2.75em;
+    min-height: 2.75em;
   }
 
 }

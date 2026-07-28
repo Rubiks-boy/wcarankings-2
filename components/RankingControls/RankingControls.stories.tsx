@@ -22,6 +22,13 @@ const meta = {
   title: "Rankings/RankingControls",
   component: RankingControls,
   parameters: { layout: "fullscreen" },
+  decorators: [
+    (Story) => (
+      <div style={{ padding: "2rem" }}>
+        <Story />
+      </div>
+    ),
+  ],
   args: {
     eventId: "333",
     rankingType: "single",

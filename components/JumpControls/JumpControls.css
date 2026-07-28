@@ -23,7 +23,7 @@
 }
 
 .Jump-railSettings {
-  --rail-select-width: clamp(8.5em, 18vw, 9.25em);
+  --rail-select-width: clamp(7.5em, 16vw, 8.5em);
 
   display: flex;
   min-width: 0;
@@ -85,13 +85,14 @@
 
 .Jump-regionPicker .regionPickerTrigger {
   min-height: 40px;
-  padding: 0.5em 2.5em 0.5em 0.75em;
+  padding: 0.5em 2.5em;
   border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--text-muted);
   cursor: text;
   font-size: 0.875em;
+  text-align: center;
   text-overflow: ellipsis;
 }
 
@@ -239,7 +240,7 @@
 
 @media only screen and (max-width: 480px) {
   .Jump-railSettings {
-    --rail-select-width: max(40px, calc((100vw - 88px) / 2));
+    --rail-select-width: min(8.5em, calc((100vw - 88px) / 2));
   }
 
   .Jump-pagerButton,

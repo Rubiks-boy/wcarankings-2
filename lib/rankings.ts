@@ -38,7 +38,7 @@ function normalPageResponse(rows: RankingRow[], input: QueryInput, metadata: Ran
   const entries = rows.map(toRankingEntry);
   const startPosition = Math.min(Math.max(0, input.startRank - 1), total);
   const hasMore = input.startRank + entries.length <= total;
-  return { entries, hasMore, nextPageStart: hasMore ? input.startRank + PAGE_SIZE : null, previousPageStart: input.startRank > 1 && total > 0 ? Math.max(1, input.startRank - PAGE_SIZE) : null, startPosition, lastRank: entries.at(-1)?.subRank ?? null, total, fetchedAt: metadata.fetchedAt };
+  return { entries, hasMore, nextPageStart: hasMore ? input.startRank + PAGE_SIZE : null, previousPageStart: input.startRank > 1 && total > 0 ? Math.max(1, input.startRank - PAGE_SIZE) : null, startPosition, lastRank: entries.at(-1)?.subRank ?? null, total, exportDate: metadata.exportDate, fetchedAt: metadata.fetchedAt };
 }
 
 async function queryNormalPage(input: QueryInput, metadata: RankingsMetadata) {

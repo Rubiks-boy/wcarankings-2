@@ -81,7 +81,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /Jump to top/);
   assert.match(component, /Jump to end/);
   assert.match(component, /className="siteFooter"/);
-  assert.match(component, /fetched time unavailable/);
+  assert.match(component, /WCA export date unavailable/);
   assert.match(component, /closeOnOutsideClick/);
   assert.match(component, /document\.addEventListener\("pointerdown"/);
   assert.match(component, /loadPrevious/);

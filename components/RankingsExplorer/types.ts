@@ -21,6 +21,7 @@ export type RankingPage = {
   startPosition: number;
   lastRank: number | null;
   total: number;
+  exportDate?: string | null;
   fetchedAt: string | null;
   offlineStale?: boolean;
 };
@@ -32,6 +33,7 @@ export type InitialRankingData = Pick<
   | "nextPageStart"
   | "previousPageStart"
   | "total"
+  | "exportDate"
   | "fetchedAt"
 > & {
   startRank: number;
@@ -75,4 +77,21 @@ export function formatFetchedAgo(value: string) {
     return `${elapsedHours} hour${elapsedHours === 1 ? "" : "s"} ago`;
   const elapsedDays = Math.floor(elapsedHours / 24);
   return `${elapsedDays} day${elapsedDays === 1 ? "" : "s"} ago`;
+}
+
+export function formatExportDate(value: string) {
+  const exportDate = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(exportDate.getTime())) return "date unavailable";
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(exportDate);
+}
+
+export function formatRankingsFreshness(exportDate: string | null, fetchedAt: string | null) {
+  if (exportDate) return `WCA export dated ${formatExportDate(exportDate)}`;
+  if (fetchedAt) return `Imported ${formatFetchedAgo(fetchedAt)}`;
+  return "WCA export date unavailable";
 }

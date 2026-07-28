@@ -45,7 +45,7 @@ import { ThemeToggle } from "../ThemeToggle/ThemeToggle";
 import { VimHelp } from "../VimHelp/VimHelp";
 import { VimSearchInput } from "../VimSearchInput/VimSearchInput";
 import {
-  formatFetchedAgo,
+  formatRankingsFreshness,
   type InitialRankingData,
   type RankingEntry,
   type RankingPage,
@@ -228,6 +228,7 @@ function getPage(
       startPosition: data.startPosition,
       lastRank: data.lastRank,
       total: data.total,
+      exportDate: data.exportDate ?? null,
       fetchedAt: data.fetchedAt ?? null,
       offlineStale: response.headers.get("X-Rankings-Offline-Stale") === "1",
     };
@@ -473,6 +474,9 @@ export function RankingsExplorer({
   );
   const [total, setTotal] = useState(
     initialData?.total ?? Number.POSITIVE_INFINITY
+  );
+  const [exportDate, setExportDate] = useState<string | null>(
+    initialData?.exportDate ?? null
   );
   const [fetchedAt, setFetchedAt] = useState<string | null>(
     initialData?.fetchedAt ?? null
@@ -1042,6 +1046,7 @@ export function RankingsExplorer({
         setLastRank(data.lastRank);
         setHasMore(data.hasMore);
         setTotal(data.total);
+        setExportDate(data.exportDate ?? null);
         setFetchedAt(data.fetchedAt);
         setOfflineStale(Boolean(data.offlineStale));
         const requestedTargetIndex = focusLast
@@ -1283,6 +1288,7 @@ export function RankingsExplorer({
           setLastRank(data.lastRank);
           setHasMore(data.hasMore);
           setTotal(data.total);
+          setExportDate(data.exportDate ?? null);
           setFetchedAt(data.fetchedAt);
           setOfflineStale(Boolean(data.offlineStale));
           pendingScrollDirectionRef.current = null;
@@ -1689,6 +1695,7 @@ export function RankingsExplorer({
       setHasMore(data.hasMore);
       setLastRank(data.lastRank);
       setTotal(data.total);
+      setExportDate(data.exportDate ?? null);
       setFetchedAt(data.fetchedAt);
       setOfflineStale(Boolean(data.offlineStale));
     } catch (requestError) {
@@ -1737,6 +1744,7 @@ export function RankingsExplorer({
       setStartPosition(data.startPosition);
       setPreviousPageStart(data.previousPageStart);
       setLastRank(data.lastRank);
+      setExportDate(data.exportDate ?? null);
       setFetchedAt(data.fetchedAt);
       setOfflineStale(Boolean(data.offlineStale));
       window.requestAnimationFrame(() => {
@@ -2666,9 +2674,7 @@ export function RankingsExplorer({
         <span>By Adam Walker and Cailyn Sinclair</span>
         {offlineStale && <span role="status">Offline cached rankings may be stale</span>}
         <span>
-          {fetchedAt
-            ? `fetched ${formatFetchedAgo(fetchedAt)}`
-            : "fetched time unavailable"}
+          {formatRankingsFreshness(exportDate, fetchedAt)}
         </span>
       </footer>
     </div>

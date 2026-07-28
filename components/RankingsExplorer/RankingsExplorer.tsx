@@ -36,6 +36,7 @@ import { JumpControls } from "../JumpControls/JumpControls";
 import { RankingControls } from "../RankingControls/RankingControls";
 import { ResultsTable } from "../ResultsTable/ResultsTable";
 import { SearchInputs } from "../SearchInputs/SearchInputs";
+import { ThemeToggle } from "../ThemeToggle/ThemeToggle";
 import { VimHelp } from "../VimHelp/VimHelp";
 import { VimSearchInput } from "../VimSearchInput/VimSearchInput";
 import {
@@ -450,7 +451,6 @@ export function RankingsExplorer({
   const [highlightedPersonId, setHighlightedPersonId] = useState(
     initialData?.initialMatchPersonId ?? ""
   );
-  const [findFloating, setFindFloating] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [vimMode, setVimMode] = useState(false);
   const [vimCommand, setVimCommand] = useState(":");
@@ -461,10 +461,11 @@ export function RankingsExplorer({
   );
   const [jumpUpArmed, setJumpUpArmed] = useState(false);
   const [jumpDownArmed, setJumpDownArmed] = useState(false);
+  const [tableReachedTop, setTableReachedTop] = useState(false);
+  const [atPageEnd, setAtPageEnd] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
-  const headerRef = useRef<HTMLElement>(null);
-  const findBarRef = useRef<HTMLDivElement>(null);
-  const findInputRef = useRef<HTMLInputElement>(null);
+  const headerFindInputRef = useRef<HTMLInputElement>(null);
+  const railFindInputRef = useRef<HTMLInputElement>(null);
   const vimInputRef = useRef<HTMLInputElement>(null);
   const vimCommandRef = useRef(vimCommand);
   const moreRequestRef = useRef(false);
@@ -686,13 +687,21 @@ export function RankingsExplorer({
   }, [entries, startPosition, startRank]);
 
   useEffect(() => {
-    const updateFindPosition = () => {
-      setFindFloating(window.scrollY > 0);
+    const updateRailVisibility = () => {
+      const tableTop = rankingListRef.current?.getBoundingClientRect().top;
+      setTableReachedTop((tableTop ?? Number.POSITIVE_INFINITY) <= 0);
+      setAtPageEnd(
+        window.scrollY + window.innerHeight >=
+          document.documentElement.scrollHeight - 1
+      );
     };
-    updateFindPosition();
-    window.addEventListener("scroll", updateFindPosition, { passive: true });
-    return () => window.removeEventListener("scroll", updateFindPosition);
-  }, []);
+    const frame = window.requestAnimationFrame(updateRailVisibility);
+    window.addEventListener("scroll", updateRailVisibility, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", updateRailVisibility);
+    };
+  }, [entries.length, loading]);
 
   useEffect(() => {
     const syncStateFromUrl = () => {
@@ -1251,6 +1260,11 @@ export function RankingsExplorer({
     pendingScrollDirectionRef.current = null;
   }, []);
 
+  const closeFind = useCallback(() => {
+    resetFind();
+    setFindOpen(false);
+  }, [resetFind]);
+
   const cancelVimSearch = useCallback(() => {
     resetFind();
     setFindOpen(false);
@@ -1380,8 +1394,11 @@ export function RankingsExplorer({
         updateQueryParams({ mode: null });
         setFindOpen(true);
         window.requestAnimationFrame(() => {
-          findInputRef.current?.focus();
-          findInputRef.current?.select();
+          const input = tableReachedTop
+            ? railFindInputRef.current
+            : headerFindInputRef.current;
+          input?.focus();
+          input?.select();
         });
         return;
       }
@@ -1407,17 +1424,19 @@ export function RankingsExplorer({
       }
       if (event.key === "Escape" && findOpen) {
         event.preventDefault();
-        setFindOpen(false);
+        closeFind();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     cycleFind,
+    closeFind,
     findOpen,
     findQuery,
     regexSearch,
     resetFind,
+    tableReachedTop,
     vimMode,
     vimSearchActive,
   ]);
@@ -2114,7 +2133,24 @@ export function RankingsExplorer({
     setRegexSearch(false);
     updateQueryParams({ mode: null });
     setFindOpen(true);
-    window.requestAnimationFrame(() => findInputRef.current?.focus());
+    window.requestAnimationFrame(() =>
+      (tableReachedTop
+        ? railFindInputRef.current
+        : headerFindInputRef.current
+      )?.focus()
+    );
+  };
+
+  const changeFindQuery = (value: string) => {
+    setVimSearchActive(false);
+    setVimSearchQuery("");
+    setRegexSearch(false);
+    setFindResolvedQuery("");
+    updateQueryParams({
+      search: value.trim() ? value : null,
+      mode: null,
+    });
+    setFindQuery(value);
   };
 
   const findPending =
@@ -2129,6 +2165,8 @@ export function RankingsExplorer({
     [findMatches, findResolvedQuery]
   );
   const activeFindMatch = findMatches[findIndex] ?? null;
+  const currentEvent = WCA_EVENTS.find((event) => event.id === eventId);
+  const eventLabel = `${currentEvent?.name ?? eventId}, ${rankingType === "single" ? "Single" : "Average"}`;
 
   return (
     <div
@@ -2136,11 +2174,31 @@ export function RankingsExplorer({
         findQuery.trim() ? " app--searching" : ""
       }`}
     >
-      <header className="header" ref={headerRef}>
-        <div className="headerTitle">
-          <h1 className="title">
-            <Link href="/">WCA Rankings</Link>
-          </h1>
+      <header className="header">
+        <div className="headerTopRow">
+          <div className="headerTitle">
+            <h1 className="title">
+              <Link href="/">WCA Rankings</Link>
+            </h1>
+          </div>
+          <div className="headerActions">
+            <SearchInputs
+              inputRef={headerFindInputRef}
+              findOpen={findOpen}
+              findQuery={findQuery}
+              findError={findError}
+              findLoading={findLoading}
+              findPending={findPending}
+              findMatches={findMatches}
+              findIndex={findIndex}
+              activeFindMatch={activeFindMatch}
+              onOpen={openFind}
+              onClose={closeFind}
+              onQueryChange={changeFindQuery}
+              onCycle={cycleFind}
+            />
+            <ThemeToggle />
+          </div>
         </div>
         <RankingControls
           eventId={eventId}
@@ -2151,43 +2209,40 @@ export function RankingsExplorer({
           onRankingTypeChange={changeRankingType}
           onRegionChange={changeRegion}
         />
-        <SearchInputs
-          barRef={findBarRef}
-          inputRef={findInputRef}
-          findOpen={findOpen}
-          findFloating={findFloating}
-          findQuery={findQuery}
-          findError={findError}
-          findLoading={findLoading}
-          findPending={findPending}
-          findMatches={findMatches}
-          findIndex={findIndex}
-          activeFindMatch={activeFindMatch}
-          onOpen={openFind}
-          onClose={() => setFindOpen(false)}
-          onQueryChange={(value) => {
-            setVimSearchActive(false);
-            setVimSearchQuery("");
-            setRegexSearch(false);
-            setFindResolvedQuery("");
-            updateQueryParams({
-              search: value.trim() ? value : null,
-              mode: null,
-            });
-            setFindQuery(value);
-          }}
-          onCycle={cycleFind}
-        />
       </header>
 
       <main>
         <JumpControls
           direction="up"
-          visible={visibleSubRank > 1 || jumpUpArmed}
+          visible={tableReachedTop || jumpUpArmed}
           armed={jumpUpArmed}
           currentPosition={visibleSubRank}
           total={total}
           onJump={handleJumpUp}
+          searchControl={
+            <SearchInputs
+              inputRef={railFindInputRef}
+              findOpen={findOpen}
+              findQuery={findQuery}
+              findError={findError}
+              findLoading={findLoading}
+              findPending={findPending}
+              findMatches={findMatches}
+              findIndex={findIndex}
+              activeFindMatch={activeFindMatch}
+              onOpen={openFind}
+              onClose={closeFind}
+              onQueryChange={changeFindQuery}
+              onCycle={cycleFind}
+              inRail
+            />
+          }
+          eventIcon={eventId}
+          eventLabel={eventLabel}
+          eventOptions={WCA_EVENTS}
+          onEventChange={(nextEventId) =>
+            changeEvent(nextEventId as (typeof WCA_EVENTS)[number]["id"])
+          }
         />
 
         <div className="outerListWrapper" ref={listRef}>
@@ -2221,12 +2276,15 @@ export function RankingsExplorer({
           direction="down"
           visible={
             jumpDownArmed ||
-            (Number.isFinite(total) && visibleSubRank < total)
+            (!atPageEnd && Number.isFinite(total) && visibleSubRank < total)
           }
           armed={jumpDownArmed}
           currentPosition={visibleSubRank}
           total={total}
           onJump={handleJumpDown}
+          searchActive={findOpen}
+          onSearchPrevious={() => cycleFind(-1)}
+          onSearchNext={() => cycleFind(1)}
         />
       </main>
       {(vimMode || vimSearchActive) && (

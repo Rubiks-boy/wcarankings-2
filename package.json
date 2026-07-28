@@ -20,6 +20,7 @@
     "sync:wca:local": "docker compose --env-file .env.local run --rm flyway migrate && node --env-file=.env.local scripts/sync-wca-export.mjs"
   },
   "dependencies": {
+    "@cubing/icons": "^3.0.5",
     "@tanstack/react-virtual": "^3.14.5",
     "mysql2": "^3.23.2",
     "next": "16.2.6",

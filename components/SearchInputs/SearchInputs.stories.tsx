@@ -27,7 +27,6 @@ function InteractiveSearchInputs({
   return (
     <SearchInputs
       findOpen={open}
-      findFloating={false}
       findQuery={query}
       findError=""
       findLoading={false}
@@ -49,7 +48,6 @@ const meta = {
   parameters: { layout: "centered" },
   args: {
     findOpen: true,
-    findFloating: false,
     findQuery: "Cailyn",
     findError: "",
     findLoading: false,

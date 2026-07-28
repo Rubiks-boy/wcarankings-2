@@ -7,7 +7,6 @@ test("renders the search input and result status", () => {
   const markup = renderToStaticMarkup(
     <SearchInputs
       findOpen
-      findFloating={false}
       findQuery="Avery"
       findError=""
       findLoading={false}

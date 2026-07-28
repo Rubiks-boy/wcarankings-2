@@ -25,7 +25,12 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/rankings/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/wca.ts", import.meta.url), "utf8"),
-    readFile(new URL("../scripts/mysql-schema.mjs", import.meta.url), "utf8"),
+    Promise.all([
+      "../scripts/mysql-schema.mjs",
+      "../sql/ranking-projections/ranking_entries_single_source.sql",
+      "../sql/ranking-projections/ranking_entries_average_source.sql",
+      "../sql/ranking-projections/ranking_entries_indexes.sql",
+    ].map((path) => readFile(new URL(path, import.meta.url), "utf8"))).then((files) => files.join("\n")),
   ]);
   assert.match(layout, /title:\s*"WCA Rankings"/);
   assert.doesNotMatch(layout, /og\.png|summary_large_image/);
@@ -59,7 +64,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /className="chooser"/);
   assert.match(component, /className="selectInput(?: eventInput)?"/);
   assert.match(component, /className=.*searchButton/);
-  assert.match(component, /aria-label="Search names or WCA IDs"/);
+  assert.match(component, /Search names or WCA IDs/);
   assert.match(component, /onOpen={openFind}/);
   assert.match(component, /RegionPicker/);
   assert.match(component, /className="regionPickerTrigger"/);
@@ -75,11 +80,8 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /Jump to end/);
   assert.match(component, /className="siteFooter"/);
   assert.match(component, /fetched time unavailable/);
-  assert.match(component, /findBar--floating/);
-  assert.match(component, /findBarRef/);
   assert.match(component, /closeOnOutsideClick/);
   assert.match(component, /document\.addEventListener\("pointerdown"/);
-  assert.match(component, /setFindFloating\(window\.scrollY > 0\)/);
   assert.match(component, /loadPrevious/);
   assert.match(component, /window\.scrollBy/);
   assert.match(component, /findBar/);
@@ -95,7 +97,8 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /event\.shiftKey \? -1 : 1/);
   assert.match(component, /key === "f"/);
   assert.match(component, /setVimMode\(false\)/);
-  assert.match(component, /findInputRef\.current\?\.select\(\)/);
+  assert.match(component, /railFindInputRef/);
+  assert.match(component, /input\?\.select\(\)/);
   assert.match(component, /key === "g"/);
   assert.match(component, /window\.innerHeight/);
   assert.match(component, /requestAnimationFrame/);
@@ -161,9 +164,13 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(rankingsRoute, /is_world_record/);
   assert.match(rankingsRoute, /is_continent_record/);
   assert.match(rankingsRoute, /is_country_record/);
+  assert.match(rankingsRoute, /ranking_entries_average/);
+  assert.match(rankingsRoute, /ranking_entries_single/);
   assert.match(schema, /CASE WHEN r\.world_rank = 1 THEN 1 ELSE 0 END AS is_world_record/);
   assert.match(schema, /CASE WHEN r\.continent_rank = 1 THEN 1 ELSE 0 END AS is_continent_record/);
   assert.match(schema, /CASE WHEN r\.country_rank = 1 THEN 1 ELSE 0 END AS is_country_record/);
+  assert.match(schema, /idx_ranking_entries_world \(event_id, world_sub_rank, person_id\)/);
+  assert.doesNotMatch(schema, /idx_ranking_entries_world \(event_id, ranking_type/);
 });
 
 test("does not replace SQL failures with synthetic ranking data", async () => {
@@ -275,17 +282,25 @@ test("self-hosted ranking buckets preserve a tie larger than the page size", asy
   const mysql = await import("mysql2/promise");
   const database = await mysql.createConnection(process.env.DATABASE_URL);
   try {
-    const [tableRows] = await database.query("SELECT TABLE_NAME AS name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'ranking_entries'");
-    if (!tableRows[0]?.name) {
+    const [tableRows] = await database.query("SELECT TABLE_NAME AS name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('ranking_entries_single', 'ranking_entries_average')");
+    if (tableRows.length !== 2) {
       context.skip("self-hosted WCA database is not populated");
       return;
     }
 
     const [tieRows] = await database.query(
-      `SELECT event_id, ranking_type, world_rank, COUNT(*) AS tied
-       FROM ranking_entries
+      `SELECT event_id, ranking_type, world_rank, SUM(tied) AS tied
+       FROM (
+         SELECT event_id, 'single' AS ranking_type, world_rank, COUNT(*) AS tied
+         FROM ranking_entries_single
+         GROUP BY event_id, world_rank
+         UNION ALL
+         SELECT event_id, 'average' AS ranking_type, world_rank, COUNT(*) AS tied
+         FROM ranking_entries_average
+         GROUP BY event_id, world_rank
+       ) AS ranking_ties
        GROUP BY event_id, ranking_type, world_rank
-       HAVING COUNT(*) > 100
+       HAVING SUM(tied) > 100
        ORDER BY tied DESC
        LIMIT 1`,
     );
@@ -293,11 +308,12 @@ test("self-hosted ranking buckets preserve a tie larger than the page size", asy
     assert.ok(tie, "expected the official export to contain a tie larger than 100 people");
 
     const pageStart = Math.floor((Number(tie.world_rank) - 1) / 100) * 100 + 1;
+    const table = tie.ranking_type === "average" ? "ranking_entries_average" : "ranking_entries_single";
     const [pageRows] = await database.query(
       `SELECT world_rank
-       FROM ranking_entries
-       WHERE event_id = ? AND ranking_type = ? AND world_rank >= ? AND world_rank < ?`,
-      [tie.event_id, tie.ranking_type, pageStart, pageStart + 100],
+       FROM ${table}
+       WHERE event_id = ? AND world_rank >= ? AND world_rank < ?`,
+      [tie.event_id, pageStart, pageStart + 100],
     );
     const tiedRows = pageRows.filter((row) => Number(row.world_rank) === Number(tie.world_rank));
     assert.equal(tiedRows.length, Number(tie.tied));

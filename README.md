@@ -70,6 +70,7 @@ Set `WCA_CLIENT_ID`, `WCA_CLIENT_SECRET`, and `WCA_REDIRECT_URI` in the deployme
 app/                         React UI and API routes
 db/                          MySQL connection pool
 migrations/mysql/            Flyway versioned MariaDB migrations
+sql/ranking-projections/     Readable SQL for daily derived ranking projections
 Dockerfile.flyway             Pinned Flyway migration image
 scripts/sync-wca-export.mjs  WCA SQL export downloader and importer
 Dockerfile                   Multi-stage production image

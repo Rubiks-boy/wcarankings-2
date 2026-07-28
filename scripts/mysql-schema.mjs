@@ -1,3 +1,7 @@
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 const INDEXES = [
   ["persons", "idx_persons_wca_sub", "(`wca_id`, `sub_id`)", "wca_id,sub_id"],
   ["persons", "idx_persons_name", "(`name`)", "name"],
@@ -11,111 +15,15 @@ const INDEXES = [
   ["results", "idx_results_average_best", "(`person_id`, `event_id`, `average`, `id`)", "person_id,event_id,average,id"],
 ];
 
-const PROJECTION_INDEXES = [
-  ["idx_ranking_entries_world", "(`event_id`, `ranking_type`, `world_sub_rank`, `person_id`)"],
-  ["idx_ranking_entries_continent", "(`event_id`, `ranking_type`, `continent_id`, `continent_sub_rank`, `person_id`)"],
-  ["idx_ranking_entries_country", "(`event_id`, `ranking_type`, `country_id`, `country_sub_rank`, `person_id`)"],
-  ["idx_ranking_entries_person", "(`person_id`, `event_id`, `ranking_type`)"],
-];
+const projectionDirectory = join(dirname(fileURLToPath(import.meta.url)), "..", "sql", "ranking-projections");
 
-const VIEW_STATEMENTS = [
-  `CREATE OR REPLACE VIEW wca_best_single AS
-   SELECT
-     person_id,
-     event_id,
-     CAST(SUBSTRING_INDEX(GROUP_CONCAT(best ORDER BY best, id), ',', 1) AS UNSIGNED) AS best,
-     SUBSTRING_INDEX(GROUP_CONCAT(competition_id ORDER BY best, id), ',', 1) AS competition_id
-   FROM results
-   WHERE best > 0
-   GROUP BY person_id, event_id`,
-  `CREATE OR REPLACE VIEW wca_best_average AS
-   SELECT
-     person_id,
-     event_id,
-     CAST(SUBSTRING_INDEX(GROUP_CONCAT(average ORDER BY average, id), ',', 1) AS UNSIGNED) AS best,
-     SUBSTRING_INDEX(GROUP_CONCAT(competition_id ORDER BY average, id), ',', 1) AS competition_id
-   FROM results
-   WHERE average > 0
-   GROUP BY person_id, event_id`,
-  `CREATE OR REPLACE VIEW ranking_entries_source AS
-   SELECT
-     r.event_id,
-     'single' AS ranking_type,
-     r.person_id,
-     COALESCE(p.name, r.person_id) AS person_name,
-     COALESCE(p.country_id, '') AS country_id,
-     COALESCE(c.name, p.country_id, '') AS country_name,
-     COALESCE(c.iso2, '') AS country_iso2,
-     COALESCE(c.continent_id, '') AS continent_id,
-     r.best,
-     COALESCE(b.competition_id, '') AS competition_id,
-     COALESCE(comp.name, '') AS competition_name,
-     CASE WHEN r.world_rank = 1 THEN 1 ELSE 0 END AS is_world_record,
-     CASE WHEN r.continent_rank = 1 THEN 1 ELSE 0 END AS is_continent_record,
-     CASE WHEN r.country_rank = 1 THEN 1 ELSE 0 END AS is_country_record,
-     r.world_rank,
-     r.continent_rank,
-     r.country_rank,
-     SUM(CASE WHEN r.world_rank > 0 THEN 1 ELSE 0 END) OVER (
-       PARTITION BY r.event_id
-       ORDER BY r.world_rank, COALESCE(p.name, r.person_id), r.person_id
-       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-     ) AS world_sub_rank,
-     SUM(CASE WHEN r.continent_rank > 0 THEN 1 ELSE 0 END) OVER (
-       PARTITION BY r.event_id, COALESCE(c.continent_id, '')
-       ORDER BY r.continent_rank, COALESCE(p.name, r.person_id), r.person_id
-       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-     ) AS continent_sub_rank,
-     SUM(CASE WHEN r.country_rank > 0 THEN 1 ELSE 0 END) OVER (
-       PARTITION BY r.event_id, COALESCE(p.country_id, '')
-       ORDER BY r.country_rank, COALESCE(p.name, r.person_id), r.person_id
-       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-     ) AS country_sub_rank
-   FROM ranks_single r
-   LEFT JOIN persons p ON p.wca_id = r.person_id AND p.sub_id = 1
-   LEFT JOIN countries c ON c.id = p.country_id
-   LEFT JOIN wca_best_single b ON b.person_id = r.person_id AND b.event_id = r.event_id
-   LEFT JOIN competitions comp ON comp.id = b.competition_id
-   UNION ALL
-   SELECT
-     r.event_id,
-     'average' AS ranking_type,
-     r.person_id,
-     COALESCE(p.name, r.person_id) AS person_name,
-     COALESCE(p.country_id, '') AS country_id,
-     COALESCE(c.name, p.country_id, '') AS country_name,
-     COALESCE(c.iso2, '') AS country_iso2,
-     COALESCE(c.continent_id, '') AS continent_id,
-     r.best,
-     COALESCE(b.competition_id, '') AS competition_id,
-     COALESCE(comp.name, '') AS competition_name,
-     CASE WHEN r.world_rank = 1 THEN 1 ELSE 0 END AS is_world_record,
-     CASE WHEN r.continent_rank = 1 THEN 1 ELSE 0 END AS is_continent_record,
-     CASE WHEN r.country_rank = 1 THEN 1 ELSE 0 END AS is_country_record,
-     r.world_rank,
-     r.continent_rank,
-     r.country_rank,
-     SUM(CASE WHEN r.world_rank > 0 THEN 1 ELSE 0 END) OVER (
-       PARTITION BY r.event_id
-       ORDER BY r.world_rank, COALESCE(p.name, r.person_id), r.person_id
-       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-     ) AS world_sub_rank,
-     SUM(CASE WHEN r.continent_rank > 0 THEN 1 ELSE 0 END) OVER (
-       PARTITION BY r.event_id, COALESCE(c.continent_id, '')
-       ORDER BY r.continent_rank, COALESCE(p.name, r.person_id), r.person_id
-       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-     ) AS continent_sub_rank,
-     SUM(CASE WHEN r.country_rank > 0 THEN 1 ELSE 0 END) OVER (
-       PARTITION BY r.event_id, COALESCE(p.country_id, '')
-       ORDER BY r.country_rank, COALESCE(p.name, r.person_id), r.person_id
-       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-     ) AS country_sub_rank
-   FROM ranks_average r
-   LEFT JOIN persons p ON p.wca_id = r.person_id AND p.sub_id = 1
-   LEFT JOIN countries c ON c.id = p.country_id
-   LEFT JOIN wca_best_average b ON b.person_id = r.person_id AND b.event_id = r.event_id
-   LEFT JOIN competitions comp ON comp.id = b.competition_id`,
-];
+function statements(sql) {
+  return sql.split(/;\s*(?:\n|$)/).map((statement) => statement.trim()).filter(Boolean);
+}
+
+async function projectionSql(file) {
+  return readFile(join(projectionDirectory, file), "utf8");
+}
 
 export async function dropManagedObject(connection, name) {
   const [rows] = await connection.query(
@@ -127,13 +35,27 @@ export async function dropManagedObject(connection, name) {
 }
 
 export async function refreshMysqlSchema(connection, { projectionSuffix = "" } = {}) {
-  const entriesTable = `ranking_entries${projectionSuffix}`;
+  const entriesTables = {
+    single: `ranking_entries_single${projectionSuffix}`,
+    average: `ranking_entries_average${projectionSuffix}`,
+  };
   const countsTable = `ranking_counts${projectionSuffix}`;
-  const entriesSource = `ranking_entries_source${projectionSuffix}`;
   const bestSingle = `wca_best_single${projectionSuffix}`;
   const bestAverage = `wca_best_average${projectionSuffix}`;
+  const entriesSources = {
+    single: `ranking_entries_single_source${projectionSuffix}`,
+    average: `ranking_entries_average_source${projectionSuffix}`,
+  };
 
-  for (const name of [countsTable, entriesTable, entriesSource, bestSingle, bestAverage]) {
+  for (const name of [
+    countsTable,
+    entriesTables.single,
+    entriesTables.average,
+    entriesSources.single,
+    entriesSources.average,
+    bestSingle,
+    bestAverage,
+  ]) {
     await dropManagedObject(connection, name);
   }
 
@@ -152,34 +74,30 @@ export async function refreshMysqlSchema(connection, { projectionSuffix = "" } =
     }
   }
 
-  for (const statement of VIEW_STATEMENTS) {
+  for (const file of ["wca_best_single.sql", "wca_best_average.sql", "ranking_entries_single_source.sql", "ranking_entries_average_source.sql"]) {
+    const statement = await projectionSql(file);
     const renamed = statement
       .replaceAll("wca_best_single", bestSingle)
       .replaceAll("wca_best_average", bestAverage)
-      .replaceAll("ranking_entries_source", entriesSource);
+      .replaceAll("ranking_entries_single_source", entriesSources.single)
+      .replaceAll("ranking_entries_average_source", entriesSources.average);
     await connection.query(renamed);
   }
 
-  await connection.query(`CREATE TABLE \`${entriesTable}\` AS SELECT * FROM \`${entriesSource}\``);
-  for (const [name, columns] of PROJECTION_INDEXES) {
-    await connection.query(`ALTER TABLE \`${entriesTable}\` ADD INDEX \`${name}\` ${columns}`);
+  for (const type of ["single", "average"]) {
+    const entriesTable = entriesTables[type];
+    const entriesSource = entriesSources[type];
+    await connection.query(`CREATE TABLE \`${entriesTable}\` AS SELECT * FROM \`${entriesSource}\``);
+    for (const statement of statements(await projectionSql("ranking_entries_indexes.sql"))) {
+      await connection.query(statement.replace(/^ALTER TABLE ranking_entries\b/, `ALTER TABLE \`${entriesTable}\``));
+    }
   }
-  await connection.query(`
-    CREATE TABLE \`${countsTable}\` AS
-    SELECT event_id, ranking_type, 'world' AS scope, '' AS region_id, COUNT(*) AS count
-    FROM \`${entriesTable}\`
-    WHERE world_rank > 0
-    GROUP BY event_id, ranking_type
-    UNION ALL
-    SELECT event_id, ranking_type, 'continent' AS scope, continent_id AS region_id, COUNT(*) AS count
-    FROM \`${entriesTable}\`
-    WHERE continent_rank > 0
-    GROUP BY event_id, ranking_type, continent_id
-    UNION ALL
-    SELECT event_id, ranking_type, 'country' AS scope, country_id AS region_id, COUNT(*) AS count
-    FROM \`${entriesTable}\`
-    WHERE country_rank > 0
-    GROUP BY event_id, ranking_type, country_id
-  `);
-  await connection.query(`ALTER TABLE \`${countsTable}\` ADD PRIMARY KEY (event_id, ranking_type, scope, region_id)`);
+  for (const statement of statements(await projectionSql("ranking_counts.sql"))) {
+    await connection.query(
+      statement
+        .replaceAll("ranking_entries_single", entriesTables.single)
+        .replaceAll("ranking_entries_average", entriesTables.average)
+        .replaceAll("ranking_counts", countsTable),
+    );
+  }
 }

@@ -11,7 +11,6 @@ export function SearchInputs({
   barRef,
   inputRef,
   findOpen,
-  findFloating,
   findQuery,
   findError,
   findLoading,
@@ -23,11 +22,11 @@ export function SearchInputs({
   onClose,
   onQueryChange,
   onCycle,
+  inRail = false,
 }: {
   barRef?: Ref<HTMLDivElement>;
   inputRef?: Ref<HTMLInputElement>;
   findOpen: boolean;
-  findFloating: boolean;
   findQuery: string;
   findError: string;
   findLoading: boolean;
@@ -39,21 +38,22 @@ export function SearchInputs({
   onClose: () => void;
   onQueryChange: (value: string) => void;
   onCycle: (direction: -1 | 1) => void;
+  inRail?: boolean;
 }) {
+  const searchButton = (
+    <button
+      className={`searchButton${inRail ? " searchButton--rail" : ""}`}
+      type="button"
+      onClick={onOpen}
+      aria-label="Search names or WCA IDs"
+      title="Search names or WCA IDs (Ctrl+F)"
+    >
+      <Icon name="search" />
+    </button>
+  );
+
   if (!findOpen) {
-    return (
-      <button
-        className={`searchButton${
-          findFloating ? " searchButton--floating" : ""
-        }`}
-        type="button"
-        onClick={onOpen}
-        aria-label="Search names or WCA IDs"
-        title="Search names or WCA IDs (Ctrl+F)"
-      >
-        <Icon name="search" />
-      </button>
-    );
+    return searchButton;
   }
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -74,10 +74,10 @@ export function SearchInputs({
       : "No matches";
   }
 
-  return (
+  const findBar = (
     <div
       ref={barRef}
-      className={`findBar${findFloating ? " findBar--floating" : ""}`}
+      className={`findBar${inRail ? " findBar--railOverlay" : ""}`}
       role="search"
     >
       <span className="findIcon" aria-hidden="true">
@@ -107,5 +107,14 @@ export function SearchInputs({
         ×
       </button>
     </div>
+  );
+
+  return inRail ? (
+    <>
+      {searchButton}
+      {findBar}
+    </>
+  ) : (
+    findBar
   );
 }

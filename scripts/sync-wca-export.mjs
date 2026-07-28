@@ -112,7 +112,14 @@ function sqlEntry(archive) {
 async function dropRankingViews() {
   const connection = await mysql.createConnection(databaseOptions());
   try {
-    for (const name of ["ranking_counts_source", "ranking_entries_source", "wca_best_single", "wca_best_average"]) {
+    for (const name of [
+      "ranking_counts_source",
+      "ranking_entries_source",
+      "ranking_entries_single_source",
+      "ranking_entries_average_source",
+      "wca_best_single",
+      "wca_best_average",
+    ]) {
       await dropManagedObject(connection, name);
     }
   } finally {
@@ -170,9 +177,18 @@ async function collectImportCounts() {
       SELECT
         (SELECT COUNT(*) FROM persons WHERE sub_id = 1) AS people,
         (SELECT COUNT(*) FROM results) AS results,
-        (SELECT COUNT(*) FROM ranking_entries_staging) AS rankings,
-        (SELECT COUNT(DISTINCT event_id) FROM ranking_entries_staging) AS events,
-        (SELECT COUNT(DISTINCT country_id) FROM ranking_entries_staging WHERE country_id <> '') AS regions,
+        (SELECT COUNT(*) FROM ranking_entries_single_staging) +
+          (SELECT COUNT(*) FROM ranking_entries_average_staging) AS rankings,
+        (SELECT COUNT(*) FROM (
+          SELECT event_id FROM ranking_entries_single_staging
+          UNION
+          SELECT event_id FROM ranking_entries_average_staging
+        ) AS ranking_events) AS events,
+        (SELECT COUNT(*) FROM (
+          SELECT country_id FROM ranking_entries_single_staging WHERE country_id <> ''
+          UNION
+          SELECT country_id FROM ranking_entries_average_staging WHERE country_id <> ''
+        ) AS ranking_regions) AS regions,
         (SELECT COUNT(*) FROM ranking_counts_staging) AS aggregates
     `);
     return {
@@ -199,13 +215,17 @@ async function tableExists(connection, name) {
 async function promoteRankings() {
   const connection = await mysql.createConnection(databaseOptions());
   try {
-    const hasPublished = await tableExists(connection, "ranking_entries");
+    const hasPublished = await tableExists(connection, "ranking_entries_single");
+    const hasLegacyProjection = await tableExists(connection, "ranking_entries");
     await connection.beginTransaction();
     if (hasPublished) {
-      await connection.query("RENAME TABLE ranking_entries TO ranking_entries_previous, ranking_entries_staging TO ranking_entries, ranking_counts TO ranking_counts_previous, ranking_counts_staging TO ranking_counts");
-      await connection.query("DROP TABLE ranking_entries_previous, ranking_counts_previous");
+      await connection.query("RENAME TABLE ranking_entries_single TO ranking_entries_single_previous, ranking_entries_single_staging TO ranking_entries_single, ranking_entries_average TO ranking_entries_average_previous, ranking_entries_average_staging TO ranking_entries_average, ranking_counts TO ranking_counts_previous, ranking_counts_staging TO ranking_counts");
+      await connection.query("DROP TABLE ranking_entries_single_previous, ranking_entries_average_previous, ranking_counts_previous");
+    } else if (hasLegacyProjection) {
+      await connection.query("RENAME TABLE ranking_entries TO ranking_entries_legacy_previous, ranking_counts TO ranking_counts_legacy_previous, ranking_entries_single_staging TO ranking_entries_single, ranking_entries_average_staging TO ranking_entries_average, ranking_counts_staging TO ranking_counts");
+      await connection.query("DROP TABLE ranking_entries_legacy_previous, ranking_counts_legacy_previous");
     } else {
-      await connection.query("RENAME TABLE ranking_entries_staging TO ranking_entries, ranking_counts_staging TO ranking_counts");
+      await connection.query("RENAME TABLE ranking_entries_single_staging TO ranking_entries_single, ranking_entries_average_staging TO ranking_entries_average, ranking_counts_staging TO ranking_counts");
     }
     await connection.commit();
   } catch (error) {

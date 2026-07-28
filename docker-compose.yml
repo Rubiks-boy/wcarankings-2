@@ -17,6 +17,21 @@ services:
       timeout: 5s
       retries: 12
 
+  flyway:
+    image: wcarankings-flyway:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.flyway
+    environment:
+      FLYWAY_URL: jdbc:mariadb://db:3306/${MYSQL_DATABASE:?MYSQL_DATABASE must be set}
+      FLYWAY_USER: ${MYSQL_USER:?MYSQL_USER must be set}
+      FLYWAY_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set}
+      FLYWAY_LOCATIONS: filesystem:/flyway/migrations
+      FLYWAY_CONNECT_RETRIES: 60
+    depends_on:
+      db:
+        condition: service_healthy
+
   app:
     image: wcarankings-app:latest
     build: .

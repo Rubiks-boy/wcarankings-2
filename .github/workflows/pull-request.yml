@@ -13,6 +13,12 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      MYSQL_DATABASE: wcarankings
+      MYSQL_USER: wcarankings
+      MYSQL_PASSWORD: local-development-password
+      MYSQL_ROOT_PASSWORD: local-root-password
+      DATABASE_URL: mysql://wcarankings:local-development-password@db:3306/wcarankings
 
     steps:
       - name: Check out pull request
@@ -26,6 +32,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Validate Flyway migrations
+        run: |
+          docker compose up -d db
+          docker compose build flyway
+          docker compose run --rm flyway migrate
+          docker compose run --rm flyway info
+          docker compose run --rm flyway validate
 
       - name: Lint
         run: npm run lint
@@ -48,4 +62,10 @@ jobs:
       - name: Verify production image contents
         run: |
           docker run --rm --entrypoint sh wcarankings-app:pull-request -c \
-            'test -f /app/docker-entrypoint.sh && test -f /app/scripts/migrate.mjs && test -f /app/scripts/sync-wca-export.mjs && test -f /app/scripts/refresh-rankings.mjs'
+            'test -f /app/docker-entrypoint.sh && test -f /app/scripts/sync-wca-export.mjs && test -f /app/scripts/refresh-rankings.mjs'
+
+      - name: Build and verify Flyway image
+        run: |
+          docker build --file Dockerfile.flyway --tag wcarankings-flyway:pull-request .
+          docker run --rm --entrypoint sh wcarankings-flyway:pull-request -c \
+            'test -f /flyway/migrations/V1__export_metadata.sql && test -f /flyway/migrations/V2__import_health.sql'

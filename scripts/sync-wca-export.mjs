@@ -5,7 +5,6 @@ import { basename, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import mysql from "mysql2/promise";
 import * as unzipper from "unzipper";
-import { migrateDatabase } from "./migrate.mjs";
 import { dropManagedObject, refreshMysqlSchema } from "./mysql-schema.mjs";
 
 const EXPORT_API = "https://www.worldcubeassociation.org/api/v0/export/public";
@@ -277,7 +276,6 @@ async function refreshRankingsSchema() {
 }
 
 async function main() {
-  await migrateDatabase();
   const suppliedPath = argumentValue("sql-path") || process.env.WCA_SQL_EXPORT_PATH;
   let latest;
   if (suppliedPath) {

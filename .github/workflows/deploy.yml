@@ -62,7 +62,22 @@ jobs:
       - name: Verify production image contents
         run: |
           docker run --rm --entrypoint sh "wcarankings-app:${GITHUB_SHA}" -c \
-            'test -f /app/scripts/migrate.mjs && test -f /app/scripts/sync-wca-export.mjs && test -f /app/scripts/refresh-rankings.mjs'
+            'test -f /app/scripts/sync-wca-export.mjs && test -f /app/scripts/refresh-rankings.mjs'
+
+      - name: Build Flyway image in GitHub Actions
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.flyway
+          load: true
+          tags: wcarankings-flyway:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify Flyway image contents
+        run: |
+          docker run --rm --entrypoint sh "wcarankings-flyway:${GITHUB_SHA}" -c \
+            'test -f /flyway/migrations/V1__export_metadata.sql && test -f /flyway/migrations/V2__import_health.sql'
 
       - name: Copy deployment configuration
         run: |
@@ -73,17 +88,22 @@ jobs:
           scp -q -o BatchMode=yes ops/Caddyfile \
             "$SERVER_USER@$SERVER_IP:/srv/wcarankings/ops/Caddyfile"
 
-      - name: Load image and switch production services
+      - name: Load images and run pending migrations
         run: |
           set -o pipefail
           ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
             'cd /srv/wcarankings && if docker image inspect wcarankings-app:latest >/dev/null 2>&1; then docker tag wcarankings-app:latest wcarankings-app:previous; fi'
-          docker save "wcarankings-app:${GITHUB_SHA}" \
+          docker save "wcarankings-app:${GITHUB_SHA}" "wcarankings-flyway:${GITHUB_SHA}" \
             | gzip -1 \
             | ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
                 'gzip -d | docker load'
           ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
-            "docker tag wcarankings-app:${GITHUB_SHA} wcarankings-app:latest && cd /srv/wcarankings && docker compose up -d --no-build --remove-orphans app proxy"
+            "docker tag wcarankings-app:${GITHUB_SHA} wcarankings-app:latest && docker tag wcarankings-flyway:${GITHUB_SHA} wcarankings-flyway:latest && cd /srv/wcarankings && docker compose run --rm flyway migrate"
+
+      - name: Switch production services
+        run: |
+          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
+            'cd /srv/wcarankings && docker compose up -d --no-build --remove-orphans app proxy'
 
       - name: Verify deployment
         run: |
@@ -106,11 +126,6 @@ jobs:
             sleep 2
           done
           exit 1
-
-      - name: Run pending app migrations
-        run: |
-          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
-            'cd /srv/wcarankings && docker compose run --rm app node /app/scripts/migrate.mjs'
 
       - name: Roll back failed deployment
         if: failure()

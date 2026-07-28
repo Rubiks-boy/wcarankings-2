@@ -1,9 +1,10 @@
 # Deployment
 
 CubeRanks is deployed as a Docker Compose stack on a managed Linux host. The
-production stack contains three services:
+production stack contains four services:
 
 - `db`: MariaDB 11.8 with raw WCA export data and indexed ranking projections in the `mariadb_data` named volume.
+- `flyway`: the pinned Flyway migration image, which applies app-owned schema migrations before deploys and scheduled imports.
 - `app`: the Node/Vinext application and WCA SQL importer. Export archives are retained in the `wca_export_cache` named volume.
 - `proxy`: Caddy, which terminates HTTPS and forwards requests to `app`.
 
@@ -35,9 +36,10 @@ starts the application and proxy after loading that image.
 The app listens on `127.0.0.1:3000` on the host. Caddy publishes ports 80 and 443
 and obtains certificates automatically. MariaDB has no public network port.
 
-Run the initial WCA import from the app image:
+Apply app-owned schema migrations, then run the initial WCA import from the app image:
 
 ```bash
+docker compose run --rm flyway migrate
 docker compose run --rm app node /app/scripts/sync-wca-export.mjs
 ```
 
@@ -47,10 +49,11 @@ competition-name lookups. Use `--force` to re-import an already recorded export.
 For a manually downloaded archive, set `WCA_SQL_EXPORT_PATH` in the environment or
 pass `--sql-path=/path/to/WCA_export.sql.zip`.
 
-App migrations and ranking projection refreshes are separate operations. To apply
-app-owned migrations without importing WCA data, run `node /app/scripts/migrate.mjs`.
+Flyway migrations and ranking projection refreshes are separate operations. To
+inspect or validate app-owned migrations without importing WCA data, run
+`docker compose run --rm flyway info` or `docker compose run --rm flyway validate`.
 To rebuild ranking projections from raw WCA tables already present in MariaDB, run
-`node /app/scripts/refresh-rankings.mjs`.
+`docker compose run --rm app node /app/scripts/refresh-rankings.mjs`.
 
 To keep the self-hosted database current, install the included systemd timer and
 failure alert as root after copying the repository to the deployment directory:
@@ -86,10 +89,9 @@ The workflow does the following:
 6. Streams the new image directly to the server with
    `docker save | gzip | ssh ... 'gzip -d | docker load'`. There is no container
    registry involved.
-7. Tags the loaded image as `wcarankings-app:latest` and runs
-   `docker compose up -d --no-build --remove-orphans app proxy`.
-8. Verifies the app locally on the server and through the configured public host.
-9. Runs pending app-owned migrations only.
+7. Tags the loaded application and Flyway images, then runs `docker compose run --rm flyway migrate`.
+8. Starts the new application and proxy only after migrations succeed.
+9. Verifies the app locally on the server and through the configured public host.
 10. Rolls back to `wcarankings-app:previous` if deployment health checks or
     migrations fail; otherwise removes the previous image after success.
 

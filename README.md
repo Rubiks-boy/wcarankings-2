@@ -28,10 +28,11 @@ npm run sync:wca:local
 
 The importer compares export dates before downloading, so repeated runs are safe. Use `--force` when an explicit re-import is needed.
 
-App migrations are independent from the WCA import. Run `npm run db:migrate` for
-app-owned tables only, or run `npm run db:refresh-rankings` to rebuild the
-derived ranking projections from raw WCA tables already in MariaDB. A full WCA
-sync performs both steps after importing the raw export.
+App-owned MariaDB schema is managed by Flyway. Run `npm run db:migrate` to apply
+or validate pending migrations, or run `npm run db:refresh-rankings` to rebuild
+the derived ranking projections from raw WCA tables already in MariaDB.
+`npm run sync:wca:local` runs Flyway first, then imports the export and rebuilds
+the derived projections.
 
 Useful checks:
 
@@ -68,7 +69,8 @@ Set `WCA_CLIENT_ID`, `WCA_CLIENT_SECRET`, and `WCA_REDIRECT_URI` in the deployme
 ```text
 app/                         React UI and API routes
 db/                          MySQL connection pool
-migrations/mysql/            MySQL schema migrations
+migrations/mysql/            Flyway versioned MariaDB migrations
+Dockerfile.flyway             Pinned Flyway migration image
 scripts/sync-wca-export.mjs  WCA SQL export downloader and importer
 Dockerfile                   Multi-stage production image
 docker-compose.yml           MariaDB + app services

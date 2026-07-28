@@ -98,7 +98,7 @@ jobs:
       - name: Verify Flyway image contents
         run: |
           docker run --rm --entrypoint sh "wcarankings-flyway:${GITHUB_SHA}" -c \
-            'test -f /flyway/migrations/V1__export_metadata.sql && test -f /flyway/migrations/V2__import_health.sql'
+            'test -f /flyway/migrations/V1__export_metadata.sql && test -f /flyway/migrations/V2__import_health.sql && test -f /flyway/migrations/V3__projection_build_timing.sql'
 
       - name: Copy deployment configuration
         run: |

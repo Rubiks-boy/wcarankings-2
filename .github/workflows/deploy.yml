@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: production-deploy
@@ -25,18 +26,6 @@ jobs:
       - name: Check out main
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Validate
-        run: |
-          npm ci
-          npm run lint
-          npm test
-
       - name: Configure deployment SSH
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -47,32 +36,30 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Calculate source tree tag
+        id: source-tree
+        run: echo "sha=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
 
-      - name: Build Docker image in GitHub Actions
-        uses: docker/build-push-action@v6
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          context: .
-          load: true
-          tags: wcarankings-app:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull images built by the pull request
+        env:
+          SOURCE_TREE: ${{ steps.source-tree.outputs.sha }}
+        run: |
+          docker pull "ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-app:tree-${SOURCE_TREE}"
+          docker pull "ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-flyway:tree-${SOURCE_TREE}"
+          docker tag "ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-app:tree-${SOURCE_TREE}" "wcarankings-app:${GITHUB_SHA}"
+          docker tag "ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-flyway:tree-${SOURCE_TREE}" "wcarankings-flyway:${GITHUB_SHA}"
 
       - name: Verify production image contents
         run: |
           docker run --rm --entrypoint sh "wcarankings-app:${GITHUB_SHA}" -c \
             'test -f /app/scripts/check-ranking-projections.mjs && test -f /app/scripts/sync-wca-export.mjs && test -f /app/scripts/refresh-rankings.mjs && css=$(find /app/dist/standalone/dist/client -name "*.css" -type f -print -quit) && test -n "$css" && test -s "$css"'
-
-      - name: Build Flyway image in GitHub Actions
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.flyway
-          load: true
-          tags: wcarankings-flyway:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Verify Flyway image contents
         run: |

@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 concurrency:
   group: pull-request-${{ github.event.pull_request.number || github.ref }}
@@ -33,14 +34,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate Flyway migrations
-        run: |
-          docker compose up -d db
-          docker compose build flyway
-          docker compose run --rm flyway migrate
-          docker compose run --rm flyway info
-          docker compose run --rm flyway validate
-
       - name: Lint
         run: npm run lint
 
@@ -50,22 +43,78 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build production Docker image
+      - name: Calculate source tree tag
+        id: source-tree
+        run: echo "sha=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish Flyway image
         uses: docker/build-push-action@v6
         with:
           context: .
-          load: true
-          tags: wcarankings-app:pull-request
+          file: Dockerfile.flyway
+          load: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+          push: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+          tags: |
+            wcarankings-flyway:pull-request
+            ghcr.io/${{ github.repository_owner }}/wcarankings-flyway:tree-${{ steps.source-tree.outputs.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+            org.opencontainers.image.version=tree-${{ steps.source-tree.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Pull published Flyway image
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        run: docker pull "ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-flyway:tree-${{ steps.source-tree.outputs.sha }}"
+
+      - name: Validate published Flyway image and migrations
+        run: |
+          image="wcarankings-flyway:pull-request"
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" = "$GITHUB_REPOSITORY" ]; then
+            image="ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-flyway:tree-${{ steps.source-tree.outputs.sha }}"
+          fi
+          docker run --rm --entrypoint sh "$image" -c \
+            'test -f /flyway/migrations/V1__export_metadata.sql && test -f /flyway/migrations/V2__import_health.sql'
+          docker tag "$image" wcarankings-flyway:latest
+          docker compose up -d db
+          docker compose run --rm --no-build flyway migrate
+          docker compose run --rm --no-build flyway info
+          docker compose run --rm --no-build flyway validate
+
+      - name: Build and publish production Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+          push: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+          tags: |
+            wcarankings-app:pull-request
+            ghcr.io/${{ github.repository_owner }}/wcarankings-app:tree-${{ steps.source-tree.outputs.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+            org.opencontainers.image.version=tree-${{ steps.source-tree.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Pull published production Docker image
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        run: docker pull "ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-app:tree-${{ steps.source-tree.outputs.sha }}"
+
       - name: Verify production image contents
         run: |
-          docker run --rm --entrypoint sh wcarankings-app:pull-request -c \
+          image="wcarankings-app:pull-request"
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" = "$GITHUB_REPOSITORY" ]; then
+            image="ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-app:tree-${{ steps.source-tree.outputs.sha }}"
+          fi
+          docker run --rm --entrypoint sh "$image" -c \
             'test -f /app/docker-entrypoint.sh && test -f /app/scripts/check-ranking-projections.mjs && test -f /app/scripts/sync-wca-export.mjs && test -f /app/scripts/refresh-rankings.mjs'
-
-      - name: Build and verify Flyway image
-        run: |
-          docker build --file Dockerfile.flyway --tag wcarankings-flyway:pull-request .
-          docker run --rm --entrypoint sh wcarankings-flyway:pull-request -c \
-            'test -f /flyway/migrations/V1__export_metadata.sql && test -f /flyway/migrations/V2__import_health.sql'

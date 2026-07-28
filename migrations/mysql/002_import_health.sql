@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS import_runs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  export_date DATE NULL,
+  export_format_version VARCHAR(32) NULL,
+  export_url VARCHAR(512) NULL,
+  status VARCHAR(32) NOT NULL,
+  started_at DATETIME(6) NOT NULL,
+  fetch_started_at DATETIME(6) NULL,
+  fetched_at DATETIME(6) NULL,
+  completed_at DATETIME(6) NULL,
+  duration_ms BIGINT UNSIGNED NULL,
+  failure_message TEXT NULL,
+  projection_swap_status VARCHAR(32) NOT NULL DEFAULT 'not_started',
+  source_person_count BIGINT UNSIGNED NULL,
+  source_result_count BIGINT UNSIGNED NULL,
+  published_ranking_count BIGINT UNSIGNED NULL,
+  event_count BIGINT UNSIGNED NULL,
+  region_count BIGINT UNSIGNED NULL,
+  aggregate_count BIGINT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_import_runs_status_started (status, started_at),
+  INDEX idx_import_runs_completed (completed_at)
+);

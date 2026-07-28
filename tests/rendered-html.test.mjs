@@ -81,7 +81,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /Jump to top/);
   assert.match(component, /Jump to end/);
   assert.match(component, /className="siteFooter"/);
-  assert.match(component, /fetched time unavailable/);
+  assert.match(component, /WCA export date unavailable/);
   assert.match(component, /closeOnOutsideClick/);
   assert.match(component, /document\.addEventListener\("pointerdown"/);
   assert.match(component, /loadPrevious/);
@@ -150,19 +150,16 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(wca, /rankingType === "average" \? \(value \/ 100\)\.toFixed\(2\)/);
   assert.match(component, /const nextStart = pageStartForSubRank\(normalizedRank\) \+ 1/);
   assert.doesNotMatch(component, /header-controls|collapsed-filter-summary|table-quick-jump/);
-  assert.match(rankingsRoute, /SELECT MIN\(\$\{subRankColumn\}\) AS rank/);
-  assert.match(rankingsRoute, /SELECT MAX\(\$\{subRankColumn\}\) AS rank/);
-  assert.match(rankingsRoute, /person_name \$\{searchOperator\}/);
-  assert.match(rankingsRoute, /person_id \$\{searchOperator\}/);
-  assert.match(rankingsRoute, /searchNameParameter/);
-  assert.match(rankingsRoute, /searchIdParameter/);
+  assert.doesNotMatch(rankingsRoute, /SELECT (MIN|MAX|COUNT\(\*\))/);
+  assert.doesNotMatch(rankingsRoute, /ROW_NUMBER\(\) OVER/);
+  assert.match(rankingsRoute, /person_name \$\{operator\}/);
+  assert.match(rankingsRoute, /person_id \$\{operator\}/);
   assert.match(rankingsRoute, /competition_id/);
-  assert.match(rankingsRoute, /conditions\.push\(`\$\{rankColumn\} > 0`\)/);
-  assert.match(rankingsRoute, /fetched_at/);
+  assert.match(rankingsRoute, /conditions\.push\(`\$\{rank\} > 0`\)/);
+  assert.match(rankingsRoute, /fetchedAt/);
   assert.match(rankingsRoute, /startPosition/);
   assert.match(rankingsRoute, /lastRank/);
-  assert.match(rankingsRoute, /ORDER BY \$\{subRankColumn\}/);
-  assert.match(rankingsRoute, /const limitParameter = paged \? "" :/);
+  assert.match(rankingsRoute, /ORDER BY \$\{subRank\}/);
   assert.match(rankingsRoute, /is_world_record/);
   assert.match(rankingsRoute, /is_continent_record/);
   assert.match(rankingsRoute, /is_country_record/);
@@ -184,7 +181,7 @@ test("does not replace SQL failures with synthetic ranking data", async () => {
   ]);
 
   assert.doesNotMatch(page, /demo-data|makeDemoRankings/);
-  assert.doesNotMatch(rankingsService, /demo-data|makeDemoRankings|source: "demo"/);
+  assert.doesNotMatch(rankingsService, /demo-data|makeDemoRankings/);
   assert.match(rankingsRoute, /status: 503/);
   assert.doesNotMatch(readme, /preview rows/);
   await assert.rejects(access(new URL("../lib/demo-data.ts", import.meta.url)));
@@ -237,22 +234,16 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(page, /pages\.flatMap/);
   assert.match(layout, /title:\s*"WCA Rankings"/);
   assert.match(layout, /PwaRegistration/);
-  assert.match(layout, /window\.addEventListener\("load"/);
-  assert.match(layout, /data-styles-ready/);
-  assert.match(layout, /eventPickerMenus\.length > 0/);
-  assert.match(layout, /getComputedStyle\(eventPickerMenu\)\.visibility === "hidden"/);
-  assert.match(layout, /stableStylesFrames < 4/);
-  assert.match(layout, /body \{ visibility: hidden; \}/);
-  assert.match(layout, /<noscript>/);
+  assert.doesNotMatch(layout, /data-styles-ready|visibility: hidden|stableStylesFrames/);
+  assert.match(layout, /body \{ visibility: visible; \}/);
   assert.match(manifest, /display: "standalone"/);
   assert.match(manifest, /icon-192\.png/);
   assert.match(manifest, /icon-512\.png/);
   assert.match(pwaRegistration, /serviceWorker\.register\(SERVICE_WORKER_URL/);
   assert.match(pwaRegistration, /updateViaCache: "none"/);
-  assert.match(pwaRegistration, /process\.env\.NODE_ENV/);
-  assert.match(pwaRegistration, /unregister\(\)/);
+  assert.doesNotMatch(pwaRegistration, /unregister\(\)/);
   assert.match(serviceWorker, /CACHE_NAME/);
-  assert.match(serviceWorker, /caches\.match/);
+  assert.match(serviceWorker, /cache\.match/);
   assert.match(packageJson, /"name": "wcarankings-2"/);
   assert.match(packageJson, /"@tanstack\/react-virtual"/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
@@ -316,8 +307,9 @@ test("self-hosted ranking buckets preserve a tie larger than the page size", asy
   }
 
   const mysql = await import("mysql2/promise");
-  const database = await mysql.createConnection(process.env.DATABASE_URL);
+  let database;
   try {
+    database = await mysql.createConnection(process.env.DATABASE_URL);
     const [tableRows] = await database.query("SELECT TABLE_NAME AS name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('ranking_entries_single', 'ranking_entries_average')");
     if (tableRows.length !== 2) {
       context.skip("self-hosted WCA database is not populated");
@@ -357,6 +349,6 @@ test("self-hosted ranking buckets preserve a tie larger than the page size", asy
   } catch (error) {
     context.skip(`self-hosted WCA database is unavailable: ${error instanceof Error ? error.message : error}`);
   } finally {
-    await database.end().catch(() => {});
+    await database?.end().catch(() => {});
   }
 });

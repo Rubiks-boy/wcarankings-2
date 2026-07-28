@@ -1,5 +1,5 @@
-const SHELL_CACHE = "wca-rankings-shell-v2";
-const RANKINGS_CACHE = "wca-rankings-pages-v2";
+const SHELL_CACHE = "wca-rankings-shell-v3";
+const RANKINGS_CACHE = "wca-rankings-pages-v3";
 // Kept as a compatibility name for existing service-worker checks and diagnostics.
 const CACHE_NAME = SHELL_CACHE;
 const MAX_AGE_MS = 12 * 60 * 60 * 1000;
@@ -62,6 +62,12 @@ async function cachedRankingPage(request) {
   });
 }
 
+async function fetchAndCache(request, cache, cacheKey = request) {
+  const response = await fetch(request);
+  if (response.ok) await cache.put(cacheKey, response.clone());
+  return response;
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
 });
@@ -81,26 +87,34 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
 
   if (isRankingPage(url)) {
-    event.respondWith(fetch(request).then(async (response) => {
-      if (response.ok) {
-        const cache = await caches.open(RANKINGS_CACHE);
-        await cache.put(request, await withCacheMetadata(response.clone()));
-        await enforceRankingLimit(cache, eventIdFor(request));
-      }
-      return response;
-    }).catch(async () => (await cachedRankingPage(request)) || Response.error()));
+    const refresh = caches.open(RANKINGS_CACHE).then((cache) => fetch(request).then(async (response) => {
+        if (response.ok) {
+          await cache.put(request, await withCacheMetadata(response.clone()));
+          await enforceRankingLimit(cache, eventIdFor(request));
+        }
+        return response;
+      }));
+    event.waitUntil(refresh.catch(() => undefined));
+    event.respondWith(caches.open(RANKINGS_CACHE).then(async (cache) =>
+      (await cache.match(request)) || refresh.catch(async () => (await cachedRankingPage(request)) || Response.error()),
+    ));
     return;
   }
 
   if (request.destination === "document") {
-    event.respondWith(fetch(request).catch(() => caches.match("/")));
+    const refresh = caches.open(SHELL_CACHE).then((cache) => fetchAndCache(request, cache, "/"));
+    event.waitUntil(refresh.catch(() => undefined));
+    event.respondWith(caches.open(SHELL_CACHE).then(async (cache) =>
+      (await cache.match("/")) || refresh.catch(() => Response.error()),
+    ));
     return;
   }
 
   if (["script", "style", "image", "font"].includes(request.destination)) {
-    event.respondWith(caches.match(request).then((cached) => cached || fetch(request).then(async (response) => {
-      if (response.ok) (await caches.open(SHELL_CACHE)).put(request, response.clone());
-      return response;
-    })));
+    const refresh = caches.open(SHELL_CACHE).then((cache) => fetchAndCache(request, cache));
+    event.waitUntil(refresh.catch(() => undefined));
+    event.respondWith(caches.open(SHELL_CACHE).then(async (cache) =>
+      (await cache.match(request)) || refresh,
+    ));
   }
 });

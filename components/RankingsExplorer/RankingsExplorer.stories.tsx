@@ -126,7 +126,6 @@ function makeMockResponse(url: URL, init?: RequestInit) {
         startPosition: start - 1,
         lastRank: pageEntries.at(-1)?.rank ?? null,
         total: allEntries.length,
-        fetchedAt: MOCK_FETCHED_AT,
       }),
       { headers: { "Content-Type": "application/json" } }
     )
@@ -173,7 +172,6 @@ const initialData = {
   startPosition: 0,
   lastRank: entries.at(-1)?.rank ?? null,
   total: allEntries.length,
-  fetchedAt: MOCK_FETCHED_AT,
   searchMatches: [],
   initialMatchPersonId: "",
 };

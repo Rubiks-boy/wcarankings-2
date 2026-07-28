@@ -1,36 +1,36 @@
-import { loadRankings } from "@/lib/rankings";
+import { DatabaseOverloadedError } from "@/db";
+import { loadRankingsWithDiagnostics } from "@/lib/rankings";
 import { isEventId, isRankingType, parseRegionQuery } from "@/lib/wca";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  const startedAt = performance.now();
   const searchParams = new URL(request.url).searchParams;
+  const rawEventId = searchParams.get("eventId") ?? searchParams.get("event");
+  const rawType = searchParams.get("result") ?? searchParams.get("type");
+  const eventId = isEventId(rawEventId) ? rawEventId : "333";
+  const type = eventId === "333mbf" ? "single" : isRankingType(rawType) ? rawType : "single";
+  const { scope } = parseRegionQuery(searchParams.get("region"));
 
   try {
-    const data = await loadRankings(searchParams);
-    return Response.json(data, {
-      headers: { "Cache-Control": "public, max-age=60, s-maxage=3600" },
+    const validationAt = performance.now();
+    const result = await loadRankingsWithDiagnostics(searchParams);
+    const totalMs = performance.now() - startedAt;
+    const queueMs = result.timings?.queueMs ?? 0;
+    const statementMs = result.timings?.statementMs ?? 0;
+    const cacheMs = Math.max(0, totalMs - (validationAt - startedAt) - queueMs - statementMs);
+    const serverTiming = `validation;dur=${(validationAt - startedAt).toFixed(1)}, cache;dur=${cacheMs.toFixed(1)}, db-queue;dur=${queueMs.toFixed(1)}, db;dur=${statementMs.toFixed(1)}, serialization;dur=0.0, total;dur=${totalMs.toFixed(1)}`;
+    console.info(JSON.stringify({ operation: "rankings", eventId, result: type, region: scope, status: 200, timings: { validation_ms: validationAt - startedAt, cache_ms: cacheMs, db_queue_ms: queueMs, db_ms: statementMs, serialization_ms: 0, total_ms: totalMs }, query_count: result.queryCount, returned_rows: result.returnedRows, cache: result.cacheOutcome, data_version: result.dataVersion }));
+    return Response.json(result.data, {
+      headers: { "Cache-Control": "public, max-age=60, s-maxage=3600", "Server-Timing": serverTiming, "X-Rankings-Cache": result.cacheOutcome, "X-Rankings-Data-Version": result.dataVersion ?? "unknown" },
     });
   } catch (error) {
-    const rawEventId = searchParams.get("eventId") ?? searchParams.get("event");
-    const rawType = searchParams.get("result") ?? searchParams.get("type");
-    const eventId = isEventId(rawEventId) ? rawEventId : "333";
-    const type = eventId === "333mbf" ? "single" : isRankingType(rawType) ? rawType : "single";
-    const { scope } = parseRegionQuery(searchParams.get("region"));
-
-    console.error("Rankings query failed", {
-      eventId,
-      type,
-      scope,
-      paged: searchParams.get("paged") === "1",
-      search: Boolean(searchParams.get("search")),
-      locate: Boolean(searchParams.get("locate")),
-      error,
-    });
+    console.error(JSON.stringify({ operation: "rankings", eventId, result: type, region: scope, status: 503, timings: { total_ms: performance.now() - startedAt }, query_count: 0, returned_rows: 0, cache: "bypass", data_version: null, error: error instanceof Error ? error.name : "unknown" }));
 
     return Response.json(
       { error: "Rankings are unavailable." },
-      { status: 503 },
+      { status: 503, headers: { "Cache-Control": "no-store", ...(error instanceof DatabaseOverloadedError ? { "Retry-After": "1" } : {}) } },
     );
   }
 }

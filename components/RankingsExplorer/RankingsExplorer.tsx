@@ -15,6 +15,7 @@ import {
   cancelScrollAnimation,
   getCurrentViewportPosition,
   getCurrentViewportSubRank,
+  getPrefetchRowCount,
   getScrollAnimationDuration,
   getSearchAnimationDuration,
   getSearchBridgePageStarts,
@@ -44,7 +45,7 @@ import { ThemeToggle } from "../ThemeToggle/ThemeToggle";
 import { VimHelp } from "../VimHelp/VimHelp";
 import { VimSearchInput } from "../VimSearchInput/VimSearchInput";
 import {
-  formatFetchedAgo,
+  formatRankingsFreshness,
   type InitialRankingData,
   type RankingEntry,
   type RankingPage,
@@ -227,7 +228,7 @@ function getPage(
       startPosition: data.startPosition,
       lastRank: data.lastRank,
       total: data.total,
-      fetchedAt: data.fetchedAt ?? data.exportDate ?? null,
+      exportDate: data.exportDate ?? null,
       offlineStale: response.headers.get("X-Rankings-Offline-Stale") === "1",
     };
   });
@@ -473,8 +474,8 @@ export function RankingsExplorer({
   const [total, setTotal] = useState(
     initialData?.total ?? Number.POSITIVE_INFINITY
   );
-  const [fetchedAt, setFetchedAt] = useState<string | null>(
-    initialData?.fetchedAt ?? null
+  const [exportDate, setExportDate] = useState<string | null>(
+    initialData?.exportDate ?? null
   );
   const [offlineStale, setOfflineStale] = useState(false);
   const [hasMore, setHasMore] = useState(initialData?.hasMore ?? true);
@@ -595,6 +596,7 @@ export function RankingsExplorer({
     clearProgrammaticTimer: null,
     settleTimer: null,
   });
+  const scrollVelocityRef = useRef({ top: 0, timestamp: 0, downwardPixelsPerMs: 0 });
 
   const rowVirtualizer = useWindowVirtualizer({
     count: entries.length + 1,
@@ -1040,7 +1042,7 @@ export function RankingsExplorer({
         setLastRank(data.lastRank);
         setHasMore(data.hasMore);
         setTotal(data.total);
-        setFetchedAt(data.fetchedAt);
+        setExportDate(data.exportDate ?? null);
         setOfflineStale(Boolean(data.offlineStale));
         const requestedTargetIndex = focusLast
           ? Math.max(0, loadedEntries.length - 1)
@@ -1281,7 +1283,7 @@ export function RankingsExplorer({
           setLastRank(data.lastRank);
           setHasMore(data.hasMore);
           setTotal(data.total);
-          setFetchedAt(data.fetchedAt);
+          setExportDate(data.exportDate ?? null);
           setOfflineStale(Boolean(data.offlineStale));
           pendingScrollDirectionRef.current = null;
 
@@ -1687,7 +1689,7 @@ export function RankingsExplorer({
       setHasMore(data.hasMore);
       setLastRank(data.lastRank);
       setTotal(data.total);
-      setFetchedAt(data.fetchedAt);
+      setExportDate(data.exportDate ?? null);
       setOfflineStale(Boolean(data.offlineStale));
     } catch (requestError) {
       setError(
@@ -1735,7 +1737,7 @@ export function RankingsExplorer({
       setStartPosition(data.startPosition);
       setPreviousPageStart(data.previousPageStart);
       setLastRank(data.lastRank);
-      setFetchedAt(data.fetchedAt);
+      setExportDate(data.exportDate ?? null);
       setOfflineStale(Boolean(data.offlineStale));
       window.requestAnimationFrame(() => {
         const addedHeight = Math.max(
@@ -1835,9 +1837,28 @@ export function RankingsExplorer({
   }, [entries, focusRowAtIndex]);
 
   useEffect(() => {
+    const onScroll = () => {
+      const now = performance.now();
+      const previous = scrollVelocityRef.current;
+      const elapsed = now - previous.timestamp;
+      const distance = window.scrollY - previous.top;
+      const velocity = elapsed > 0 && distance > 0 ? distance / elapsed : 0;
+      scrollVelocityRef.current = {
+        top: window.scrollY,
+        timestamp: now,
+        downwardPixelsPerMs: velocity,
+      };
+    };
+    scrollVelocityRef.current = { top: window.scrollY, timestamp: performance.now(), downwardPixelsPerMs: 0 };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
     const lastVirtualRow = virtualRows.at(-1);
     // Loading the next bucket is the synchronization performed by this effect.
-    if (lastVirtualRow && lastVirtualRow.index >= entries.length - 12) {
+    const prefetchRows = getPrefetchRowCount(scrollVelocityRef.current.downwardPixelsPerMs);
+    if (lastVirtualRow && lastVirtualRow.index >= entries.length - prefetchRows) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       void loadMore();
     }
@@ -2645,9 +2666,7 @@ export function RankingsExplorer({
         <span>By Adam Walker and Cailyn Sinclair</span>
         {offlineStale && <span role="status">Offline cached rankings may be stale</span>}
         <span>
-          {fetchedAt
-            ? `fetched ${formatFetchedAgo(fetchedAt)}`
-            : "fetched time unavailable"}
+          {formatRankingsFreshness(exportDate)}
         </span>
       </footer>
     </div>

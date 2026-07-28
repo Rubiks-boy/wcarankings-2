@@ -28,7 +28,7 @@ type ImportRun = {
   counts: Record<string, number | null>;
 };
 
-type HealthPayload = {
+export type HealthPayload = {
   status: ImportHealthStatus;
   currentExport: { date: string; formatVersion: string | null; fetchedAt: string | null } | null;
   latestRun: ImportRun | null;
@@ -57,11 +57,18 @@ const projectionStatusLabels: Record<string, string> = {
   failed: "Build failed",
 };
 
+async function loadImportHealth(): Promise<HealthPayload> {
+  const response = await fetch("/api/admin/import-health", { cache: "no-store" });
+  const payload = await response.json() as HealthPayload;
+  if (!response.ok) throw new Error(payload.diagnostics);
+  return payload;
+}
+
 function Metric({ label, value }: { label: string; value: string | number | null | undefined }) {
   return <div className={styles.metric}><dt>{label}</dt><dd>{value ?? "—"}</dd></div>;
 }
 
-export function ImportHealth() {
+export function ImportHealth({ loadHealth = loadImportHealth }: { loadHealth?: () => Promise<HealthPayload> }) {
   const [data, setData] = useState<HealthPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,9 +78,7 @@ export function ImportHealth() {
 
     async function refresh() {
       try {
-        const response = await fetch("/api/admin/import-health", { cache: "no-store" });
-        const payload = await response.json() as HealthPayload;
-        if (!response.ok) throw new Error(payload.diagnostics);
+        const payload = await loadHealth();
         if (cancelled) return;
         setData(payload);
         setError(null);
@@ -90,7 +95,7 @@ export function ImportHealth() {
       cancelled = true;
       if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
     };
-  }, []);
+  }, [loadHealth]);
 
   if (error && !data) return <main className={styles.page}><p className={styles.alert}>{error}</p></main>;
   if (!data) return <main className={styles.page}><p>Loading import health…</p></main>;

@@ -60,6 +60,7 @@ const SEARCH_ANIMATION_ROWS = 3;
 const VIM_JUMP_PAGE_COUNT = 2;
 const VIM_JUMP_SIZE = PAGE_SIZE * VIM_JUMP_PAGE_COUNT;
 const ROW_HEIGHT = 65.45;
+const RAIL_REVEAL_DISTANCE = ROW_HEIGHT * 1.5;
 const END_MARKER_PEEK = ROW_HEIGHT + 40;
 
 export function centeredRowScrollTop(
@@ -179,8 +180,19 @@ async function fetchRankingPage(input: RequestInfo | URL) {
     : new Error("Rankings are unavailable.");
 }
 
-function pageStartForSubRank(subRank: number) {
+export function pageStartForSubRank(subRank: number) {
   return Math.floor((Math.max(1, subRank) - 1) / PAGE_SIZE) * PAGE_SIZE;
+}
+
+export function pageStartForViewportSubRank(subRank: number) {
+  return pageStartForSubRank(subRank) + 1;
+}
+
+export function shouldFallbackToFirstPage(
+  startRank: number,
+  entryCount: number
+) {
+  return startRank > 1 && entryCount === 0;
 }
 
 export function orderSearchMatches(
@@ -515,7 +527,8 @@ export function RankingsExplorer({
   const [jumpUpArmed, setJumpUpArmed] = useState(false);
   const [jumpDownArmed, setJumpDownArmed] = useState(false);
   const [tableReachedTop, setTableReachedTop] = useState(false);
-  const [atPageEnd, setAtPageEnd] = useState(false);
+  const [topRailProgress, setTopRailProgress] = useState(0);
+  const [bottomRailProgress, setBottomRailProgress] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const headerFindInputRef = useRef<HTMLInputElement>(null);
   const railFindInputRef = useRef<HTMLInputElement>(null);
@@ -526,6 +539,8 @@ export function RankingsExplorer({
     railFindInputRef.current = input;
   }, []);
   const tableReachedTopRef = useRef(false);
+  const topRailProgressRef = useRef(0);
+  const bottomRailProgressRef = useRef(0);
   const pendingSearchFocusHandoffRef =
     useRef<PendingSearchFocusHandoff | null>(null);
   const searchCompositionActiveRef = useRef(false);
@@ -563,6 +578,7 @@ export function RankingsExplorer({
   const forcePageLoadRef = useRef(false);
   const skipNextFindResetRef = useRef(false);
   const skipPageLoadStartRef = useRef<number | null>(null);
+  const pendingRegionFallbackPageKeyRef = useRef<string | null>(null);
   const initialScrollRef = useRef(
     Boolean(
       initialData && normalizedInitialSearch && initialData.initialMatchPersonId
@@ -859,9 +875,36 @@ export function RankingsExplorer({
 
   useEffect(() => {
     const updateRailVisibility = () => {
-      const tableTop = rankingListRef.current?.getBoundingClientRect().top;
+      const railRevealStart = Math.max(0, listOffset - RAIL_REVEAL_DISTANCE);
+      const nextTopRailProgress = Math.max(
+        0,
+        Math.min(
+          1,
+          (window.scrollY - railRevealStart) / RAIL_REVEAL_DISTANCE
+        )
+      );
+      if (nextTopRailProgress !== topRailProgressRef.current) {
+        topRailProgressRef.current = nextTopRailProgress;
+        setTopRailProgress(nextTopRailProgress);
+      }
+      const distanceToPageEnd = Math.max(
+        0,
+        document.documentElement.scrollHeight -
+          (window.scrollY + window.innerHeight)
+      );
+      const nextBottomRailProgress = Math.max(
+        0,
+        Math.min(
+          1,
+          distanceToPageEnd / RAIL_REVEAL_DISTANCE
+        )
+      );
+      if (nextBottomRailProgress !== bottomRailProgressRef.current) {
+        bottomRailProgressRef.current = nextBottomRailProgress;
+        setBottomRailProgress(nextBottomRailProgress);
+      }
       const nextTableReachedTop =
-        (tableTop ?? Number.POSITIVE_INFINITY) <= 0;
+        nextTopRailProgress >= 1;
       if (nextTableReachedTop !== tableReachedTopRef.current) {
         const source = nextTableReachedTop
           ? headerFindInputRef.current
@@ -877,10 +920,6 @@ export function RankingsExplorer({
         tableReachedTopRef.current = nextTableReachedTop;
         setTableReachedTop(nextTableReachedTop);
       }
-      setAtPageEnd(
-        window.scrollY + window.innerHeight >=
-          document.documentElement.scrollHeight - 1
-      );
     };
     const frame = window.requestAnimationFrame(updateRailVisibility);
     window.addEventListener("scroll", updateRailVisibility, { passive: true });
@@ -888,7 +927,7 @@ export function RankingsExplorer({
       window.cancelAnimationFrame(frame);
       window.removeEventListener("scroll", updateRailVisibility);
     };
-  }, [entries.length, loading]);
+  }, [entries.length, listOffset, loading]);
 
   useEffect(() => {
     const syncStateFromUrl = () => {
@@ -950,7 +989,10 @@ export function RankingsExplorer({
     }
     skipPageLoadStartRef.current = null;
     let active = true;
+    let redirectedToFirstPage = false;
     const requestNavigationEpoch = navigationEpochRef.current;
+    const shouldFallbackToTop =
+      pendingRegionFallbackPageKeyRef.current === pageKey;
     const preserveList = preserveListDuringLoadRef.current;
     // This reset is coupled to the request started immediately below.
     setLoading(true);
@@ -976,6 +1018,22 @@ export function RankingsExplorer({
           requestNavigationEpoch !== navigationEpochRef.current
         )
           return;
+        if (
+          shouldFallbackToTop &&
+          shouldFallbackToFirstPage(startRank, data.entries.length)
+        ) {
+          redirectedToFirstPage = true;
+          pendingRegionFallbackPageKeyRef.current = null;
+          pendingRankRef.current = 1;
+          pendingScrollToTopRef.current = true;
+          pendingScrollDirectionRef.current = null;
+          pendingNavigationAppendRef.current = false;
+          preserveListDuringLoadRef.current = true;
+          setPreserveListDuringLoad(true);
+          setStartRank(1);
+          return;
+        }
+        if (shouldFallbackToTop) pendingRegionFallbackPageKeyRef.current = null;
         const currentPosition = getCurrentViewportPosition(
           listRef.current,
           entriesRef.current,
@@ -1108,6 +1166,7 @@ export function RankingsExplorer({
           active &&
           requestNavigationEpoch === navigationEpochRef.current
         ) {
+          if (shouldFallbackToTop) pendingRegionFallbackPageKeyRef.current = null;
           setError(
             requestError instanceof Error
               ? requestError.message
@@ -1120,6 +1179,7 @@ export function RankingsExplorer({
           active &&
           requestNavigationEpoch === navigationEpochRef.current
         ) {
+          if (redirectedToFirstPage) return;
           setLoading(false);
           preserveListDuringLoadRef.current = false;
           setPreserveListDuringLoad(false);
@@ -2429,8 +2489,14 @@ export function RankingsExplorer({
       (eventId === "333mbf" && nextRankingType === "average")
     )
       return;
-    pendingRankRef.current = 1;
-    pendingScrollToTopRef.current = true;
+    const viewportSubRank = getCurrentViewportSubRank(
+      listRef.current,
+      entriesRef.current,
+      startRankRef.current
+    );
+    const nextStartRank = pageStartForViewportSubRank(viewportSubRank);
+    pendingRankRef.current = viewportSubRank;
+    pendingScrollToTopRef.current = false;
     pendingScrollDirectionRef.current = null;
     skipNextFindResetRef.current = true;
     preserveListDuringLoadRef.current = true;
@@ -2440,16 +2506,23 @@ export function RankingsExplorer({
       result: nextRankingType === "single" ? null : nextRankingType,
       type: null,
     });
-    setStartRank(1);
+    setStartRank(nextStartRank);
   };
 
   const changeEvent = (nextEventId: (typeof WCA_EVENTS)[number]["id"]) => {
-    pendingRankRef.current = 1;
-    pendingScrollToTopRef.current = true;
+    const viewportSubRank = getCurrentViewportSubRank(
+      listRef.current,
+      entriesRef.current,
+      startRankRef.current
+    );
+    const nextStartRank = pageStartForViewportSubRank(viewportSubRank);
+    pendingRankRef.current = viewportSubRank;
+    pendingScrollToTopRef.current = false;
+    pendingScrollDirectionRef.current = null;
     skipNextFindResetRef.current = true;
-    preserveListDuringLoadRef.current = false;
-    setPreserveListDuringLoad(false);
-    setStartRank(1);
+    preserveListDuringLoadRef.current = true;
+    setPreserveListDuringLoad(true);
+    setStartRank(nextStartRank);
     setEventId(nextEventId);
     const nextRankingType = nextEventId === "333mbf" ? "single" : rankingType;
     setRankingType(nextRankingType);
@@ -2462,13 +2535,29 @@ export function RankingsExplorer({
   };
 
   const changeRegion = (option: RegionOption) => {
-    pendingRankRef.current = 1;
-    pendingScrollToTopRef.current = true;
+    const viewportSubRank = getCurrentViewportSubRank(
+      listRef.current,
+      entriesRef.current,
+      startRankRef.current
+    );
+    const nextStartRank = pageStartForViewportSubRank(viewportSubRank);
+    const nextSelection = { scope: option.scope, regionId: option.regionId };
+    pendingRegionFallbackPageKeyRef.current = [
+      eventId,
+      rankingType,
+      nextSelection.scope,
+      nextSelection.regionId,
+      nextStartRank,
+    ].join(":");
+    pendingRankRef.current = viewportSubRank;
+    pendingScrollToTopRef.current = false;
+    pendingScrollDirectionRef.current = null;
+    pendingNavigationAppendRef.current = false;
     skipNextFindResetRef.current = true;
-    preserveListDuringLoadRef.current = false;
-    setPreserveListDuringLoad(false);
-    setStartRank(1);
-    setRegionSelection({ scope: option.scope, regionId: option.regionId });
+    preserveListDuringLoadRef.current = true;
+    setPreserveListDuringLoad(true);
+    setStartRank(nextStartRank);
+    setRegionSelection(nextSelection);
     updateQueryParams({
       region: option.scope === "world" ? null : option.regionId,
       scope: null,
@@ -2567,13 +2656,20 @@ export function RankingsExplorer({
       </header>
 
       <main>
-        <JumpControlsVisibility visible={tableReachedTop || jumpUpArmed}>
+        <JumpControlsVisibility
+          progress={jumpUpArmed ? 1 : topRailProgress}
+        >
           <JumpUpControls
           armed={jumpUpArmed}
           currentPosition={visibleSubRank}
           onJump={handleJumpUp}
           event={currentEvent}
           onEventChange={changeEvent}
+          rankingType={rankingType}
+          onRankingTypeChange={changeRankingType}
+          regions={regions}
+          regionSelection={regionSelection}
+          onRegionChange={changeRegion}
           onEventPickerTrigger={(trigger) => {
             railEventPickerTriggerRef.current = trigger;
           }}
@@ -2622,10 +2718,7 @@ export function RankingsExplorer({
         </div>
 
         <JumpControlsVisibility
-          visible={
-            jumpDownArmed ||
-            (!atPageEnd && Number.isFinite(total) && visibleSubRank < total)
-          }
+          progress={jumpDownArmed ? 1 : bottomRailProgress}
         >
           <JumpDownControls
           armed={jumpDownArmed}

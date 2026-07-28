@@ -5,7 +5,9 @@ import {
   centeredRowScrollTop,
   getSearchScrollDirection,
   orderSearchMatches,
+  pageStartForViewportSubRank,
   RankingsExplorer,
+  shouldFallbackToFirstPage,
 } from "./RankingsExplorer";
 
 const rankingEntry = {
@@ -42,6 +44,19 @@ test("uses the actual rank direction when search results wrap around", () => {
     getSearchScrollDirection({ subRank: 100 }, { subRank: 900 }, -1),
     1
   );
+});
+
+test("keeps event and result-type changes on the current page", () => {
+  assert.equal(pageStartForViewportSubRank(1), 1);
+  assert.equal(pageStartForViewportSubRank(50), 1);
+  assert.equal(pageStartForViewportSubRank(51), 51);
+  assert.equal(pageStartForViewportSubRank(98), 51);
+});
+
+test("falls back to the first region page only when the current page is absent", () => {
+  assert.equal(shouldFallbackToFirstPage(51, 0), true);
+  assert.equal(shouldFallbackToFirstPage(51, 1), false);
+  assert.equal(shouldFallbackToFirstPage(1, 0), false);
 });
 
 test("renders the rankings shell with extracted components", () => {

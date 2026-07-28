@@ -32,6 +32,11 @@ test("groups the upper jump and search actions in one rail", () => {
       onJump={() => undefined}
       event={WCA_EVENTS[0]}
       onEventChange={() => undefined}
+      rankingType="single"
+      onRankingTypeChange={() => undefined}
+      regions={[{ key: "world", scope: "world", regionId: "", label: "World" }]}
+      regionSelection={{ scope: "world", regionId: "" }}
+      onRegionChange={() => undefined}
       findQuery=""
       findError=""
       findLoading={false}
@@ -50,6 +55,9 @@ test("groups the upper jump and search actions in one rail", () => {
   assert.match(markup, /cubing-icon event-333/);
   assert.match(markup, /aria-label="3x3x3 Cube"/);
   assert.match(markup, /aria-haspopup="listbox"/);
+  assert.match(markup, /Switch to average rankings/);
+  assert.match(markup, /Single/);
+  assert.match(markup, /aria-label="Region"/);
   assert.match(markup, /Search names or WCA IDs/);
 });
 

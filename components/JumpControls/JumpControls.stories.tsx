@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { useState } from "react";
 import { WCA_EVENTS } from "@/lib/wca";
-import type { RankingEntry } from "../RankingsExplorer/types";
+import type { RankingEntry, RegionOption } from "../RankingsExplorer/types";
 import { JumpDownControls, JumpUpControls } from "./JumpControls";
 import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVisibility";
 
@@ -20,9 +20,16 @@ const matches: RankingEntry[] = [
   },
 ];
 
+const regions: RegionOption[] = [
+  { key: "world", scope: "world", regionId: "", label: "World" },
+  { key: "country:US", scope: "country", regionId: "US", label: "United States" },
+];
+
 function InteractiveTopRail() {
   const [eventId, setEventId] =
     useState<(typeof WCA_EVENTS)[number]["id"]>("333");
+  const [rankingType, setRankingType] = useState<"single" | "average">("single");
+  const [regionSelection, setRegionSelection] = useState({ scope: "world" as const, regionId: "" });
   const [query, setQuery] = useState("");
   const event = WCA_EVENTS.find((candidate) => candidate.id === eventId)!;
 
@@ -34,6 +41,11 @@ function InteractiveTopRail() {
       onJump={() => undefined}
       event={event}
       onEventChange={setEventId}
+      rankingType={rankingType}
+      onRankingTypeChange={setRankingType}
+      regions={regions}
+      regionSelection={regionSelection}
+      onRegionChange={setRegionSelection}
       findQuery={query}
       findError=""
       findLoading={false}

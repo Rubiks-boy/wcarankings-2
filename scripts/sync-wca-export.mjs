@@ -162,7 +162,7 @@ async function createImportRun(latest, startedAt) {
       `INSERT INTO import_runs
         (export_date, export_format_version, export_url, status, started_at, fetch_started_at)
        VALUES (?, ?, ?, 'running', ?, ?)`,
-      [latest.exportDate, latest.version, latest.sqlUrl || null, startedAt, startedAt],
+      [String(latest.exportDate).slice(0, 10), latest.version, latest.sqlUrl || null, startedAt, startedAt],
     );
     return result.insertId;
   } finally {

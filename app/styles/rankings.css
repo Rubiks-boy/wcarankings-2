@@ -1,8 +1,7 @@
 .outerListWrapper {
   display: flex;
   justify-content: center;
-  margin-right: -0.5em;
-  margin-left: -1em;
+  margin-inline: calc(-1 * var(--page-gutter));
 }
 
 .listContainer {
@@ -45,7 +44,7 @@
   gap: 0.35em;
   height: 100%;
   padding-block: 0.75em;
-  padding-inline: 1rem;
+  padding-inline: var(--page-gutter);
   margin-bottom: 0;
   border: 0;
   border-radius: 0;
@@ -91,6 +90,7 @@
 .rank {
   width: 5ch;
   font-size: 1.05em;
+  font-variant-numeric: tabular-nums;
 }
 
 .rank--duplicate {
@@ -183,6 +183,7 @@
   font-size: 1.08em;
   font-weight: 500;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .competitionName {

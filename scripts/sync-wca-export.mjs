@@ -324,12 +324,22 @@ async function main() {
     await dropRankingViews();
     process.stdout.write("Importing WCA SQL tables into MariaDB…\n");
     await importSqlExport(zipPath);
-    await updateImportRun(runId, { fetched_at: now(), projection_swap_status: "building" });
+    const projectionBuildStartedAt = now();
+    await updateImportRun(runId, {
+      fetched_at: projectionBuildStartedAt,
+      projection_build_started_at: projectionBuildStartedAt,
+      projection_swap_status: "building",
+    });
     process.stdout.write("Refreshing staging ranking projections…\n");
     await refreshRankingsSchema();
     const counts = await collectImportCounts();
-    await updateImportRun(runId, counts);
-    await updateImportRun(runId, { projection_swap_status: "swapping" });
+    const projectionBuiltAt = now();
+    await updateImportRun(runId, {
+      ...counts,
+      projection_built_at: projectionBuiltAt,
+      projection_build_duration_ms: elapsedMilliseconds(projectionBuildStartedAt, projectionBuiltAt),
+      projection_swap_status: "swapping",
+    });
     await promoteRankings();
     const completedAt = now();
     await writeExportMetadata(latest);

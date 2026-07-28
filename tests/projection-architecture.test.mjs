@@ -69,3 +69,22 @@ test("does not introduce entries or sub-rank vocabulary in new schemas", async (
     assert.doesNotMatch(source, /sub_rank/);
   }
 });
+
+test("person search resolves IDs before querying projections", async () => {
+  const [search, rankings, results, compatibilityResults] = await Promise.all([
+    readFile(new URL("lib/person-search.ts", root), "utf8"),
+    readFile(new URL("lib/rankings.ts", root), "utf8"),
+    readFile(new URL("sql/ranking-projections/result_rankings.sql", root), "utf8"),
+    readFile(new URL("sql/ranking-projections/result_entries_single_indexes.sql", root), "utf8"),
+  ]);
+
+  assert.match(search, /FROM persons/);
+  assert.match(search, /wca_id = \?/);
+  assert.match(search, /name LIKE \?/);
+  assert.match(rankings, /searchPersonIds/);
+  assert.match(rankings, /person_id IN/);
+  assert.doesNotMatch(rankings, /person_name \$\{operator\}/);
+  assert.match(results, /person_id, competition_start_date DESC, result_id DESC/);
+  assert.match(compatibilityResults, /person_id, competition_date DESC, result_id DESC/);
+  assert.match(compatibilityResults, /person_id, event_id, world_sub_rank, result_id/);
+});

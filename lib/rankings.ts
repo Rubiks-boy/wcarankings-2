@@ -2,6 +2,7 @@ import { query } from "@/db";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
 import { getCurrentRankingsMetadata, getRankingCount, type RankingsMetadata } from "@/lib/rankings-metadata";
 import { normalPageKey, rankingsPageCache } from "@/lib/rankings-cache";
+import { searchPersonIds } from "@/lib/person-search";
 import { getRecordBadges, isEventId, isRankingType, isValidRegexPattern, parseRegionQuery, type RankingEntry, type RankingType, type RegionScope } from "@/lib/wca";
 
 const PAGE_SIZE = RESULTS_PAGE_SIZE;
@@ -56,12 +57,25 @@ export async function queryMysql(input: QueryInput) {
     return { data: { located: result.rows[0] ? toRankingEntry(result.rows[0]) : null }, timings: result.timings, queryCount: 1, returnedRows: result.rows.length };
   }
   if (input.search) {
-    if (input.regexSearch && !isValidRegexPattern(input.search)) throw new Error("Invalid regular expression.");
-    const operator = input.regexSearch ? "REGEXP" : "LIKE";
-    const pattern = input.regexSearch ? input.search : `%${input.search}%`;
-    const result = await query<RankingRow>(`SELECT ${columns(rank, subRank)} FROM ${source} WHERE ${conditions.join(" AND ")} AND (person_name ${operator} ? OR person_id ${operator} ?) ORDER BY ${subRank} LIMIT ?`, [...values, pattern, pattern, input.searchLimit]);
+    const people = await searchPersonIds(input.search, input.regexSearch, input.searchLimit);
+    if (people.personIds.length === 0) {
+      return { data: { entries: [], hasMore: false, nextPageStart: null, previousPageStart: null, total: 0 }, timings: people.timings, queryCount: 1, returnedRows: 0 };
+    }
+    const placeholders = people.personIds.map(() => "?").join(", ");
+    const result = await query<RankingRow>(
+      `SELECT ${columns(rank, subRank)} FROM ${source} WHERE ${conditions.join(" AND ")} AND person_id IN (${placeholders}) ORDER BY ${subRank} LIMIT ?`,
+      [...values, ...people.personIds, input.searchLimit],
+    );
     const entries = result.rows.map(toRankingEntry);
-    return { data: { entries, hasMore: false, nextPageStart: null, previousPageStart: null, total: entries.length }, timings: result.timings, queryCount: 1, returnedRows: result.rows.length };
+    return {
+      data: { entries, hasMore: false, nextPageStart: null, previousPageStart: null, total: entries.length },
+      timings: {
+        queueMs: people.timings.queueMs + result.timings.queueMs,
+        statementMs: people.timings.statementMs + result.timings.statementMs,
+      },
+      queryCount: 2,
+      returnedRows: people.returnedRows + result.rows.length,
+    };
   }
   const cursor = input.cursorRank
     ? ` AND (${subRank} > ? OR (${subRank} = ? AND person_id > ?))`

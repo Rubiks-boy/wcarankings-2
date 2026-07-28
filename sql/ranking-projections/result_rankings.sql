@@ -38,4 +38,7 @@ ALTER TABLE result_rankings
   ),
   ADD INDEX idx_result_rankings_person (
     person_id, event_id, result_type, result_value, result_id
+  ),
+  ADD INDEX idx_result_rankings_person_recent (
+    person_id, competition_start_date DESC, result_id DESC
   );

@@ -198,6 +198,18 @@ same column vocabulary.
 
 Display names and competition names should normally be joined after paging.
 
+Person search is deliberately a two-step lookup. Search `persons` first, using
+its `(wca_id, sub_id)` and `name` indexes for exact WCA IDs and prefix names.
+Regex name searches may scan `persons`, but must not scan this projection.
+After resolving the selected `person_id`, query this projection through:
+
+```text
+(person_id, event_id)
+```
+
+`person_id` is the canonical WCA identifier in projections; do not duplicate it
+as a separate `wca_id` column.
+
 ### `person_ranking_counts`
 
 Grain:
@@ -265,6 +277,24 @@ Result rankings keyset-page directly on that tuple. They do not store separate
 World, continent, or country position columns; removing those three
 `ROW_NUMBER()` windows materially reduces generation cost while preserving the
 public tied ranks.
+
+Person search uses the same `persons`-first lookup described for person-event
+rankings. Once a `person_id` is selected, use projection indexes matching the
+two exposed result views:
+
+```text
+(person_id, competition_start_date DESC, result_id DESC)
+(person_id, event_id, result_type, result_value, result_id)
+```
+
+The compatibility result projection retains its equivalent ranked access path:
+
+```text
+(person_id, event_id, world_sub_rank, result_id)
+```
+
+No result-ranking query should apply `LIKE`, `REGEXP`, or another name search to
+projection display columns.
 
 ### `result_ranking_counts`
 

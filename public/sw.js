@@ -1,4 +1,4 @@
-const SHELL_CACHE = "wca-rankings-shell-v3";
+const SHELL_CACHE = "wca-rankings-shell-v4";
 const RANKINGS_CACHE = "wca-rankings-pages-v3";
 // Kept as a compatibility name for existing service-worker checks and diagnostics.
 const CACHE_NAME = SHELL_CACHE;
@@ -69,7 +69,13 @@ async function fetchAndCache(request, cache, cacheKey = request) {
 }
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    event.waitUntil(self.skipWaiting());
+  }
 });
 
 self.addEventListener("activate", (event) => {

@@ -48,13 +48,47 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull images built by the pull request
+        id: pull-images
         env:
           SOURCE_TREE: ${{ steps.source-tree.outputs.sha }}
         run: |
-          docker pull "ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-app:tree-${SOURCE_TREE}"
-          docker pull "ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-flyway:tree-${SOURCE_TREE}"
-          docker tag "ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-app:tree-${SOURCE_TREE}" "wcarankings-app:${GITHUB_SHA}"
-          docker tag "ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-flyway:tree-${SOURCE_TREE}" "wcarankings-flyway:${GITHUB_SHA}"
+          APP_IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-app:tree-${SOURCE_TREE}"
+          FLYWAY_IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-flyway:tree-${SOURCE_TREE}"
+          if docker pull "$APP_IMAGE" && docker pull "$FLYWAY_IMAGE"; then
+            docker tag "$APP_IMAGE" "wcarankings-app:${GITHUB_SHA}"
+            docker tag "$FLYWAY_IMAGE" "wcarankings-flyway:${GITHUB_SHA}"
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Verified PR images are unavailable; building the merged main tree."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.pull-images.outputs.available != 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Flyway image from main
+        if: steps.pull-images.outputs.available != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.flyway
+          load: true
+          push: false
+          tags: wcarankings-flyway:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build production image from main
+        if: steps.pull-images.outputs.available != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: wcarankings-app:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Verify production image contents
         run: |

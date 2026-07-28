@@ -1,0 +1,21 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const workflow = await readFile(
+  new URL("../.github/workflows/deploy.yml", import.meta.url),
+  "utf8",
+);
+
+test("builds deploy images from main when PR images are unavailable", () => {
+  assert.match(workflow, /id: pull-images/);
+  assert.match(workflow, /echo "available=false" >> "\$GITHUB_OUTPUT"/);
+  assert.match(
+    workflow,
+    /if: steps\.pull-images\.outputs\.available != 'true'[\s\S]*file: Dockerfile\.flyway/,
+  );
+  assert.match(
+    workflow,
+    /if: steps\.pull-images\.outputs\.available != 'true'[\s\S]*tags: wcarankings-app:\$\{\{ github\.sha \}\}/,
+  );
+});

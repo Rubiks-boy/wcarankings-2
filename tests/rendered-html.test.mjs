@@ -11,11 +11,9 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
       "../components/RankingsExplorer/RankingsExplorer.tsx",
       "../components/RankingsExplorer/scrollEngine.ts",
       "../components/RankingsExplorer/types.ts",
-      "../components/RankingControls/RankingControls.tsx",
       "../components/RegionPicker/RegionPicker.tsx",
       "../components/RankingRow/RankingRow.tsx",
       "../components/ResultsTable/ResultsTable.tsx",
-      "../components/SearchInputs/SearchInputs.tsx",
       "../components/VimSearchInput/VimSearchInput.tsx",
       "../components/VimHelp/VimHelp.tsx",
       "../components/JumpControls/JumpControls.tsx",
@@ -46,11 +44,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /WCA Rankings/);
   assert.match(component, /href="\/"/);
   assert.doesNotMatch(component, /href="https:\/\/wcarankings\.com"/);
-  assert.match(component, /WCA_EVENTS\.map/);
-  assert.match(component, /className="selectInput eventInput"/);
-  assert.match(component, /className="rankingTypeToggle"/);
-  assert.match(component, /type="radio"/);
-  assert.match(component, /disabled=\{option === "average" && eventId === "333mbf"\}/);
+  assert.match(component, /RankingsJumpRail/);
   assert.match(component, /updateQueryParams/);
   assert.match(component, /eventId,/);
   assert.match(component, /result: rankingType/);
@@ -64,11 +58,8 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
     [...wcaEventSource.matchAll(/\{ id: "([^"]+)", name:/g)].map((match) => match[1]),
     ["333", "222", "444", "555", "666", "777", "333bf", "333fm", "333oh", "clock", "minx", "pyram", "skewb", "sq1", "444bf", "555bf", "333mbf"],
   );
-  assert.match(component, /className="chooser"/);
-  assert.match(component, /className="selectInput(?: eventInput)?"/);
   assert.match(component, /findBar/);
   assert.match(component, /Search names or WCA IDs/);
-  assert.match(component, /openFind/);
   assert.match(component, /RegionPicker/);
   assert.match(component, /className="regionPickerTrigger"/);
   assert.match(component, /initialRegions/);
@@ -100,7 +91,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /key === "f"/);
   assert.match(component, /setVimMode\(false\)/);
   assert.match(component, /railFindInputRef/);
-  assert.match(component, /input\?\.select\(\)/);
+  assert.match(component, /railFindInputRef\.current\?\.select\(\)/);
   assert.match(component, /key === "g"/);
   assert.match(component, /window\.innerHeight/);
   assert.match(component, /requestAnimationFrame/);

@@ -12,7 +12,12 @@ const entry: RankingEntry = {
   best: 1234,
   competitionId: "storybook-open",
   competitionName: "Storybook Open 2026",
-  recordBadges: ["WR", "NR"],
+  recordBadges: [],
+};
+
+const recordEntry: RankingEntry = {
+  ...entry,
+  recordBadges: ["WR", "ER", "NR"],
 };
 
 const meta = {
@@ -34,5 +39,5 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const TiedRank: Story = { args: { rankIsDuplicate: true } };
 export const Highlighted: Story = { args: { highlighted: true } };
-export const RecordBadges: Story = {};
+export const RecordBadges: Story = { args: { entry: recordEntry } };
 export const Loading: Story = { args: { entry: null, loading: true } };

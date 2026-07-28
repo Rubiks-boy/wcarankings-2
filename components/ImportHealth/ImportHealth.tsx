@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { formatDate, formatDuration, type ImportHealthStatus } from "@/lib/import-health";
+import {
+  formatDate,
+  formatDuration,
+  type ImportHealthStatus,
+  type MigrationHealthStatus,
+} from "@/lib/import-health";
 import styles from "./ImportHealth.module.css";
 
 type ImportRun = {
@@ -26,6 +31,18 @@ type HealthPayload = {
   latestRun: ImportRun | null;
   lastSuccessfulRun: ImportRun | null;
   recentFailures: ImportRun[];
+  migrations: {
+    status: MigrationHealthStatus;
+    latest: {
+      installedRank: number;
+      version: string | null;
+      description: string;
+      script: string;
+      installedOn: string;
+      executionTimeMs: number;
+      success: boolean;
+    } | null;
+  };
   diagnostics: string;
 };
 
@@ -37,6 +54,13 @@ const statusLabels: Record<ImportHealthStatus, string> = {
   last_import_failed: "Last import failed",
 };
 
+const migrationStatusLabels: Record<MigrationHealthStatus, string> = {
+  empty: "No migration history",
+  succeeded: "Latest migration succeeded",
+  failed: "Latest migration failed",
+  unavailable: "Migration status unavailable",
+};
+
 function Metric({ label, value }: { label: string; value: string | number | null | undefined }) {
   return <div className={styles.metric}><dt>{label}</dt><dd>{value ?? "—"}</dd></div>;
 }
@@ -46,26 +70,45 @@ export function ImportHealth() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/admin/import-health", { cache: "no-store" })
-      .then(async (response) => {
+    let cancelled = false;
+    let refreshTimer: number | undefined;
+
+    async function refresh() {
+      try {
+        const response = await fetch("/api/admin/import-health", { cache: "no-store" });
         const payload = await response.json() as HealthPayload;
         if (!response.ok) throw new Error(payload.diagnostics);
-        return payload;
-      })
-      .then(setData)
-      .catch((requestError) => setError(requestError instanceof Error ? requestError.message : "Unable to load import health."));
+        if (cancelled) return;
+        setData(payload);
+        setError(null);
+        refreshTimer = window.setTimeout(refresh, payload.status === "import_running" ? 5_000 : 30_000);
+      } catch (requestError) {
+        if (cancelled) return;
+        setError(requestError instanceof Error ? requestError.message : "Unable to load import health.");
+        refreshTimer = window.setTimeout(refresh, 30_000);
+      }
+    }
+
+    void refresh();
+    return () => {
+      cancelled = true;
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+    };
   }, []);
 
-  if (error) return <main className={styles.page}><p className={styles.alert}>{error}</p></main>;
+  if (error && !data) return <main className={styles.page}><p className={styles.alert}>{error}</p></main>;
   if (!data) return <main className={styles.page}><p>Loading import health…</p></main>;
 
   const run = data.latestRun ?? data.lastSuccessfulRun;
+  const migration = data.migrations.latest;
   return (
     <main className={styles.page}>
       <header className={styles.header}>
         <div><Link href="/" className={styles.back}>← WCA Rankings</Link><h1>Import health</h1><p>Read-only diagnostics for ranking data freshness and publication.</p></div>
         <strong className={`${styles.status} ${styles[data.status]}`}>{statusLabels[data.status]}</strong>
       </header>
+
+      {error && <p className={styles.alert}>Latest refresh failed: {error}</p>}
 
       <section className={styles.card} aria-labelledby="export-heading">
         <h2 id="export-heading">Current published export</h2>
@@ -100,6 +143,19 @@ export function ImportHealth() {
             <Metric label="Aggregates" value={run.counts.aggregates} />
           </dl>
         </> : <p>No import run has been recorded yet.</p>}
+      </section>
+
+      <section className={styles.card} aria-labelledby="migration-heading">
+        <h2 id="migration-heading">Database migrations</h2>
+        <p>{migrationStatusLabels[data.migrations.status]}</p>
+        {migration ? <dl className={styles.grid}>
+          <Metric label="Version" value={migration.version} />
+          <Metric label="Description" value={migration.description} />
+          <Metric label="Script" value={migration.script} />
+          <Metric label="Applied" value={formatDate(migration.installedOn)} />
+          <Metric label="Execution time" value={formatDuration(migration.executionTimeMs)} />
+          <Metric label="Success" value={migration.success ? "Yes" : "No"} />
+        </dl> : null}
       </section>
 
       <section className={styles.card} aria-labelledby="failure-heading">

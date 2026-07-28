@@ -58,7 +58,6 @@ test("renders the rankings shell with extracted components", () => {
         startPosition: 0,
         lastRank: 1,
         total: 1,
-        fetchedAt: null,
         searchMatches: [],
         initialMatchPersonId: "",
       }}

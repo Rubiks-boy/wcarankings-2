@@ -146,7 +146,6 @@ async function getInitialRankings(
     lastRank: lastPage.lastRank ?? null,
     total: lastPage.total ?? 0,
     exportDate: lastPage.exportDate ?? null,
-    fetchedAt: lastPage.fetchedAt ?? null,
     startRank,
     searchMatches,
     initialMatchPersonId: firstMatch?.personId ?? "",

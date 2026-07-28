@@ -229,7 +229,6 @@ function getPage(
       lastRank: data.lastRank,
       total: data.total,
       exportDate: data.exportDate ?? null,
-      fetchedAt: data.fetchedAt ?? null,
       offlineStale: response.headers.get("X-Rankings-Offline-Stale") === "1",
     };
   });
@@ -477,9 +476,6 @@ export function RankingsExplorer({
   );
   const [exportDate, setExportDate] = useState<string | null>(
     initialData?.exportDate ?? null
-  );
-  const [fetchedAt, setFetchedAt] = useState<string | null>(
-    initialData?.fetchedAt ?? null
   );
   const [offlineStale, setOfflineStale] = useState(false);
   const [hasMore, setHasMore] = useState(initialData?.hasMore ?? true);
@@ -1047,7 +1043,6 @@ export function RankingsExplorer({
         setHasMore(data.hasMore);
         setTotal(data.total);
         setExportDate(data.exportDate ?? null);
-        setFetchedAt(data.fetchedAt);
         setOfflineStale(Boolean(data.offlineStale));
         const requestedTargetIndex = focusLast
           ? Math.max(0, loadedEntries.length - 1)
@@ -1289,7 +1284,6 @@ export function RankingsExplorer({
           setHasMore(data.hasMore);
           setTotal(data.total);
           setExportDate(data.exportDate ?? null);
-          setFetchedAt(data.fetchedAt);
           setOfflineStale(Boolean(data.offlineStale));
           pendingScrollDirectionRef.current = null;
 
@@ -1696,7 +1690,6 @@ export function RankingsExplorer({
       setLastRank(data.lastRank);
       setTotal(data.total);
       setExportDate(data.exportDate ?? null);
-      setFetchedAt(data.fetchedAt);
       setOfflineStale(Boolean(data.offlineStale));
     } catch (requestError) {
       setError(
@@ -1745,7 +1738,6 @@ export function RankingsExplorer({
       setPreviousPageStart(data.previousPageStart);
       setLastRank(data.lastRank);
       setExportDate(data.exportDate ?? null);
-      setFetchedAt(data.fetchedAt);
       setOfflineStale(Boolean(data.offlineStale));
       window.requestAnimationFrame(() => {
         const addedHeight = Math.max(
@@ -2674,7 +2666,7 @@ export function RankingsExplorer({
         <span>By Adam Walker and Cailyn Sinclair</span>
         {offlineStale && <span role="status">Offline cached rankings may be stale</span>}
         <span>
-          {formatRankingsFreshness(exportDate, fetchedAt)}
+          {formatRankingsFreshness(exportDate)}
         </span>
       </footer>
     </div>

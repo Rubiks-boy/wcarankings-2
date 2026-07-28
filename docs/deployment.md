@@ -78,10 +78,21 @@ is configured only on the server.
 also be started with `workflow_dispatch`. Deploys are serialized so two production
 deploys do not overlap.
 
-The workflow does the following:
+Pull-request checks build the application and Flyway images from the checked-out
+merge result and tag them with the Git tree SHA, rather than a commit SHA,
+because GitHub can create a different commit SHA when a pull request is merged
+while retaining the same source tree. Before publishing either image, the job
+runs the Flyway image against temporary MariaDB, loads a small WCA-like fixture,
+refreshes ranking projections using the application image, starts that exact
+image, and runs a Chromium smoke test against it. The test asserts a seeded
+ranking is visible and uploads a screenshot plus Playwright report as a
+14-day workflow artifact. Only a successful same-repository pull request pushes
+those already-tested image tags to GitHub Container Registry.
 
-1. Checks out the commit, runs `npm ci`, `npm run lint`, and `npm test`.
-2. Builds `wcarankings-app:${{ github.sha }}` with Docker Buildx on the GitHub runner.
+The deployment workflow does the following:
+
+1. Checks out the merged commit and calculates its Git tree SHA.
+2. Pulls the matching prebuilt application and Flyway images from GitHub Container Registry.
 3. Uses repository-configured SSH credentials and host verification to establish
    non-interactive access to the production host.
 4. Copies `docker-compose.yml` and `ops/Caddyfile` to the deployment directory.
@@ -154,4 +165,6 @@ current ranking projections before replacing the app container. If the projectio
 check fails, it prints the projection-only rebuild command and leaves traffic on the
 current app. The previous image remains available until health checks succeed. MariaDB,
 the export cache, Caddy certificates, and their data survive because they are stored
-in named Docker volumes.
+in named Docker volumes. A deployment fails before contacting the server if no
+matching pull-request image exists, which prevents direct unverified pushes to
+`main` from being deployed.

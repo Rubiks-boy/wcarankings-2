@@ -25,6 +25,8 @@ RUN apt-get update \
 COPY --from=build --chown=app:app /app/node_modules ./node_modules
 COPY --from=build --chown=app:app /app/dist/standalone ./dist/standalone
 COPY --from=build --chown=app:app /app/dist/client ./dist/client
+# Vinext's standalone SSR resolves client manifests relative to its server bundle.
+COPY --from=build --chown=app:app /app/dist/client ./dist/standalone/dist/client
 COPY --from=build --chown=app:app /app/sql ./sql
 COPY --from=build --chown=app:app /app/scripts/mysql-schema.mjs ./scripts/mysql-schema.mjs
 COPY --from=build --chown=app:app /app/scripts/refresh-rankings.mjs ./scripts/refresh-rankings.mjs

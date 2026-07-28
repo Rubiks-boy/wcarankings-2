@@ -1,4 +1,3 @@
-import "./JumpControlsVisibility.css";
 import type { ReactElement } from "react";
 
 export function JumpControlsVisibility({

@@ -1,6 +1,5 @@
 "use client";
 
-import "./JumpControls.css";
 import { useEffect, useRef, type KeyboardEvent } from "react";
 import { EventPicker } from "../EventPicker/EventPicker";
 import ArrowDownIcon from "../Icon/arrow-down.svg?react";

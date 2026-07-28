@@ -15,9 +15,27 @@ const themeInitScript = `
 `;
 
 const stylesReadyScript = `
-  window.addEventListener("load", function () {
+  var stableStylesFrames = 0;
+  function revealWhenRankingsStylesApply() {
+    var eventPickerMenus = document.querySelectorAll(".EventPicker-menu");
+    var menusAreHidden = eventPickerMenus.length > 0 && Array.prototype.every.call(
+      eventPickerMenus,
+      function (eventPickerMenu) {
+        return window.getComputedStyle(eventPickerMenu).visibility === "hidden";
+      },
+    );
+    if (window.location.pathname === "/" && menusAreHidden) {
+      stableStylesFrames += 1;
+    } else if (window.location.pathname === "/") {
+      stableStylesFrames = 0;
+    }
+    if (window.location.pathname === "/" && stableStylesFrames < 4) {
+      window.requestAnimationFrame(revealWhenRankingsStylesApply);
+      return;
+    }
     document.documentElement.dataset.stylesReady = "true";
-  }, { once: true });
+  }
+  window.addEventListener("load", revealWhenRankingsStylesApply, { once: true });
 `;
 
 export async function generateMetadata(): Promise<Metadata> {

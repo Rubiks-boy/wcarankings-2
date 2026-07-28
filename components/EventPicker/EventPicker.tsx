@@ -1,6 +1,5 @@
 "use client";
 
-import "./EventPicker.css";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { WCA_EVENTS } from "@/lib/wca";
 

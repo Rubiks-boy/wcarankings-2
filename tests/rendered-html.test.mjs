@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
 import test from "node:test";
 
 const templateRoot = new URL("../", import.meta.url);
@@ -239,6 +239,9 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(layout, /PwaRegistration/);
   assert.match(layout, /window\.addEventListener\("load"/);
   assert.match(layout, /data-styles-ready/);
+  assert.match(layout, /eventPickerMenus\.length > 0/);
+  assert.match(layout, /getComputedStyle\(eventPickerMenu\)\.visibility === "hidden"/);
+  assert.match(layout, /stableStylesFrames < 4/);
   assert.match(layout, /body \{ visibility: hidden; \}/);
   assert.match(layout, /<noscript>/);
   assert.match(manifest, /display: "standalone"/);
@@ -288,15 +291,20 @@ test("uses the copied WCA Rankings visual language", async () => {
   await assert.rejects(access(new URL("public/_sites-preview", templateRoot)));
 });
 
-test("production build links the EventPicker stylesheet", async () => {
+test("production build keeps rankings styles in the root stylesheet", async () => {
   const manifest = JSON.parse(
     await readFile(new URL("../dist/client/.vite/ssr-manifest.json", import.meta.url), "utf8"),
   );
   const rankingsAssets = manifest["components/RankingsExplorer/RankingsExplorer.tsx"] ?? [];
-  const stylesheet = rankingsAssets.find((asset) => asset.endsWith(".css"));
+  const assetDirectory = new URL("../dist/client/assets/", import.meta.url);
+  const stylesheets = (await readdir(assetDirectory)).filter((asset) => asset.endsWith(".css"));
+  const stylesheetContents = await Promise.all(
+    stylesheets.map(async (asset) => [asset, await readFile(new URL(asset, assetDirectory), "utf8")]),
+  );
+  const [stylesheet, css] = stylesheetContents.find(([, content]) => content.includes(".EventPicker-menu{")) ?? [];
 
-  assert.ok(stylesheet, "RankingsExplorer must retain a stylesheet in the SSR manifest");
-  const css = await readFile(new URL(`../dist/client/${stylesheet}`, import.meta.url), "utf8");
+  assert.ok(stylesheet, "the root stylesheet must include EventPicker rules");
+  assert.ok(!rankingsAssets.some((asset) => asset.endsWith(".css")));
   assert.match(css, /\.EventPicker-menu\{[\s\S]*visibility:hidden/);
   assert.match(css, /\.EventPicker-preview\{[\s\S]*width:44px/);
 });

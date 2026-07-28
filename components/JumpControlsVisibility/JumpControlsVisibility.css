@@ -1,0 +1,31 @@
+.JumpControlsVisibility {
+  position: fixed;
+  z-index: 1;
+  inset-inline: 0;
+  display: flex;
+  justify-content: center;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms var(--cubic-exit) 100ms,
+    transform 150ms var(--cubic-exit) 100ms, visibility 0s linear 250ms;
+}
+
+.JumpControlsVisibility:has(.Jump[data-direction="up"]) {
+  top: 1em;
+  transform: translateY(-6px);
+}
+
+.JumpControlsVisibility:has(.Jump[data-direction="down"]) {
+  bottom: 4em;
+  transform: translateY(6px);
+}
+
+.JumpControlsVisibility[data-visible="true"]:has(.Jump[data-direction]) {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition: opacity 150ms var(--cubic-enter) 100ms,
+    transform 150ms var(--cubic-enter) 100ms, visibility 0s linear 100ms;
+}

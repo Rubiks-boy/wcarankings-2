@@ -1,0 +1,79 @@
+.EventPicker-preview,
+.EventPicker-option {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 20px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.EventPicker-preview {
+  width: 44px;
+  padding-left: 4px;
+  border-right: 1px solid var(--border-subtle);
+  border-radius: 20px 0 0 20px;
+  color: var(--text-strong);
+  font-size: 1.25em;
+}
+
+.EventPicker-menu {
+  position: absolute;
+  top: calc(100% + 0.5em);
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(5, 40px);
+  padding: 0.35em;
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: 0 4px 16px var(--shadow);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.97);
+  transform-origin: top left;
+  transition: opacity 150ms var(--cubic-exit),
+    transform 150ms var(--cubic-exit),
+    visibility 0s linear 150ms;
+}
+
+.EventPicker-menu[data-open="true"] {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+  transition: opacity 150ms var(--cubic-enter),
+    transform 150ms var(--cubic-enter), visibility 0s;
+}
+
+.EventPicker-option {
+  font-size: 1.25em;
+}
+
+.EventPicker-preview:hover,
+.EventPicker-option:hover,
+.EventPicker-option[data-selected="true"] {
+  color: var(--focus);
+}
+
+.EventPicker-preview:focus-visible {
+  color: var(--focus);
+  outline: none;
+}
+
+.EventPicker-option:focus-visible {
+  color: var(--focus);
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.EventPicker-preview:focus-visible,
+.EventPicker-preview[aria-expanded="true"] {
+  color: var(--focus);
+}

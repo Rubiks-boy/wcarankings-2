@@ -32,7 +32,11 @@ import {
   WCA_EVENTS,
 } from "@/lib/wca";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
-import { JumpControls } from "../JumpControls/JumpControls";
+import {
+  JumpDownControls,
+  JumpUpControls,
+} from "../JumpControls/JumpControls";
+import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVisibility";
 import { RankingControls } from "../RankingControls/RankingControls";
 import { ResultsTable } from "../ResultsTable/ResultsTable";
 import { SearchInputs } from "../SearchInputs/SearchInputs";
@@ -2126,13 +2130,17 @@ export function RankingsExplorer({
     });
   };
 
-  const openFind = () => {
+  const activateFind = () => {
     if (vimMode || vimSearchActive || regexSearch) resetFind();
     setVimSearchActive(false);
     setVimSearchQuery("");
     setRegexSearch(false);
     updateQueryParams({ mode: null });
     setFindOpen(true);
+  };
+
+  const openFind = () => {
+    activateFind();
     window.requestAnimationFrame(() =>
       (tableReachedTop
         ? railFindInputRef.current
@@ -2165,8 +2173,7 @@ export function RankingsExplorer({
     [findMatches, findResolvedQuery]
   );
   const activeFindMatch = findMatches[findIndex] ?? null;
-  const currentEvent = WCA_EVENTS.find((event) => event.id === eventId);
-  const eventLabel = `${currentEvent?.name ?? eventId}, ${rankingType === "single" ? "Single" : "Average"}`;
+  const currentEvent = WCA_EVENTS.find((event) => event.id === eventId)!;
 
   return (
     <div
@@ -2192,7 +2199,7 @@ export function RankingsExplorer({
               findMatches={findMatches}
               findIndex={findIndex}
               activeFindMatch={activeFindMatch}
-              onOpen={openFind}
+              onOpen={activateFind}
               onClose={closeFind}
               onQueryChange={changeFindQuery}
               onCycle={cycleFind}
@@ -2212,38 +2219,26 @@ export function RankingsExplorer({
       </header>
 
       <main>
-        <JumpControls
-          direction="up"
-          visible={tableReachedTop || jumpUpArmed}
+        <JumpControlsVisibility visible={tableReachedTop || jumpUpArmed}>
+          <JumpUpControls
           armed={jumpUpArmed}
           currentPosition={visibleSubRank}
-          total={total}
           onJump={handleJumpUp}
-          searchControl={
-            <SearchInputs
-              inputRef={railFindInputRef}
-              findOpen={findOpen}
-              findQuery={findQuery}
-              findError={findError}
-              findLoading={findLoading}
-              findPending={findPending}
-              findMatches={findMatches}
-              findIndex={findIndex}
-              activeFindMatch={activeFindMatch}
-              onOpen={openFind}
-              onClose={closeFind}
-              onQueryChange={changeFindQuery}
-              onCycle={cycleFind}
-              inRail
-            />
-          }
-          eventIcon={eventId}
-          eventLabel={eventLabel}
-          eventOptions={WCA_EVENTS}
-          onEventChange={(nextEventId) =>
-            changeEvent(nextEventId as (typeof WCA_EVENTS)[number]["id"])
-          }
-        />
+          event={currentEvent}
+          onEventChange={changeEvent}
+          searchInputRef={railFindInputRef}
+          findQuery={findQuery}
+          findError={findError}
+          findLoading={findLoading}
+          findPending={findPending}
+          findMatches={findMatches}
+          findIndex={findIndex}
+          onSearchOpen={activateFind}
+          onSearchClose={closeFind}
+          onSearchQueryChange={changeFindQuery}
+          onSearchCycle={cycleFind}
+          />
+        </JumpControlsVisibility>
 
         <div className="outerListWrapper" ref={listRef}>
           <div className="listContainer">
@@ -2272,20 +2267,22 @@ export function RankingsExplorer({
           </div>
         </div>
 
-        <JumpControls
-          direction="down"
+        <JumpControlsVisibility
           visible={
             jumpDownArmed ||
             (!atPageEnd && Number.isFinite(total) && visibleSubRank < total)
           }
+        >
+          <JumpDownControls
           armed={jumpDownArmed}
           currentPosition={visibleSubRank}
           total={total}
           onJump={handleJumpDown}
-          searchActive={findOpen}
+          searchActive={findOpen && findMatches.length > 0}
           onSearchPrevious={() => cycleFind(-1)}
           onSearchNext={() => cycleFind(1)}
-        />
+          />
+        </JumpControlsVisibility>
       </main>
       {(vimMode || vimSearchActive) && (
         <VimSearchInput

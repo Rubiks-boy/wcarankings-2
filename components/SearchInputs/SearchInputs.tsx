@@ -1,7 +1,8 @@
 "use client";
 
-import type { KeyboardEvent, Ref } from "react";
-import { Icon } from "../Icon/Icon";
+import { useRef, type KeyboardEvent, type Ref } from "react";
+import CloseIcon from "../Icon/close.svg?react";
+import SearchIcon from "../Icon/search.svg?react";
 import {
   formatRankingNumber,
   type RankingEntry,
@@ -22,7 +23,6 @@ export function SearchInputs({
   onClose,
   onQueryChange,
   onCycle,
-  inRail = false,
 }: {
   barRef?: Ref<HTMLDivElement>;
   inputRef?: Ref<HTMLInputElement>;
@@ -38,23 +38,19 @@ export function SearchInputs({
   onClose: () => void;
   onQueryChange: (value: string) => void;
   onCycle: (direction: -1 | 1) => void;
-  inRail?: boolean;
 }) {
-  const searchButton = (
-    <button
-      className={`searchButton${inRail ? " searchButton--rail" : ""}`}
-      type="button"
-      onClick={onOpen}
-      aria-label="Search names or WCA IDs"
-      title="Search names or WCA IDs (Ctrl+F)"
-    >
-      <Icon name="search" />
-    </button>
-  );
+  const localInputRef = useRef<HTMLInputElement>(null);
 
-  if (!findOpen) {
-    return searchButton;
-  }
+  const setInputRef = (input: HTMLInputElement | null) => {
+    localInputRef.current = input;
+    if (typeof inputRef === "function") inputRef(input);
+    else if (inputRef) inputRef.current = input;
+  };
+
+  const openSearch = () => {
+    onOpen();
+    setTimeout(() => localInputRef.current?.focus());
+  };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
@@ -62,6 +58,7 @@ export function SearchInputs({
       onCycle(event.shiftKey ? -1 : 1);
     } else if (event.key === "Escape") {
       event.preventDefault();
+      localInputRef.current?.blur();
       onClose();
     }
   };
@@ -77,17 +74,28 @@ export function SearchInputs({
   const findBar = (
     <div
       ref={barRef}
-      className={`findBar${inRail ? " findBar--railOverlay" : ""}`}
+      className="findBar findBar--header"
+      data-has-text={findQuery.length > 0}
       role="search"
     >
-      <span className="findIcon" aria-hidden="true">
-        <Icon name="search" />
-      </span>
+      <button
+        className="findIcon"
+        type="button"
+        tabIndex={-1}
+        aria-label="Search names or WCA IDs"
+        aria-expanded={findOpen}
+        title="Search names or WCA IDs (Ctrl+F)"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={openSearch}
+      >
+        <SearchIcon />
+      </button>
       <input
-        ref={inputRef}
+        ref={setInputRef}
         className="findInput"
-        type="search"
+        type="text"
         value={findQuery}
+        onFocus={onOpen}
         onChange={(event) => onQueryChange(event.target.value)}
         onKeyDown={handleKeyDown}
         aria-label="Find a name or WCA ID"
@@ -101,20 +109,17 @@ export function SearchInputs({
       <button
         className="findClose"
         type="button"
-        onClick={onClose}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => {
+          localInputRef.current?.blur();
+          onClose();
+        }}
         aria-label="Close search"
       >
-        ×
+        <CloseIcon />
       </button>
     </div>
   );
 
-  return inRail ? (
-    <>
-      {searchButton}
-      {findBar}
-    </>
-  ) : (
-    findBar
-  );
+  return findBar;
 }

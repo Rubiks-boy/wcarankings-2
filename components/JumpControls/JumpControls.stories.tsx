@@ -2,8 +2,8 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { useState } from "react";
 import { WCA_EVENTS } from "@/lib/wca";
 import type { RankingEntry } from "../RankingsExplorer/types";
-import { JumpControls } from "./JumpControls";
-import { SearchInputs } from "../SearchInputs/SearchInputs";
+import { JumpDownControls, JumpUpControls } from "./JumpControls";
+import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVisibility";
 
 const matches: RankingEntry[] = [
   {
@@ -21,60 +21,50 @@ const matches: RankingEntry[] = [
 ];
 
 function InteractiveTopRail() {
-  const [eventId, setEventId] = useState("333");
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [eventId, setEventId] =
+    useState<(typeof WCA_EVENTS)[number]["id"]>("333");
   const [query, setQuery] = useState("");
   const event = WCA_EVENTS.find((candidate) => candidate.id === eventId)!;
 
   return (
-    <JumpControls
-      direction="up"
-      visible
+    <JumpControlsVisibility visible>
+      <JumpUpControls
       armed
       currentPosition={1}
-      total={10_000}
       onJump={() => undefined}
-      eventIcon={eventId}
-      eventLabel={event.name}
-      eventOptions={WCA_EVENTS}
+      event={event}
       onEventChange={setEventId}
-      searchControl={
-        <SearchInputs
-          findOpen={searchOpen}
-          findQuery={query}
-          findError=""
-          findLoading={false}
-          findPending={false}
-          findMatches={matches}
-          findIndex={0}
-          activeFindMatch={query ? matches[0] : null}
-          onOpen={() => setSearchOpen(true)}
-          onClose={() => {
-            setSearchOpen(false);
-            setQuery("");
-          }}
-          onQueryChange={setQuery}
-          onCycle={() => undefined}
-          inRail
-        />
-      }
-    />
+      findQuery={query}
+      findError=""
+      findLoading={false}
+      findPending={false}
+      findMatches={matches}
+      findIndex={0}
+      onSearchOpen={() => undefined}
+      onSearchClose={() => {
+        setQuery("");
+      }}
+      onSearchQueryChange={setQuery}
+      onSearchCycle={() => undefined}
+      />
+    </JumpControlsVisibility>
   );
 }
 
 const meta = {
   title: "Rankings/JumpControls",
-  component: JumpControls,
+  component: JumpDownControls,
   parameters: { layout: "fullscreen" },
   args: {
-    direction: "down",
-    visible: true,
     armed: false,
     currentPosition: 100,
     total: 10_000,
     onJump: () => undefined,
+    searchActive: false,
+    onSearchPrevious: () => undefined,
+    onSearchNext: () => undefined,
   },
-} satisfies Meta<typeof JumpControls>;
+} satisfies Meta<typeof JumpDownControls>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -84,5 +74,10 @@ export const Top: Story = {
 };
 
 export const Bottom: Story = {
-  args: { direction: "down", armed: true },
+  args: { armed: true },
+  render: (args) => (
+    <JumpControlsVisibility visible>
+      <JumpDownControls {...args} />
+    </JumpControlsVisibility>
+  ),
 };

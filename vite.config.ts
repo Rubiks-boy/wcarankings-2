@@ -1,5 +1,6 @@
 import vinext from "vinext";
 import { defineConfig } from "vite";
+import svgr from "vite-plugin-svgr";
 
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const isStorybook = process.env.STORYBOOK === "true";
@@ -11,5 +12,5 @@ export default defineConfig({
   ssr: {
     external: ["mysql2"],
   },
-  plugins: isStorybook ? [] : [vinext()],
+  plugins: isStorybook ? [] : [svgr(), vinext()],
 });

@@ -7,6 +7,9 @@
 :root,
 :root[data-theme="light"] {
   color-scheme: light;
+  --cubic-move: cubic-bezier(0.4, 0, 0.2, 1);
+  --cubic-enter: cubic-bezier(0, 0, 0.2, 1);
+  --cubic-exit: cubic-bezier(0.4, 0, 1, 1);
   --page: #fffcff;
   --rail-surface: var(--page);
   --surface: #fff;
@@ -126,7 +129,7 @@ body {
   overflow: visible;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
-  border: 0;
+  border: 1px solid transparent;
 }
 
 ol,
@@ -275,6 +278,103 @@ select {
   color: var(--text);
 }
 
+.findBar.findBar--header {
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  background-color: transparent;
+  box-shadow: none;
+  transition: width 250ms var(--cubic-move),
+    border-color 150ms var(--cubic-exit),
+    background-color 150ms var(--cubic-exit);
+}
+
+.findBar--header[data-has-text="true"],
+.findBar--header:focus-within {
+  width: min(20em, calc(100vw - 2em));
+  border-color: var(--border-strong);
+  background-color: var(--surface);
+  transition: width 250ms var(--cubic-move),
+    border-color 150ms var(--cubic-enter),
+    background-color 150ms var(--cubic-enter);
+}
+
+.findBar--header .findIcon {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 0;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-strong);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: color 150ms var(--cubic-move);
+}
+
+.findBar--header .findInput {
+  margin-left: 40px;
+}
+
+.findBar--header:not([data-has-text="true"]):not(:focus-within)
+  .findIcon:hover {
+  color: var(--focus);
+}
+
+.findBar--header .findClose {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  flex: 0 0 40px;
+  padding: 0;
+  place-items: center;
+  color: var(--text-strong);
+  font-size: inherit;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: color 150ms var(--cubic-move),
+    opacity 150ms var(--cubic-exit), visibility 0s linear 150ms;
+}
+
+.findBar--header .findStatus {
+  margin-right: 40px;
+}
+
+.findBar--header:is([data-has-text="true"], :focus-within) .findClose {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transition: color 150ms var(--cubic-move),
+    opacity 150ms var(--cubic-enter) 100ms, visibility 0s linear 100ms;
+}
+
+.findBar--header .findClose svg {
+  width: 20px;
+  height: 20px;
+}
+
+.findBar--header .findClose:hover,
+.findBar--header .findClose:focus-visible {
+  color: var(--focus);
+  outline: none;
+}
+
 .header h1 {
   margin-block: 0.5em;
   font-weight: 200;
@@ -293,17 +393,17 @@ select {
   flex: 0 0 auto;
   padding: 0.5em;
   place-items: center;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 50%;
   background: var(--surface);
   color: var(--text-strong);
   cursor: pointer;
+  transition: color 150ms var(--cubic-move);
 }
 
 .themeToggle:hover,
 .themeToggle:focus-visible {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--focus-ring);
+  color: var(--focus);
   outline: none;
 }
 
@@ -1007,6 +1107,15 @@ select {
     width: min(20em, calc(100vw - 13em));
     height: 40px;
     min-height: 40px;
+  }
+
+  .findBar.findBar--header {
+    width: 40px;
+  }
+
+  .findBar.findBar--header[data-has-text="true"],
+  .findBar.findBar--header:focus-within {
+    width: max(40px, min(20em, calc(100vw - 13em)));
   }
 
   .selectInput,

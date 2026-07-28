@@ -43,7 +43,7 @@ export function ResultsTable({
   measureElement: (element: Element | null) => void;
   onRowNavigate: (rowIndex: number, direction: -1 | 1) => void;
 }) {
-  if (loading && showLoading && !preserveListDuringLoad) {
+  if (loading && showLoading && !preserveListDuringLoad && entries.length === 0) {
     return <div className="listMessage">Loading rankings…</div>;
   }
 

@@ -580,7 +580,7 @@ export function RankingsExplorer({
           initialRankingType,
           initialRegionSelection.scope,
           initialRegionSelection.regionId,
-          initialData.startRank,
+          initialData.startRank ?? 1,
         ].join(":")
       : ""
   );

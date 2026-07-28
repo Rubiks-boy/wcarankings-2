@@ -237,3 +237,75 @@
 .siteFooter span:last-child {
   text-align: right;
 }
+
+.matrixMain {
+  width: min(100%, 1200px);
+  margin-inline: auto;
+}
+
+.matrixExplanation {
+  margin: 0 0 1em;
+  color: var(--text-muted);
+}
+
+.matrixScroll {
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.5em;
+  background: var(--surface);
+}
+
+.matrixTable {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88em;
+  font-variant-numeric: tabular-nums;
+}
+
+.matrixTable th,
+.matrixTable td {
+  min-width: 5.2em;
+  padding: 0.65em;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.matrixTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.matrixTable tbody tr:hover {
+  background: var(--surface-hover);
+}
+
+.matrixTable .matrixPerson {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 13em;
+  background: var(--surface);
+  text-align: left;
+}
+
+.matrixTable thead .matrixPerson {
+  z-index: 2;
+  background: var(--surface-muted);
+}
+
+.matrixTable .matrixPerson small {
+  display: block;
+  margin-top: 0.15em;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.matrixTable .matrixOverall {
+  font-weight: 700;
+}

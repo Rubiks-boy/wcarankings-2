@@ -43,6 +43,7 @@ import { SearchInputs } from "../SearchInputs/SearchInputs";
 import { ThemeToggle } from "../ThemeToggle/ThemeToggle";
 import { VimHelp } from "../VimHelp/VimHelp";
 import { VimSearchInput } from "../VimSearchInput/VimSearchInput";
+import { ViewSwitcher } from "../ViewSwitcher/ViewSwitcher";
 import {
   formatFetchedAgo,
   type InitialRankingData,
@@ -2531,6 +2532,7 @@ export function RankingsExplorer({
             <ThemeToggle />
           </div>
         </div>
+        <ViewSwitcher view="wca" rankingType={rankingType} region={regionSelection} />
         <RankingControls
           eventId={eventId}
           rankingType={rankingType}

@@ -162,6 +162,51 @@ select {
   gap: 1em;
 }
 
+.viewSwitcher {
+  display: flex;
+  width: min(100%, 36em);
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.5em;
+  background: var(--surface);
+}
+
+.viewSwitcher a {
+  display: grid;
+  min-height: 44px;
+  flex: 1 0 max-content;
+  padding: 0.55em 0.75em;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  text-align: center;
+  text-decoration: none;
+}
+
+.viewSwitcher a:hover,
+.viewSwitcher a:focus-visible {
+  color: var(--text-strong);
+  outline: none;
+}
+
+.viewSwitcher a.isSelected {
+  border-radius: 0.35em;
+  background: var(--surface-selected);
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.matrixSearch input {
+  width: min(100%, 36em);
+  min-height: 44px;
+  padding: 0.65em 0.85em;
+  border: 1px solid var(--border);
+  border-radius: 0.5em;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
 .chooserEventPicker {
   display: none;
 }

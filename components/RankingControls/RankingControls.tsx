@@ -11,6 +11,7 @@ export function RankingControls({
   rankingType,
   regions,
   regionSelection,
+  showEvent = true,
   onEventChange,
   onRankingTypeChange,
   onRegionChange,
@@ -20,6 +21,7 @@ export function RankingControls({
   rankingType: "single" | "average";
   regions: RegionOption[];
   regionSelection: RegionSelection;
+  showEvent?: boolean;
   onEventChange: (eventId: (typeof WCA_EVENTS)[number]["id"]) => void;
   onRankingTypeChange: (rankingType: "single" | "average") => void;
   onRegionChange: (region: RegionOption) => void;
@@ -29,14 +31,14 @@ export function RankingControls({
 
   return (
     <div className="chooser">
-      <div className="chooserEventPicker">
+      {showEvent && <div className="chooserEventPicker">
         <EventPicker
           event={selectedEvent}
           onChange={onEventChange}
           onTriggerReady={onEventPickerTrigger}
         />
-      </div>
-      <div className="selectInput eventInput">
+      </div>}
+      {showEvent && <div className="selectInput eventInput">
         <select
           name="Event Id"
           onChange={(event) =>
@@ -51,7 +53,7 @@ export function RankingControls({
           ))}
         </select>
         <SelectChevronIcon />
-      </div>
+      </div>}
       <fieldset
         className="rankingTypeToggle"
         data-ranking-type={rankingType}

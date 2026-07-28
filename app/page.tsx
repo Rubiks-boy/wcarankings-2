@@ -2,15 +2,16 @@ import { queryMysql } from "./api/rankings/route";
 import { RankingsExplorer } from "./components/RankingsExplorer";
 import { makeDemoRankings } from "@/lib/demo-data";
 import { getRegions } from "@/lib/regions";
+import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
 import { isEventId, isRankingType, isValidRegexPattern, parseRegionQuery } from "@/lib/wca";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = RESULTS_PAGE_SIZE;
 
-function searchPageStartForRank(rank: number) {
-  return Math.max(1, Math.max(1, rank) - Math.floor(PAGE_SIZE / 2));
+function pageFirstSubRank(subRank: number) {
+  return Math.floor((Math.max(1, subRank) - 1) / PAGE_SIZE) * PAGE_SIZE + 1;
 }
 
 function getSearchParam(
@@ -82,27 +83,51 @@ async function getInitialRankings(searchParams: Record<string, string | string[]
       ? searchResult.entries
       : [];
     const firstMatch = searchMatches[0];
-    const startRank = firstMatch ? searchPageStartForRank(firstMatch.subRank) : 1;
-    const page = await queryMysql({
-      ...queryOptions,
-      startRank,
-      limit: PAGE_SIZE,
-      search: "",
-      searchLimit: 500,
-      paged: true,
-      focusPersonId: firstMatch?.personId ?? "",
-    });
-
-    if (!("entries" in page) || !Array.isArray(page.entries)) throw new Error("Initial ranking page was unavailable.");
+    const targetPageStart = pageFirstSubRank(firstMatch?.subRank ?? 1);
+    const pageStarts = firstMatch
+      ? [targetPageStart - PAGE_SIZE, targetPageStart, targetPageStart + PAGE_SIZE]
+          .filter((start) => start > 0)
+      : [1];
+    const pages = await Promise.all(
+      pageStarts.map((startRank) =>
+        queryMysql({
+          ...queryOptions,
+          startRank,
+          limit: PAGE_SIZE,
+          search: "",
+          searchLimit: 500,
+          paged: true,
+        })
+      )
+    );
+    if (
+      pages.some(
+        (page) => !("entries" in page) || !Array.isArray(page.entries)
+      )
+    )
+      throw new Error("Initial ranking page was unavailable.");
+    const firstPage = pages[0];
+    const lastPage = pages.at(-1) ?? firstPage;
+    if (
+      !("entries" in firstPage) ||
+      !Array.isArray(firstPage.entries) ||
+      !("entries" in lastPage) ||
+      !Array.isArray(lastPage.entries)
+    )
+      throw new Error("Initial ranking page was unavailable.");
+    const entries = pages.flatMap((page) =>
+      "entries" in page && Array.isArray(page.entries) ? page.entries : []
+    );
+    const startRank = pageStarts[0];
     return {
-      entries: page.entries,
-      hasMore: page.hasMore ?? false,
-      nextPageStart: page.nextPageStart ?? null,
-      previousPageStart: page.previousPageStart ?? null,
-      startPosition: page.startPosition ?? Math.max(0, startRank - 1),
-      lastRank: page.lastRank ?? null,
-      total: page.total ?? 0,
-      fetchedAt: page.fetchedAt ?? page.exportDate ?? null,
+      entries,
+      hasMore: lastPage.hasMore ?? false,
+      nextPageStart: lastPage.nextPageStart ?? null,
+      previousPageStart: firstPage.previousPageStart ?? null,
+      startPosition: firstPage.startPosition ?? Math.max(0, startRank - 1),
+      lastRank: lastPage.lastRank ?? null,
+      total: lastPage.total ?? 0,
+      fetchedAt: lastPage.fetchedAt ?? lastPage.exportDate ?? null,
       startRank,
       searchMatches,
       initialMatchPersonId: firstMatch?.personId ?? "",

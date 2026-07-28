@@ -1,5 +1,6 @@
 import { query } from "@/db";
 import { makeDemoRankings } from "@/lib/demo-data";
+import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
 import {
   isEventId,
   isRankingType,
@@ -12,8 +13,10 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const MAX_PAGE_SIZE = 120;
+const PAGE_SIZE = RESULTS_PAGE_SIZE;
+const MAX_PAGE_SIZE = RESULTS_PAGE_SIZE;
 const MAX_SEARCH_RESULTS = 500;
+const CACHE_HEADERS = { "Cache-Control": "public, max-age=60, s-maxage=3600" };
 
 type RankingRow = {
   rank: number;
@@ -131,8 +134,6 @@ export async function queryMysql({
   regexSearch = false,
   searchLimit,
   paged,
-  focusPersonId = "",
-  focusBefore = 50,
 }: {
   eventId: string;
   type: RankingType;
@@ -147,8 +148,6 @@ export async function queryMysql({
   regexSearch?: boolean;
   searchLimit: number;
   paged: boolean;
-  focusPersonId?: string;
-  focusBefore?: number;
 }) {
   const filter = makeFilters({ eventId, type, scope, regionId });
   const { rankColumn, subRankColumn: storedSubRankColumn, conditions } = filter;
@@ -209,47 +208,9 @@ export async function queryMysql({
   }
 
   // The public row rank stays in `rank`; all paging coordinates use sub_rank.
-  let pageStartRank = startRank;
-  let focusedRowsPromise: Promise<{ rows: RankingRow[]; rowCount: number }> | null = null;
-  if (paged && focusPersonId) {
-    const focusResult = await query<{ rank: number }>(
-      `SELECT ${subRankColumn} AS rank
-      FROM ${rankingSource}
-      WHERE ${conditions.join(" AND ")} AND person_id = ?
-      LIMIT 1`,
-      [...filter.values, focusPersonId],
-    );
-    const focusRank = Number(focusResult.rows[0]?.rank);
-    if (Number.isFinite(focusRank) && focusRank > 0) {
-      const beforeCount = Math.min(limit - 1, Math.max(0, Math.floor(focusBefore)));
-      pageStartRank = Math.max(1, focusRank - beforeCount);
-      const selectColumns = `
-        ${rankColumn} AS rank, ${subRankColumn} AS sub_rank, person_id, person_name, country_id, country_name,
-        country_iso2, continent_id, best, competition_id, competition_name`;
-      const before = query<RankingRow>(
-        `SELECT ${selectColumns}
-        FROM ${rankingSource}
-        WHERE ${conditions.join(" AND ")}
-          AND ${subRankColumn} < ?
-        ORDER BY ${subRankColumn} DESC
-        LIMIT ?`,
-        [...filter.values, focusRank, beforeCount],
-      );
-      const after = query<RankingRow>(
-        `SELECT ${selectColumns}
-        FROM ${rankingSource}
-        WHERE ${conditions.join(" AND ")}
-          AND ${subRankColumn} >= ?
-        ORDER BY ${subRankColumn}
-        LIMIT ?`,
-        [...filter.values, focusRank, limit - beforeCount],
-      );
-      focusedRowsPromise = Promise.all([before, after]).then(([beforeRows, afterRows]) => ({
-        rows: [...beforeRows.rows.reverse(), ...afterRows.rows],
-        rowCount: beforeRows.rowCount + afterRows.rowCount,
-      }));
-    }
-  }
+  const pageStartRank = paged
+    ? Math.floor((Math.max(1, startRank) - 1) / limit) * limit + 1
+    : startRank;
 
   const values = [...filter.values];
   const pageConditions = [...conditions];
@@ -281,7 +242,7 @@ export async function queryMysql({
 
   const countValues = [eventId, type, scope, regionId];
   const [result, countResult, exportDateResult, fetchedAtResult, nextRankRow, previousRankRow, startPositionRow, lastRankRow] = await Promise.all([
-    focusedRowsPromise ?? query<RankingRow>(querySql, values),
+    query<RankingRow>(querySql, values),
     query<{ count: number }>(
       "SELECT count FROM ranking_counts WHERE event_id = ? AND ranking_type = ? AND scope = ? AND region_id = ?",
       countValues,
@@ -308,10 +269,10 @@ export async function queryMysql({
   const fetchedAtRow = fetchedAtResult.rows[0];
   const total = Number(countRow?.count ?? 0);
   const nextPageStart = nextRankRow?.rank
-    ? Math.floor((Number(nextRankRow.rank) - 1) / limit) * limit + 1
+    ? Number(nextRankRow.rank)
     : null;
   const previousPageStart = previousRankRow?.rank
-    ? Math.floor((Number(previousRankRow.rank) - 1) / limit) * limit + 1
+    ? Math.max(1, pageStartRank - limit)
     : null;
   const hasMore = paged ? nextPageStart !== null : rows.length > limit;
   const entries = paged ? rows : (hasMore ? rows.slice(0, limit) : rows);
@@ -340,12 +301,15 @@ export async function GET(request: Request) {
   const type = eventId === "333mbf" ? "single" : isRankingType(rawType) ? rawType : "single";
   const { scope, regionId } = parseRegionQuery(url.searchParams.get("region"));
   const paged = url.searchParams.get("paged") === "1";
-  const requestedLimit = Number(url.searchParams.get("limit")) || (paged ? 100 : 80);
-  const limit = Math.min(MAX_PAGE_SIZE, Math.max(20, requestedLimit));
-  const requestedStartRank = Math.max(1, Number(url.searchParams.get("start")) || 1);
-  // The caller chooses the page anchor. Search jumps use an exact rank window
-  // so rank gaps cannot leave the matched competitor just outside the page.
-  const startRank = requestedStartRank;
+  const requestedLimit = Number(url.searchParams.get("limit")) || (paged ? PAGE_SIZE : 80);
+  const limit = paged
+    ? PAGE_SIZE
+    : Math.min(MAX_PAGE_SIZE, Math.max(20, requestedLimit));
+  const rawStart = Number(url.searchParams.get("start"));
+  const requestedStart = Number.isFinite(rawStart) ? rawStart : 0;
+  const startRank = paged
+    ? Math.floor(Math.max(0, requestedStart) / PAGE_SIZE) * PAGE_SIZE + 1
+    : Math.max(1, requestedStart || 1);
   const cursorRank = Number(url.searchParams.get("cursorRank")) || null;
   const cursorId = url.searchParams.get("cursorId") ?? "";
   const locate = (url.searchParams.get("locate") ?? "").trim().toUpperCase();
@@ -353,8 +317,6 @@ export async function GET(request: Request) {
   const regexSearch = url.searchParams.get("mode") === "vim";
   const requestedSearchLimit = Number(url.searchParams.get("searchLimit")) || MAX_SEARCH_RESULTS;
   const searchLimit = Math.min(MAX_SEARCH_RESULTS, Math.max(1, requestedSearchLimit));
-  const focusPersonId = (url.searchParams.get("focus") ?? "").trim().toUpperCase();
-  const focusBefore = Number(url.searchParams.get("focusBefore")) || 50;
 
   if (scope !== "world" && !regionId) {
     return Response.json({ error: "Choose a region before loading rankings." }, { status: 400 });
@@ -379,10 +341,8 @@ export async function GET(request: Request) {
       regexSearch,
       searchLimit,
       paged,
-      focusPersonId,
-      focusBefore,
     });
-    return Response.json(data, { headers: { "Cache-Control": "public, max-age=60, s-maxage=3600" } });
+    return Response.json(data, { headers: CACHE_HEADERS });
   } catch {
     const demoStartRank = paged ? startRank : (cursorRank ? cursorRank + 1 : startRank);
     const entries = makeDemoRankings({ eventId, type, scope, regionId, startRank: demoStartRank, limit });
@@ -395,29 +355,35 @@ export async function GET(request: Request) {
       : undefined;
 
     if (locate) {
-      return Response.json({ located, source: "demo" });
+      return Response.json({ located, source: "demo" }, { headers: CACHE_HEADERS });
     }
 
     if (search) {
       const normalizedSearch = search.toLocaleLowerCase();
       const searchEntries = makeDemoRankings({ eventId, type, scope, regionId, startRank: 1, limit: searchLimit })
         .filter((entry) => entry.personName.toLocaleLowerCase().includes(normalizedSearch) || entry.personId.toLocaleLowerCase().includes(normalizedSearch));
-      return Response.json({ entries: searchEntries, total: searchEntries.length, source: "demo" });
+      return Response.json(
+        { entries: searchEntries, total: searchEntries.length, source: "demo" },
+        { headers: CACHE_HEADERS },
+      );
     }
 
     const last = entries.at(-1);
     const hasMore = startRank + limit <= 248_392;
-    return Response.json({
-      entries,
-      hasMore,
-      nextPageStart: hasMore ? startRank + limit : null,
-      previousPageStart: startRank > 1 ? Math.max(1, startRank - limit) : null,
-      startPosition: Math.max(0, startRank - 1),
-      lastRank: 248_392,
-      nextCursor: last ? { rank: last.rank, personId: last.personId } : null,
-      total: 248_392,
-      exportDate: null,
-      source: "demo",
-    });
+    return Response.json(
+      {
+        entries,
+        hasMore,
+        nextPageStart: hasMore ? startRank + limit : null,
+        previousPageStart: startRank > 1 ? Math.max(1, startRank - limit) : null,
+        startPosition: Math.max(0, startRank - 1),
+        lastRank: 248_392,
+        nextCursor: last ? { rank: last.rank, personId: last.personId } : null,
+        total: 248_392,
+        exportDate: null,
+        source: "demo",
+      },
+      { headers: CACHE_HEADERS },
+    );
   }
 }

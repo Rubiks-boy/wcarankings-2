@@ -11,7 +11,7 @@
     "start": "node dist/standalone/server.js",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
     "db:refresh-rankings": "node --env-file-if-exists=.env.local scripts/refresh-rankings.mjs",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs",
+    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/scroll-engine.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "sync:wca": "node scripts/sync-wca-export.mjs",
     "sync:wca:local": "node --env-file=.env.local scripts/sync-wca-export.mjs"

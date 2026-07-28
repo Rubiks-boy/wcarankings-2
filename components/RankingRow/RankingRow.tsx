@@ -26,7 +26,7 @@ export function RankingRow({
   const id = entry?.personId ?? "";
   const countryName = entry?.countryName || "Country unavailable";
   const countryFlag = flagEmoji(entry?.countryIso2 ?? "");
-  const recordBadges = entry?.recordBadges ?? [];
+  const recordBadge = entry?.recordBadges[0];
 
   return (
     <li
@@ -60,24 +60,27 @@ export function RankingRow({
           </span>
           <span className="wcaId">{id}</span>
         </span>
-        {recordBadges.length > 0 && (
-          <span className="recordBadges" aria-label="Records">
-            {recordBadges.map((badge) => (
-              <span
-                className={`recordBadge recordBadge--${badge}`}
-                key={badge}
-                role="img"
-                aria-label={RECORD_BADGE_LABELS[badge]}
-                title={RECORD_BADGE_LABELS[badge]}
-              >
-                {badge}
-              </span>
-            ))}
-          </span>
-        )}
         <span className="result">
-          <span className="best">
-            {entry ? formatWcaResult(eventId, entry.best, rankingType) : ""}
+          <span className="resultValue">
+            <span className="best">
+              {entry ? formatWcaResult(eventId, entry.best, rankingType) : ""}
+            </span>
+            <span
+              className="recordBadges"
+              aria-hidden={!recordBadge}
+              aria-label={recordBadge ? "Records" : undefined}
+            >
+              {recordBadge && (
+                <span
+                  className={`recordBadge recordBadge--${recordBadge}`}
+                  role="img"
+                  aria-label={RECORD_BADGE_LABELS[recordBadge]}
+                  title={RECORD_BADGE_LABELS[recordBadge]}
+                >
+                  {recordBadge}
+                </span>
+              )}
+            </span>
           </span>
           {entry?.competitionName && (
             <span className="competitionName" title={entry.competitionName}>

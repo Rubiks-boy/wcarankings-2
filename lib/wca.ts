@@ -164,11 +164,10 @@ export function getRecordBadges({
   isCountryRecord: boolean;
   continentId: string;
 }): RecordBadgeCode[] {
-  const badges: RecordBadgeCode[] = [];
-  if (isWorldRecord) badges.push("WR");
+  if (isWorldRecord) return ["WR"];
   if (isContinentRecord && continentRecordCodes[continentId]) {
-    badges.push(continentRecordCodes[continentId]);
+    return [continentRecordCodes[continentId]];
   }
-  if (isCountryRecord) badges.push("NR");
-  return badges;
+  if (isCountryRecord) return ["NR"];
+  return [];
 }

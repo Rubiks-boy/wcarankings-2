@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-const SERVICE_WORKER_URL = "/sw.js?v=2";
+const SERVICE_WORKER_URL = "/sw.js?v=3";
 
 export function PwaRegistration() {
   useEffect(() => {

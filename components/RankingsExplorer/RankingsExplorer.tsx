@@ -573,8 +573,6 @@ export function RankingsExplorer({
   const jumpUpArmedRef = useRef(false);
   const jumpDownArmedRef = useRef(false);
   const preserveListDuringLoadRef = useRef(false);
-  const scrollRestoreAttemptedRef = useRef(false);
-  const scrollPersistenceReadyRef = useRef(false);
   const initialPageKeyRef = useRef(
     initialData
       ? [
@@ -767,72 +765,6 @@ export function RankingsExplorer({
     const timer = window.setTimeout(() => setShowLoading(true), 200);
     return () => window.clearTimeout(timer);
   }, [loading]);
-
-  const scrollStorageKey = [
-    "wca-rankings-scroll-v1",
-    eventId,
-    rankingType,
-    regionSelection.scope,
-    regionSelection.regionId || "world",
-    findQuery.trim(),
-  ].join(":");
-
-  useEffect(() => {
-    if (!hydrated || scrollRestoreAttemptedRef.current) return;
-    scrollRestoreAttemptedRef.current = true;
-    let savedScrollY = 0;
-    try {
-      const saved = window.localStorage.getItem(scrollStorageKey);
-      const parsed = saved ? (JSON.parse(saved) as { scrollY?: number }) : null;
-      if (parsed && Number.isFinite(parsed.scrollY))
-        savedScrollY = Math.max(0, parsed.scrollY ?? 0);
-    } catch {
-      savedScrollY = 0;
-    }
-
-    let secondFrame: number | null = null;
-    const firstFrame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(() => {
-        if (!normalizedInitialSearch && !initialScrollRef.current && savedScrollY > 0)
-          window.scrollTo({ top: savedScrollY, behavior: "auto" });
-        scrollPersistenceReadyRef.current = true;
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-      if (secondFrame !== null) window.cancelAnimationFrame(secondFrame);
-    };
-  }, [hydrated, normalizedInitialSearch, scrollStorageKey]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    let saveTimer: number | null = null;
-    const saveScrollPosition = () => {
-      if (!scrollPersistenceReadyRef.current) return;
-      try {
-        window.localStorage.setItem(
-          scrollStorageKey,
-          JSON.stringify({ scrollY: Math.max(0, Math.round(window.scrollY)) })
-        );
-      } catch {
-        // Storage can be unavailable in private browsing or restricted embeds.
-      }
-    };
-    const onScroll = () => {
-      if (saveTimer !== null) window.clearTimeout(saveTimer);
-      saveTimer = window.setTimeout(() => {
-        saveTimer = null;
-        saveScrollPosition();
-      }, 100);
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("beforeunload", saveScrollPosition);
-    return () => {
-      if (saveTimer !== null) window.clearTimeout(saveTimer);
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("beforeunload", saveScrollPosition);
-    };
-  }, [hydrated, scrollStorageKey]);
 
   useEffect(() => {
     const measure = () => setListOffset(listRef.current?.offsetTop ?? 0);

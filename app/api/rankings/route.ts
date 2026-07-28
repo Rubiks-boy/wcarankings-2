@@ -134,6 +134,13 @@ function getRankingSource(
     FROM ${table}) AS ${table}`;
 }
 
+// Legacy production projections predate persisted record flag columns. Derive
+// them from the public WCA ranks so both schema generations return badges.
+const recordBadgeColumns = `
+  CASE WHEN world_rank = 1 THEN 1 ELSE 0 END AS is_world_record,
+  CASE WHEN continent_rank = 1 THEN 1 ELSE 0 END AS is_continent_record,
+  CASE WHEN country_rank = 1 THEN 1 ELSE 0 END AS is_country_record`;
+
 function makeFilters({
   eventId,
   type,
@@ -213,7 +220,7 @@ export async function queryMysql({
     const located = await query<RankingRow>(
       `SELECT ${rankColumn} AS rank, ${subRankColumn} AS sub_rank, person_id, person_name, country_id, country_name,
         country_iso2, continent_id, best, competition_id, competition_name,
-        is_world_record, is_continent_record, is_country_record
+        ${recordBadgeColumns}
       FROM ${rankingSource}
       WHERE ${conditions.join(" AND ")} AND person_id = ${locateParameter}
       LIMIT 1`,
@@ -235,7 +242,7 @@ export async function queryMysql({
     const searchResult = await query<RankingRow>(
       `SELECT ${rankColumn} AS rank, ${subRankColumn} AS sub_rank, person_id, person_name, country_id, country_name,
         country_iso2, continent_id, best, competition_id, competition_name,
-        is_world_record, is_continent_record, is_country_record
+        ${recordBadgeColumns}
       FROM ${rankingSource}
       WHERE ${conditions.join(" AND ")}
         AND (person_name ${searchOperator} ${searchNameParameter} OR person_id ${searchOperator} ${searchIdParameter})
@@ -270,7 +277,7 @@ export async function queryMysql({
   const limitParameter = paged ? "" : ` LIMIT ${addParameter(values, limit + 1)}`;
   const querySql = `SELECT ${rankColumn} AS rank, ${subRankColumn} AS sub_rank, person_id, person_name, country_id, country_name,
       country_iso2, continent_id, best, competition_id, competition_name,
-      is_world_record, is_continent_record, is_country_record
+      ${recordBadgeColumns}
     FROM ${rankingSource}
     WHERE ${pageConditions.join(" AND ")}
     ORDER BY ${subRankColumn}${limitParameter}`;

@@ -3,7 +3,7 @@
 @import "../components/EventPicker/EventPicker.css";
 @import "../components/JumpControls/JumpControls.css";
 @import "../components/JumpControlsVisibility/JumpControlsVisibility.css";
-@import "../components/PwaRegistration/PwaRegistration.css";
+@import "../components/PwaUpdatePrompt/PwaUpdatePrompt.css";
 @import "./styles/search.css";
 @import "./styles/controls.css";
 @import "./styles/rankings.css";

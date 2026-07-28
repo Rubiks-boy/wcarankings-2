@@ -188,7 +188,7 @@ test("does not replace SQL failures with synthetic ranking data", async () => {
 });
 
 test("uses the copied WCA Rankings visual language", async () => {
-  const [globalCss, controlsCss, rankingsCss, searchCss, vimCss, jumpCss, page, layout, manifest, pwaRegistration, serviceWorker, packageJson] = await Promise.all([
+  const [globalCss, controlsCss, rankingsCss, searchCss, vimCss, jumpCss, page, layout, manifest, pwaRegistration, pwaUpdatePrompt, serviceWorker, packageJson] = await Promise.all([
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/styles/controls.css", import.meta.url), "utf8"),
     readFile(new URL("../app/styles/rankings.css", import.meta.url), "utf8"),
@@ -199,6 +199,7 @@ test("uses the copied WCA Rankings visual language", async () => {
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/manifest.ts", import.meta.url), "utf8"),
     readFile(new URL("../components/PwaRegistration/PwaRegistration.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/PwaUpdatePrompt/PwaUpdatePrompt.tsx", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
@@ -246,7 +247,8 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(pwaRegistration, /updateViaCache: "none"/);
   assert.match(pwaRegistration, /controllerchange/);
   assert.match(pwaRegistration, /SKIP_WAITING/);
-  assert.match(pwaRegistration, /Update available/);
+  assert.match(pwaRegistration, /PwaUpdatePrompt/);
+  assert.match(pwaUpdatePrompt, /Update available/);
   assert.doesNotMatch(pwaRegistration, /unregister\(\)/);
   assert.match(serviceWorker, /CACHE_NAME/);
   assert.match(serviceWorker, /cache\.match/);

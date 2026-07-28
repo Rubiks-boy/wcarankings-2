@@ -99,7 +99,53 @@ type SearchLayoutAnchor = {
   viewportTop: number;
 };
 
-const pageCache = new Map<string, Promise<RankingPage>>();
+const CLIENT_PAGE_CACHE_CAPACITY_333 = 512;
+const CLIENT_PAGE_CACHE_CAPACITY_DEFAULT = 128;
+
+type ClientPageCacheEntry = { request: Promise<RankingPage>; permanent: boolean };
+
+class ClientPageCache {
+  private readonly pools = new Map<string, Map<string, ClientPageCacheEntry>>();
+
+  private pool(eventId: string) {
+    let pool = this.pools.get(eventId);
+    if (!pool) {
+      pool = new Map();
+      this.pools.set(eventId, pool);
+    }
+    return pool;
+  }
+
+  get(eventId: string, key: string) {
+    const pool = this.pool(eventId);
+    const entry = pool.get(key);
+    if (!entry) return undefined;
+    if (!entry.permanent) {
+      pool.delete(key);
+      pool.set(key, entry);
+    }
+    return entry.request;
+  }
+
+  set(eventId: string, key: string, request: Promise<RankingPage>, permanent: boolean) {
+    const pool = this.pool(eventId);
+    pool.set(key, { request, permanent });
+    const capacity = eventId === "333"
+      ? CLIENT_PAGE_CACHE_CAPACITY_333
+      : CLIENT_PAGE_CACHE_CAPACITY_DEFAULT;
+    while (pool.size > capacity) {
+      const oldest = [...pool.entries()].find(([, entry]) => !entry.permanent);
+      if (!oldest) break;
+      pool.delete(oldest[0]);
+    }
+  }
+
+  delete(eventId: string, key: string) {
+    this.pool(eventId).delete(key);
+  }
+}
+
+const pageCache = new ClientPageCache();
 
 async function fetchRankingPage(input: RequestInfo | URL) {
   let lastError: unknown;
@@ -149,7 +195,7 @@ function getPage(
   });
   if (selection.scope !== "world") params.set("region", selection.regionId);
   const cacheKey = params.toString();
-  const cached = pageCache.get(cacheKey);
+  const cached = pageCache.get(eventId, cacheKey);
   if (cached) return cached;
 
   const request = fetchRankingPage(`/api/rankings?${params}`).then(async (response) => {
@@ -167,11 +213,12 @@ function getPage(
       lastRank: data.lastRank,
       total: data.total,
       fetchedAt: data.fetchedAt ?? data.exportDate ?? null,
+      offlineStale: response.headers.get("X-Rankings-Offline-Stale") === "1",
     };
   });
 
-  pageCache.set(cacheKey, request);
-  request.catch(() => pageCache.delete(cacheKey));
+  pageCache.set(eventId, cacheKey, request, selection.scope === "world" && pageStart === 0);
+  request.catch(() => pageCache.delete(eventId, cacheKey));
   return request;
 }
 
@@ -377,6 +424,7 @@ export function RankingsExplorer({
   const [fetchedAt, setFetchedAt] = useState<string | null>(
     initialData?.fetchedAt ?? null
   );
+  const [offlineStale, setOfflineStale] = useState(false);
   const [hasMore, setHasMore] = useState(initialData?.hasMore ?? true);
   const [loading, setLoading] = useState(!initialData);
   const [preserveListDuringLoad, setPreserveListDuringLoad] = useState(false);
@@ -795,6 +843,7 @@ export function RankingsExplorer({
         setHasMore(data.hasMore);
         setTotal(data.total);
         setFetchedAt(data.fetchedAt);
+        setOfflineStale(Boolean(data.offlineStale));
         const requestedTargetIndex = focusLast
           ? Math.max(0, loadedEntries.length - 1)
           : loadedEntries.findIndex(
@@ -1032,6 +1081,7 @@ export function RankingsExplorer({
           setHasMore(data.hasMore);
           setTotal(data.total);
           setFetchedAt(data.fetchedAt);
+          setOfflineStale(Boolean(data.offlineStale));
           pendingScrollDirectionRef.current = null;
 
           window.requestAnimationFrame(() => {
@@ -1409,6 +1459,7 @@ export function RankingsExplorer({
       setLastRank(data.lastRank);
       setTotal(data.total);
       setFetchedAt(data.fetchedAt);
+      setOfflineStale(Boolean(data.offlineStale));
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -1456,6 +1507,7 @@ export function RankingsExplorer({
       setPreviousPageStart(data.previousPageStart);
       setLastRank(data.lastRank);
       setFetchedAt(data.fetchedAt);
+      setOfflineStale(Boolean(data.offlineStale));
       window.requestAnimationFrame(() => {
         const addedHeight = Math.max(
           0,
@@ -2203,6 +2255,7 @@ export function RankingsExplorer({
       )}
       <footer className="siteFooter">
         <span>By Adam Walker and Cailyn Sinclair</span>
+        {offlineStale && <span role="status">Offline cached rankings may be stale</span>}
         <span>
           {fetchedAt
             ? `fetched ${formatFetchedAgo(fetchedAt)}`

@@ -1,6 +1,14 @@
 import { query } from "@/db";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
 import {
+  normalPageKey,
+  prewarmPageKeys,
+  rankingsPageCache,
+  refreshRankingsCacheGeneration,
+  setRankingsCacheInvalidator,
+  setRankingsCachePrewarmer,
+} from "@/lib/rankings-cache";
+import {
   isEventId,
   isRankingType,
   isValidRegexPattern,
@@ -71,38 +79,59 @@ function addParameter(values: unknown[], value: unknown) {
   return "?";
 }
 
-async function hasStoredSubRank(column: string) {
-  const result = await query<{ count: number }>(
-    `SELECT COUNT(*) AS count
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-      AND table_name = 'ranking_entries'
-      AND column_name = ?`,
-    [column],
-  );
-  return Number(result.rows[0]?.count ?? 0) > 0;
+function getRankingTable(type: RankingType) {
+  return type === "average" ? "ranking_entries_average" : "ranking_entries_single";
 }
 
-function getSubRankPartition(scope: RegionScope) {
-  if (scope === "continent") return "event_id, ranking_type, continent_id";
-  if (scope === "country") return "event_id, ranking_type, country_id";
-  return "event_id, ranking_type";
+type ProjectionCapability = { tables: Set<string>; storedSubRanks: Set<string> };
+let projectionCapability: Promise<ProjectionCapability> | null = null;
+
+function getProjectionCapability() {
+  if (!projectionCapability) {
+    projectionCapability = (async () => {
+      const tables = ["ranking_entries_single", "ranking_entries_average", "ranking_entries"];
+      const columns = ["world_sub_rank", "continent_sub_rank", "country_sub_rank"];
+      const [tableResult, columnResult] = await Promise.all([
+        query<{ name: string }>(
+          "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN (?, ?, ?)",
+          tables,
+        ),
+        query<{ name: string }>(
+          "SELECT column_name AS name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name IN (?, ?, ?) AND column_name IN (?, ?, ?)",
+          [...tables, ...columns],
+        ),
+      ]);
+      return {
+        tables: new Set(tableResult.rows.map((row) => row.name)),
+        storedSubRanks: new Set(columnResult.rows.map((row) => row.name)),
+      };
+    })();
+  }
+  return projectionCapability;
+}
+
+function getSubRankPartition(scope: RegionScope, legacy: boolean) {
+  if (scope === "continent") return legacy ? "event_id, ranking_type, continent_id" : "event_id, continent_id";
+  if (scope === "country") return legacy ? "event_id, ranking_type, country_id" : "event_id, country_id";
+  return legacy ? "event_id, ranking_type" : "event_id";
 }
 
 function getRankingSource(
+  table: string,
   scope: RegionScope,
   rankColumn: string,
   subRankColumn: string,
   storedSubRank: boolean,
+  legacy: boolean,
 ) {
-  if (storedSubRank) return "ranking_entries";
-  const partition = getSubRankPartition(scope);
-  return `(SELECT ranking_entries.*,
+  if (storedSubRank) return table;
+  const partition = getSubRankPartition(scope, legacy);
+  return `(SELECT ${table}.*,
       ROW_NUMBER() OVER (
         PARTITION BY ${partition}
         ORDER BY ${rankColumn}, person_name, person_id
       ) AS ${subRankColumn}
-    FROM ranking_entries) AS ranking_entries`;
+    FROM ${table}) AS ${table}`;
 }
 
 function makeFilters({
@@ -110,18 +139,20 @@ function makeFilters({
   type,
   scope,
   regionId,
+  legacy,
 }: {
   eventId: string;
   type: RankingType;
   scope: RegionScope;
   regionId: string;
+  legacy: boolean;
 }) {
   const { rankColumn, subRankColumn, regionColumn } = getQueryShape(scope);
   const values: unknown[] = [];
   const conditions = [
     `event_id = ${addParameter(values, eventId)}`,
-    `ranking_type = ${addParameter(values, type)}`,
   ];
+  if (legacy) conditions.push(`ranking_type = ${addParameter(values, type)}`);
   if (regionColumn) {
     conditions.push(`${regionColumn} = ${addParameter(values, regionId)}`);
   }
@@ -158,15 +189,22 @@ export async function queryMysql({
   searchLimit: number;
   paged: boolean;
 }) {
-  const filter = makeFilters({ eventId, type, scope, regionId });
+  const splitEntriesTable = getRankingTable(type);
+  const capability = await getProjectionCapability();
+  const splitProjectionExists = capability.tables.has(splitEntriesTable);
+  const entriesTable = splitProjectionExists ? splitEntriesTable : "ranking_entries";
+  const legacy = !splitProjectionExists;
+  const filter = makeFilters({ eventId, type, scope, regionId, legacy });
   const { rankColumn, subRankColumn: storedSubRankColumn, conditions } = filter;
-  const storedSubRank = await hasStoredSubRank(storedSubRankColumn);
+  const storedSubRank = capability.storedSubRanks.has(storedSubRankColumn);
   const subRankColumn = storedSubRank ? storedSubRankColumn : "sub_rank";
   const rankingSource = getRankingSource(
+    entriesTable,
     scope,
     rankColumn,
     subRankColumn,
     storedSubRank,
+    legacy,
   );
 
   if (locate) {
@@ -251,14 +289,13 @@ export async function queryMysql({
     : Promise.resolve(null);
 
   const countValues = [eventId, type, scope, regionId];
-  const [result, countResult, exportDateResult, fetchedAtResult, nextRankRow, previousRankRow, startPositionRow, lastRankRow] = await Promise.all([
+  const [result, countResult, exportMetadataResult, nextRankRow, previousRankRow, startPositionRow, lastRankRow] = await Promise.all([
     query<RankingRow>(querySql, values),
     query<{ count: number }>(
       "SELECT count FROM ranking_counts WHERE event_id = ? AND ranking_type = ? AND scope = ? AND region_id = ?",
       countValues,
     ),
-    query<{ value: string }>("SELECT value FROM export_metadata WHERE `key` = 'export_date'"),
-    query<{ value: string }>("SELECT value FROM export_metadata WHERE `key` = 'fetched_at'"),
+    query<{ key: string; value: string }>("SELECT `key`, value FROM export_metadata WHERE `key` IN ('export_date', 'fetched_at')"),
     nextPageRank,
     previousPageRank,
     paged
@@ -275,8 +312,7 @@ export async function queryMysql({
 
   const rows = result.rows.map(toRankingEntry);
   const countRow = countResult.rows[0];
-  const exportDateRow = exportDateResult.rows[0];
-  const fetchedAtRow = fetchedAtResult.rows[0];
+  const exportMetadata = new Map(exportMetadataResult.rows.map((row) => [row.key, row.value]));
   const total = Number(countRow?.count ?? 0);
   const nextPageStart = nextRankRow?.rank
     ? Math.floor((Number(nextRankRow.rank) - 1) / limit) * limit + 1
@@ -297,11 +333,50 @@ export async function queryMysql({
     lastRank: Number(lastRankRow?.rank ?? 0) || null,
     nextCursor: last ? { rank: last.subRank, personId: last.personId } : null,
     total,
-    exportDate: exportDateRow?.value ?? null,
-    fetchedAt: fetchedAtRow?.value ?? exportDateRow?.value ?? null,
+    exportDate: exportMetadata.get("export_date") ?? null,
+    fetchedAt: exportMetadata.get("fetched_at") ?? exportMetadata.get("export_date") ?? null,
     source: "wca" as const,
   };
 }
+
+type QueryMysqlInput = Parameters<typeof queryMysql>[0];
+
+async function getCachedNormalPage(input: QueryMysqlInput) {
+  await refreshRankingsCacheGeneration();
+  return rankingsPageCache.get(
+    normalPageKey({
+      eventId: input.eventId,
+      type: input.type,
+      scope: input.scope,
+      regionId: input.regionId,
+      startRank: input.startRank,
+    }),
+    () => queryMysql(input),
+  ) as ReturnType<typeof queryMysql>;
+}
+
+setRankingsCacheInvalidator(() => {
+  projectionCapability = null;
+});
+
+async function prewarmFirstPages() {
+  await Promise.all(prewarmPageKeys().map((key) =>
+    rankingsPageCache.get(key, () => queryMysql({
+      ...key,
+      cursorRank: null,
+      cursorId: "",
+      limit: PAGE_SIZE,
+      locate: "",
+      search: "",
+      searchLimit: MAX_SEARCH_RESULTS,
+      paged: true,
+    })),
+  ));
+}
+
+setRankingsCachePrewarmer(prewarmFirstPages);
+// Deliberately detached: importing the route must not wait for warming every event.
+void prewarmFirstPages().catch(() => undefined);
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -338,7 +413,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const data = await queryMysql({
+    const input = {
       eventId,
       type,
       scope,
@@ -352,7 +427,9 @@ export async function GET(request: Request) {
       regexSearch,
       searchLimit,
       paged,
-    });
+    };
+    const isCacheablePage = paged && !search && !locate && !cursorRank && !cursorId;
+    const data = await (isCacheablePage ? getCachedNormalPage(input) : queryMysql(input));
     return Response.json(data, { headers: { "Cache-Control": "public, max-age=60, s-maxage=3600" } });
   } catch {
     return Response.json(

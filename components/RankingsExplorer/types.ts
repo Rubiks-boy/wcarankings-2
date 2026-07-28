@@ -23,6 +23,7 @@ export type RankingPage = {
   total: number;
   fetchedAt: string | null;
   exportDate?: string | null;
+  offlineStale?: boolean;
 };
 
 export type InitialRankingData = Pick<

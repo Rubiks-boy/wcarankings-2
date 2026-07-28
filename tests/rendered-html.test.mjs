@@ -137,7 +137,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /measureElement/);
   assert.match(component, /preserveListDuringLoad/);
   assert.match(component, /listItem/);
-  assert.match(component, /className="loader"/);
+  assert.doesNotMatch(component, /className="loader"/);
   assert.match(component, /className=.*row/);
   assert.match(component, /className="competitionName"/);
   assert.match(component, /\{entry\.competitionName\}/);
@@ -254,7 +254,7 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(css, /\.resultValue \{[\s\S]*display: contents;/);
   assert.match(css, /\.competitionName \{[\s\S]*grid-column: 1;[\s\S]*width: max-content;[\s\S]*justify-self: end;/);
   assert.match(css, /overflow-anchor: none/);
-  assert.match(css, /\.loaderBlob/);
+  assert.doesNotMatch(css, /\.loaderBlob/);
   assert.match(css, /\.Jump/);
   assert.match(css, /\.row--alternate/);
   assert.doesNotMatch(css, /\.virtualRow:not\(:last-child\) \.row/);

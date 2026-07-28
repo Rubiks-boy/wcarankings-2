@@ -42,6 +42,7 @@ test("renders rows and highlights tied results", () => {
       rankingType="single"
       loading={false}
       preserveListDuringLoad={false}
+      hasMore
       loadingMore={false}
       highlightedPersonId="2024TIED02"
       measureElement={() => undefined}

@@ -59,6 +59,7 @@ const SEARCH_ANIMATION_ROWS = 3;
 const VIM_JUMP_PAGE_COUNT = 2;
 const VIM_JUMP_SIZE = PAGE_SIZE * VIM_JUMP_PAGE_COUNT;
 const ROW_HEIGHT = 65.45;
+const END_MARKER_PEEK = ROW_HEIGHT + 40;
 
 export function centeredRowScrollTop(
   rowTop: number,
@@ -234,6 +235,40 @@ function getPage(
   pageCache.set(eventId, cacheKey, request, selection.scope === "world" && pageStart === 0);
   request.catch(() => pageCache.delete(eventId, cacheKey));
   return request;
+}
+
+async function getEndWindow(
+  eventId: string,
+  rankingType: "single" | "average",
+  selection: RegionSelection,
+  endSubRank: number
+) {
+  const finalPageStart = pageStartForSubRank(endSubRank);
+  const pageStarts = [
+    Math.max(0, finalPageStart - PAGE_SIZE),
+    finalPageStart,
+  ].filter((start, index, starts) => starts.indexOf(start) === index);
+  const pages = await Promise.all(
+    pageStarts.map((start) =>
+      getPage(eventId, rankingType, start + 1, selection)
+    )
+  );
+  const firstPage = pages[0];
+  const lastPage = pages.at(-1) ?? firstPage;
+  const seenPersonIds = new Set<string>();
+
+  return {
+    ...lastPage,
+    entries: pages.flatMap((page) =>
+      page.entries.filter((entry) => {
+        if (seenPersonIds.has(entry.personId)) return false;
+        seenPersonIds.add(entry.personId);
+        return true;
+      })
+    ),
+    startPosition: firstPage.startPosition,
+    previousPageStart: firstPage.previousPageStart,
+  };
 }
 
 async function getSearchWindow(
@@ -419,6 +454,9 @@ export function RankingsExplorer({
   const [entries, setEntries] = useState<RankingEntry[]>(
     initialData?.entries ?? []
   );
+  const [entriesRankingType, setEntriesRankingType] = useState(
+    initialRankingType
+  );
   const [startRank, setStartRank] = useState(initialData?.startRank ?? 1);
   const [startPosition, setStartPosition] = useState(
     initialData?.startPosition ?? 0
@@ -545,7 +583,7 @@ export function RankingsExplorer({
   });
 
   const rowVirtualizer = useWindowVirtualizer({
-    count: entries.length + (hasMore ? 1 : 0),
+    count: entries.length + 1,
     estimateSize: () => ROW_HEIGHT,
     overscan: 12,
     scrollMargin: listOffset,
@@ -903,7 +941,10 @@ export function RankingsExplorer({
     previousRequestRef.current = false;
     const focusLast = pendingFocusLastRef.current;
     pendingFocusLastRef.current = false;
-    getPage(eventId, rankingType, startRank, regionSelection)
+    const pageRequest = focusLast
+      ? getEndWindow(eventId, rankingType, regionSelection, startRank)
+      : getPage(eventId, rankingType, startRank, regionSelection);
+    pageRequest
       .then((data) => {
         if (
           !active ||
@@ -963,6 +1004,7 @@ export function RankingsExplorer({
         pendingScrollToTopRef.current = false;
         pendingNavigationAppendRef.current = false;
         setEntries(loadedEntries);
+        setEntriesRankingType(rankingType);
         setStartPosition(
           appendNavigation ? loadedStartPosition : data.startPosition
         );
@@ -1018,16 +1060,19 @@ export function RankingsExplorer({
               state: scrollAnimationStateRef.current,
               list: listRef.current,
               index: targetIndex,
-              alignment: "top",
+              alignment: focusLast ? "bottom" : "top",
+              bottomOffset: focusLast ? END_MARKER_PEEK : 0,
               requestedBehavior: "smooth",
               requestedDuration: getScrollAnimationDuration(
                 Math.abs(rankForStep - currentSubRank)
               ),
-              targetOffset: () =>
-                rowVirtualizerRef.current.getOffsetForIndex(
-                  targetIndex,
-                  "start"
-                )?.[0],
+              targetOffset: focusLast
+                ? undefined
+                : () =>
+                    rowVirtualizerRef.current.getOffsetForIndex(
+                      targetIndex,
+                      "start"
+                    )?.[0],
             });
           });
 
@@ -1890,13 +1935,12 @@ export function RankingsExplorer({
         state: scrollAnimationStateRef.current,
         list: listRef.current,
         index: targetIndex,
-        alignment: "top",
+        alignment: "bottom",
+        bottomOffset: END_MARKER_PEEK,
         requestedBehavior: "smooth",
         requestedDuration: getScrollAnimationDuration(
           Math.abs(endRank - currentRank)
         ),
-        targetOffset: () =>
-          rowVirtualizer.getOffsetForIndex(targetIndex, "start")?.[0],
       });
       pendingScrollDirectionRef.current = null;
       pendingFocusLastRef.current = false;
@@ -1909,7 +1953,6 @@ export function RankingsExplorer({
     entries.length,
     hasMore,
     lastRank,
-    rowVirtualizer,
     total,
     visibleSubRank,
   ]);
@@ -2014,6 +2057,36 @@ export function RankingsExplorer({
     resetToRankRef.current = resetToRank;
     jumpToEndRef.current = jumpToEnd;
   }, [jumpToEnd, resetToRank]);
+
+  useEffect(() => {
+    const onDocumentBoundaryKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      const isEditable =
+        target instanceof Element &&
+        target.matches("input, textarea, select, [contenteditable='true']");
+
+      if (isEditable || event.altKey || event.shiftKey) return;
+
+      const jumpToTop =
+        (event.metaKey && !event.ctrlKey && event.key === "ArrowUp") ||
+        (event.ctrlKey && !event.metaKey && event.key === "Home");
+      const jumpToBottom =
+        (event.metaKey && !event.ctrlKey && event.key === "ArrowDown") ||
+        (event.ctrlKey && !event.metaKey && event.key === "End");
+
+      if (!jumpToTop && !jumpToBottom) return;
+
+      event.preventDefault();
+      if (event.repeat) return;
+
+      if (jumpToTop) resetToRankRef.current(1);
+      else jumpToEndRef.current();
+    };
+
+    window.addEventListener("keydown", onDocumentBoundaryKeyDown);
+    return () =>
+      window.removeEventListener("keydown", onDocumentBoundaryKeyDown);
+  }, []);
 
   const executeVimCommand = useCallback(
     (rawCommand: string) => {
@@ -2208,8 +2281,8 @@ export function RankingsExplorer({
     pendingScrollToTopRef.current = true;
     pendingScrollDirectionRef.current = null;
     skipNextFindResetRef.current = true;
-    preserveListDuringLoadRef.current = false;
-    setPreserveListDuringLoad(false);
+    preserveListDuringLoadRef.current = true;
+    setPreserveListDuringLoad(true);
     setRankingType(nextRankingType);
     updateQueryParams({
       result: nextRankingType === "single" ? null : nextRankingType,
@@ -2375,9 +2448,10 @@ export function RankingsExplorer({
                 renderedListHeight={renderedListHeight}
                 listOffset={listOffset}
                 eventId={eventId}
-                rankingType={rankingType}
+                rankingType={entriesRankingType}
                 loading={loading}
                 preserveListDuringLoad={preserveListDuringLoad}
+                hasMore={hasMore}
                 loadingMore={loadingMore}
                 searchMatchPersonIds={searchMatchPersonIds}
                 highlightedPersonId={highlightedPersonId}

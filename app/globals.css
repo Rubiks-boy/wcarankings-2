@@ -34,7 +34,6 @@
   --error: #a33;
   --focus: rgb(136 15 211);
   --focus-ring: rgb(121 92 169 / 0.3);
-  --loader: #ccc;
   --shadow: rgb(24 48 61 / 0.18);
   --shadow-soft: rgb(24 48 61 / 0.12);
   --overlay: rgb(255 252 255 / 0.94);
@@ -67,7 +66,6 @@
   --error: #ff9494;
   --focus: #d2a8ff;
   --focus-ring: rgb(210 168 255 / 0.38);
-  --loader: #52606a;
   --shadow: rgb(0 0 0 / 0.42);
   --shadow-soft: rgb(0 0 0 / 0.3);
   --overlay: rgb(18 20 23 / 0.94);
@@ -101,7 +99,6 @@
     --error: #ff9494;
     --focus: #d2a8ff;
     --focus-ring: rgb(210 168 255 / 0.38);
-    --loader: #52606a;
     --shadow: rgb(0 0 0 / 0.42);
     --shadow-soft: rgb(0 0 0 / 0.3);
     --overlay: rgb(18 20 23 / 0.94);
@@ -783,28 +780,6 @@ select {
   transition: var(--t-transform);
 }
 
-.loadingList .listItem {
-  position: relative;
-}
-
-.listItem.isLoading {
-  transform: none;
-}
-
-.loader {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 0.5em;
-  width: 100%;
-  padding-block: 0.75em;
-  padding-inline: 1rem;
-}
-
-.isLoading .row {
-  opacity: 0;
-}
-
 .row {
   display: flex;
   align-items: center;
@@ -818,11 +793,6 @@ select {
   font-size: 1.0625em;
   font-weight: 300;
   transition: opacity var(--t-duration) ease var(--t-animation-delay), background-color 40ms ease;
-}
-
-.loaderRow {
-  width: 100%;
-  min-height: 65.45px;
 }
 
 .row--alternate {
@@ -960,31 +930,6 @@ select {
   margin-top: 0.15em;
   color: var(--text-muted);
   font-size: 0.75em;
-}
-
-.loaderBlob {
-  height: 1em;
-  padding: 0.5em;
-  margin-block: 0.1em;
-  border-radius: 0.5em;
-  background-color: var(--loader);
-  transform: scale(120%, 120%);
-  transition: transform var(--t-duration) ease var(--t-animation-delay);
-}
-
-.isLoading .loaderBlob {
-  transform: unset;
-}
-
-.loaderBlob.rank {
-  width: 4ch;
-  margin-right: 1em;
-}
-
-.loaderBlob.name {
-  width: 80%;
-  max-width: 500px;
-  margin-right: 1em;
 }
 
 .listMessage {
@@ -1156,10 +1101,6 @@ select {
 
 @keyframes vimCaretBlink {
   50% { opacity: 0; }
-}
-
-.loadingList {
-  min-height: 10em;
 }
 
 @media only screen and (min-width: 500px) {

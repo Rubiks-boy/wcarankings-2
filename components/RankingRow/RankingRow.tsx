@@ -5,16 +5,14 @@ export function RankingRow({
   entry,
   eventId,
   rankingType,
-  loading,
   animationIndex,
   searchMatched = false,
   highlighted = false,
   rankIsDuplicate = false,
 }: {
-  entry: RankingEntry | null;
+  entry: RankingEntry;
   eventId: string;
   rankingType: "single" | "average";
-  loading: boolean;
   animationIndex: number;
   searchMatched?: boolean;
   highlighted?: boolean;
@@ -24,27 +22,19 @@ export function RankingRow({
     "--t-animation-delay": `${animationIndex * 10}ms`,
     minHeight: "65.45px",
   } as React.CSSProperties;
-  const rank = entry?.rank ?? 0;
-  const name = entry?.personName ?? "";
-  const id = entry?.personId ?? "";
-  const countryName = entry?.countryName || "Country unavailable";
-  const countryFlag = flagEmoji(entry?.countryIso2 ?? "");
-  const recordBadge = entry?.recordBadges[0];
-  const isLoading = loading || !entry;
+  const rank = entry.rank;
+  const name = entry.personName;
+  const id = entry.personId;
+  const countryName = entry.countryName || "Country unavailable";
+  const countryFlag = flagEmoji(entry.countryIso2);
+  const recordBadge = entry.recordBadges[0];
 
   return (
     <li
-      className={`listItem${isLoading ? " isLoading" : ""}`}
-      data-person-id={entry?.personId}
+      className="listItem"
+      data-person-id={entry.personId}
       style={style}
     >
-      {isLoading && (
-        <div className="loader" aria-hidden="true">
-          <div className="rank loaderBlob" />
-          <div className="name loaderBlob" />
-          <div className="best loaderBlob" />
-        </div>
-      )}
       <div
         className={`row${animationIndex % 2 === 1 ? " row--alternate" : ""}${
           searchMatched ? " row--searchResult" : ""
@@ -88,10 +78,10 @@ export function RankingRow({
               )}
             </span>
             <span className="best">
-              {entry ? formatWcaResult(eventId, entry.best, rankingType) : ""}
+              {formatWcaResult(eventId, entry.best, rankingType)}
             </span>
           </span>
-          {entry?.competitionName && (
+          {entry.competitionName && (
             <span className="competitionName" title={entry.competitionName}>
               {entry.competitionName}
             </span>

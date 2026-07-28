@@ -8,6 +8,7 @@ import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
 import { isEventId, isRankingType, isValidRegexPattern, parseRegionQuery } from "@/lib/wca";
 import { getRegions } from "@/lib/regions";
 import { loadRankings } from "@/lib/rankings";
+import { projectionBrowsingEnabled } from "@/lib/feature-flags";
 
 const PAGE_SIZE = RESULTS_PAGE_SIZE;
 
@@ -192,6 +193,7 @@ export default async function Home({
       initialRankingType={rankingType}
       initialRegionSelection={{ scope, regionId }}
       initialRegions={{ continents, countries }}
+      showSubjectSwitch={projectionBrowsingEnabled}
     />
   );
 }

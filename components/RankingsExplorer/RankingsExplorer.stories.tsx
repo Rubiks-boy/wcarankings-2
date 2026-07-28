@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState, type ReactNode } from "react";
+import { useLayoutEffect, type ReactNode } from "react";
 import type { Decorator, Meta, StoryObj } from "@storybook/react";
 import { FALLBACK_CONTINENTS, FALLBACK_COUNTRIES } from "@/lib/wca";
 import type { RecordBadgeCode } from "@/lib/wca";
@@ -6,7 +6,6 @@ import { RankingsExplorer } from "./RankingsExplorer";
 import type { RankingEntry } from "./types";
 
 const MOCK_RANKING_SIZE = 10_000;
-const MOCK_FETCHED_AT = "2026-07-27T00:00:00.000Z";
 const firstNames = [
   "Avery",
   "Casey",
@@ -201,20 +200,6 @@ const sharedArgs = {
   },
 };
 
-function SearchOpenExplorer() {
-  const [ready, setReady] = useState(false);
-
-  useLayoutEffect(() => {
-    const url = new URL(window.location.href);
-    url.searchParams.set("search", "Avery");
-    window.history.replaceState(window.history.state, "", url);
-    setReady(true);
-  }, []);
-
-  if (!ready) return null;
-  return <RankingsExplorer {...sharedArgs} initialEventId="333" initialRankingType="single" initialSearch="Avery" />;
-}
-
 export const Persons: Story = {
   args: {
     ...sharedArgs,
@@ -265,5 +250,5 @@ export const CompetitionLatitude: Story = {
 };
 
 export const SearchOpen: Story = {
-  render: () => <SearchOpenExplorer />,
+  render: () => <RankingsExplorer {...sharedArgs} initialEventId="333" initialRankingType="single" initialSearch="Avery" />,
 };

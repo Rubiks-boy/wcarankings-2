@@ -565,7 +565,7 @@ select {
 
 .competitionName {
   grid-column: 1;
-  width: 8ch;
+  width: max-content;
   max-width: none;
   overflow: visible;
   justify-self: end;

@@ -113,9 +113,105 @@ function sqlEntry(archive) {
 async function dropRankingViews() {
   const connection = await mysql.createConnection(databaseOptions());
   try {
-    for (const name of ["ranking_counts", "ranking_entries", "ranking_counts_source", "ranking_entries_source", "wca_best_single", "wca_best_average"]) {
+    for (const name of ["ranking_counts_source", "ranking_entries_source", "wca_best_single", "wca_best_average"]) {
       await dropManagedObject(connection, name);
     }
+  } finally {
+    await connection.end();
+  }
+}
+
+function now() {
+  return new Date();
+}
+
+function elapsedMilliseconds(startedAt, completedAt = now()) {
+  return Math.max(0, completedAt.getTime() - startedAt.getTime());
+}
+
+function safeFailureMessage(error) {
+  return String(error instanceof Error ? error.message : error)
+    .replace(/mysql:\/\/[^\s]+/gi, "mysql://[redacted]")
+    .replace(/MYSQL_PWD\s*[=:]\s*[^\s]+/gi, "MYSQL_PWD=[redacted]")
+    .slice(0, 2000);
+}
+
+async function updateImportRun(id, fields) {
+  const connection = await mysql.createConnection(databaseOptions());
+  try {
+    const entries = Object.entries(fields);
+    if (entries.length === 0) return;
+    const values = entries.map(([, value]) => value);
+    const assignments = entries.map(([key]) => `\`${key}\` = ?`).join(", ");
+    await connection.query(`UPDATE import_runs SET ${assignments} WHERE id = ?`, [...values, id]);
+  } finally {
+    await connection.end();
+  }
+}
+
+async function createImportRun(latest, startedAt) {
+  const connection = await mysql.createConnection(databaseOptions());
+  try {
+    const [result] = await connection.query(
+      `INSERT INTO import_runs
+        (export_date, export_format_version, export_url, status, started_at, fetch_started_at)
+       VALUES (?, ?, ?, 'running', ?, ?)`,
+      [latest.exportDate, latest.version, latest.sqlUrl || null, startedAt, startedAt],
+    );
+    return result.insertId;
+  } finally {
+    await connection.end();
+  }
+}
+
+async function collectImportCounts() {
+  const connection = await mysql.createConnection(databaseOptions());
+  try {
+    const [coverage] = await connection.query(`
+      SELECT
+        (SELECT COUNT(*) FROM persons WHERE sub_id = 1) AS people,
+        (SELECT COUNT(*) FROM results) AS results,
+        (SELECT COUNT(*) FROM ranking_entries_staging) AS rankings,
+        (SELECT COUNT(DISTINCT event_id) FROM ranking_entries_staging) AS events,
+        (SELECT COUNT(DISTINCT country_id) FROM ranking_entries_staging WHERE country_id <> '') AS regions,
+        (SELECT COUNT(*) FROM ranking_counts_staging) AS aggregates
+    `);
+    return {
+      source_person_count: Number(coverage[0]?.people ?? 0),
+      source_result_count: Number(coverage[0]?.results ?? 0),
+      published_ranking_count: Number(coverage[0]?.rankings ?? 0),
+      event_count: Number(coverage[0]?.events ?? 0),
+      region_count: Number(coverage[0]?.regions ?? 0),
+      aggregate_count: Number(coverage[0]?.aggregates ?? 0),
+    };
+  } finally {
+    await connection.end();
+  }
+}
+
+async function tableExists(connection, name) {
+  const [rows] = await connection.query(
+    "SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ? LIMIT 1",
+    [name],
+  );
+  return rows.length > 0;
+}
+
+async function promoteRankings() {
+  const connection = await mysql.createConnection(databaseOptions());
+  try {
+    const hasPublished = await tableExists(connection, "ranking_entries");
+    await connection.beginTransaction();
+    if (hasPublished) {
+      await connection.query("RENAME TABLE ranking_entries TO ranking_entries_previous, ranking_entries_staging TO ranking_entries, ranking_counts TO ranking_counts_previous, ranking_counts_staging TO ranking_counts");
+      await connection.query("DROP TABLE ranking_entries_previous, ranking_counts_previous");
+    } else {
+      await connection.query("RENAME TABLE ranking_entries_staging TO ranking_entries, ranking_counts_staging TO ranking_counts");
+    }
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
   } finally {
     await connection.end();
   }
@@ -174,13 +270,14 @@ async function writeExportMetadata(latest) {
 async function refreshRankingsSchema() {
   const connection = await mysql.createConnection(databaseOptions());
   try {
-    await refreshMysqlSchema(connection);
+    await refreshMysqlSchema(connection, { projectionSuffix: "_staging" });
   } finally {
     await connection.end();
   }
 }
 
 async function main() {
+  await migrateDatabase();
   const suppliedPath = argumentValue("sql-path") || process.env.WCA_SQL_EXPORT_PATH;
   let latest;
   if (suppliedPath) {
@@ -195,20 +292,47 @@ async function main() {
     return;
   }
 
-  const zipPath = await getCachedExport(latest);
   if (dryRun) {
+    await getCachedExport(latest);
     process.stdout.write("Dry run complete. The cached SQL export is available for import.\n");
     return;
   }
 
-  await dropRankingViews();
-  process.stdout.write("Importing WCA SQL tables into MariaDB…\n");
-  await importSqlExport(zipPath);
-  process.stdout.write("Running app migrations and refreshing ranking projections…\n");
-  await migrateDatabase();
-  await refreshRankingsSchema();
-  await writeExportMetadata(latest);
-  process.stdout.write(`WCA rankings are current through ${latest.exportDate}.\n`);
+  const startedAt = now();
+  const runId = await createImportRun(latest, startedAt);
+  try {
+    await updateImportRun(runId, { fetch_started_at: startedAt });
+    const zipPath = await getCachedExport(latest);
+    await dropRankingViews();
+    process.stdout.write("Importing WCA SQL tables into MariaDB…\n");
+    await importSqlExport(zipPath);
+    await updateImportRun(runId, { fetched_at: now(), projection_swap_status: "building" });
+    process.stdout.write("Refreshing staging ranking projections…\n");
+    await refreshRankingsSchema();
+    const counts = await collectImportCounts();
+    await updateImportRun(runId, counts);
+    await updateImportRun(runId, { projection_swap_status: "swapping" });
+    await promoteRankings();
+    const completedAt = now();
+    await writeExportMetadata(latest);
+    await updateImportRun(runId, {
+      status: "succeeded",
+      projection_swap_status: "published",
+      completed_at: completedAt,
+      duration_ms: elapsedMilliseconds(startedAt, completedAt),
+    });
+    process.stdout.write(`WCA rankings are current through ${latest.exportDate}.\n`);
+  } catch (error) {
+    const completedAt = now();
+    await updateImportRun(runId, {
+      status: "failed",
+      projection_swap_status: "failed",
+      completed_at: completedAt,
+      duration_ms: elapsedMilliseconds(startedAt, completedAt),
+      failure_message: safeFailureMessage(error),
+    });
+    throw error;
+  }
 }
 
 main().catch((error) => {

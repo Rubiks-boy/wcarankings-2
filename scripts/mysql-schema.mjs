@@ -120,8 +120,14 @@ export async function dropManagedObject(connection, name) {
   if (rows[0]?.type === "BASE TABLE") await connection.query(`DROP TABLE \`${name}\``);
 }
 
-export async function refreshMysqlSchema(connection) {
-  for (const name of ["ranking_counts", "ranking_entries", "ranking_counts_source", "ranking_entries_source", "wca_best_single", "wca_best_average"]) {
+export async function refreshMysqlSchema(connection, { projectionSuffix = "" } = {}) {
+  const entriesTable = `ranking_entries${projectionSuffix}`;
+  const countsTable = `ranking_counts${projectionSuffix}`;
+  const entriesSource = `ranking_entries_source${projectionSuffix}`;
+  const bestSingle = `wca_best_single${projectionSuffix}`;
+  const bestAverage = `wca_best_average${projectionSuffix}`;
+
+  for (const name of [countsTable, entriesTable, entriesSource, bestSingle, bestAverage]) {
     await dropManagedObject(connection, name);
   }
 
@@ -140,28 +146,34 @@ export async function refreshMysqlSchema(connection) {
     }
   }
 
-  for (const statement of VIEW_STATEMENTS) await connection.query(statement);
+  for (const statement of VIEW_STATEMENTS) {
+    const renamed = statement
+      .replaceAll("wca_best_single", bestSingle)
+      .replaceAll("wca_best_average", bestAverage)
+      .replaceAll("ranking_entries_source", entriesSource);
+    await connection.query(renamed);
+  }
 
-  await connection.query("CREATE TABLE ranking_entries AS SELECT * FROM ranking_entries_source");
+  await connection.query(`CREATE TABLE \`${entriesTable}\` AS SELECT * FROM \`${entriesSource}\``);
   for (const [name, columns] of PROJECTION_INDEXES) {
-    await connection.query(`ALTER TABLE ranking_entries ADD INDEX \`${name}\` ${columns}`);
+    await connection.query(`ALTER TABLE \`${entriesTable}\` ADD INDEX \`${name}\` ${columns}`);
   }
   await connection.query(`
-    CREATE TABLE ranking_counts AS
+    CREATE TABLE \`${countsTable}\` AS
     SELECT event_id, ranking_type, 'world' AS scope, '' AS region_id, COUNT(*) AS count
-    FROM ranking_entries
+    FROM \`${entriesTable}\`
     WHERE world_rank > 0
     GROUP BY event_id, ranking_type
     UNION ALL
     SELECT event_id, ranking_type, 'continent' AS scope, continent_id AS region_id, COUNT(*) AS count
-    FROM ranking_entries
+    FROM \`${entriesTable}\`
     WHERE continent_rank > 0
     GROUP BY event_id, ranking_type, continent_id
     UNION ALL
     SELECT event_id, ranking_type, 'country' AS scope, country_id AS region_id, COUNT(*) AS count
-    FROM ranking_entries
+    FROM \`${entriesTable}\`
     WHERE country_rank > 0
     GROUP BY event_id, ranking_type, country_id
   `);
-  await connection.query("ALTER TABLE ranking_counts ADD PRIMARY KEY (event_id, ranking_type, scope, region_id)");
+  await connection.query(`ALTER TABLE \`${countsTable}\` ADD PRIMARY KEY (event_id, ranking_type, scope, region_id)`);
 }

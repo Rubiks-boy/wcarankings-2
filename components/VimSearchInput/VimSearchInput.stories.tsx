@@ -39,7 +39,7 @@ function InteractiveVimSearchInput() {
 }
 
 const meta = {
-  title: "Components/VimSearchInput",
+  title: "Core UI/Atoms/VimSearchInput",
   component: VimSearchInput,
   parameters: { layout: "fullscreen" },
   args: {

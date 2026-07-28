@@ -19,7 +19,7 @@ const regions = [
 ];
 
 const meta = {
-  title: "Components/RankingControls",
+  title: "Core UI/Molecules/RankingControls",
   component: RankingControls,
   parameters: { layout: "fullscreen" },
   decorators: [

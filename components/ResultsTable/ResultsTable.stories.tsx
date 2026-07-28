@@ -42,7 +42,7 @@ const entries: RankingEntry[] = [
 ];
 
 const meta = {
-  title: "Components/ResultsTable",
+  title: "Core UI/Molecules/ResultsTable",
   component: ResultsTable,
   parameters: { layout: "fullscreen" },
   args: {

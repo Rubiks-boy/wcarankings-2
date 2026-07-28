@@ -24,7 +24,7 @@ function InteractiveEventPicker() {
 }
 
 const meta = {
-  title: "Components/EventPicker",
+  title: "Core UI/Atoms/EventPicker",
   component: EventPicker,
   parameters: { layout: "centered" },
   decorators: [

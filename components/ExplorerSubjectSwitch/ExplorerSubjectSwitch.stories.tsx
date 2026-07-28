@@ -22,7 +22,7 @@ function InteractiveSwitch({ variant }: { variant: "segmented" | "select" }) {
 }
 
 const meta = {
-  title: "Components/ExplorerSubjectSwitch",
+  title: "Core UI/Atoms/ExplorerSubjectSwitch",
   component: ExplorerSubjectSwitch,
   parameters: { layout: "centered" },
 } satisfies Meta<typeof ExplorerSubjectSwitch>;

@@ -21,7 +21,7 @@ const recordEntry: RankingEntry = {
 };
 
 const meta = {
-  title: "Components/RankingRow",
+  title: "Core UI/Molecules/RankingRow",
   component: RankingRow,
   parameters: { layout: "fullscreen" },
   args: {

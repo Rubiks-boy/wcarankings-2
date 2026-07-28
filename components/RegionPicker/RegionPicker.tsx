@@ -9,10 +9,12 @@ export function RegionPicker({
   options,
   selected,
   onChange,
+  className,
 }: {
   options: RegionOption[];
   selected: RegionSelection;
   onChange: (option: RegionOption) => void;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -116,7 +118,7 @@ export function RegionPicker({
   };
 
   return (
-    <div className="regionPicker" ref={pickerRef}>
+    <div className={`regionPicker${className ? ` ${className}` : ""}`} ref={pickerRef}>
       <input
         className="regionPickerTrigger"
         id="region-picker-button"

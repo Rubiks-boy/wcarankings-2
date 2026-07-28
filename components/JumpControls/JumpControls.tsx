@@ -149,11 +149,12 @@ export function JumpUpControls({
             <button
               className="findClose"
               type="button"
+              onMouseDown={(mouseEvent) => mouseEvent.preventDefault()}
               onClick={() => {
-                onSearchQueryChange("");
-                setTimeout(() => inputRef.current?.focus());
+                inputRef.current?.blur();
+                onSearchClose();
               }}
-              aria-label="Clear search"
+              aria-label="Close search"
             >
               <CloseIcon />
             </button>

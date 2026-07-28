@@ -284,7 +284,7 @@ select {
   overflow: hidden;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 20px;
+  border-radius: 22px;
   background-color: transparent;
   box-shadow: none;
   transition: width 250ms var(--cubic-move),
@@ -612,6 +612,11 @@ select {
   min-height: 0;
 }
 
+.eventInput select {
+  height: 44px;
+  min-height: 44px;
+}
+
 .rankingTypeOption {
   box-sizing: border-box;
   position: relative;
@@ -716,7 +721,7 @@ select {
   gap: 0.5em;
   width: 100%;
   padding-block: 0.75em;
-  padding-inline: 1rem 0.5rem;
+  padding-inline: 1rem;
 }
 
 .isLoading .row {
@@ -729,7 +734,7 @@ select {
   gap: 0.5em;
   height: 100%;
   padding-block: 0.75em;
-  padding-inline: 1rem 0.5rem;
+  padding-inline: 1rem;
   margin-bottom: 0;
   border: 0;
   border-radius: 0;
@@ -1140,8 +1145,8 @@ select {
   }
 
   .selectInput select[name="Event Id"] {
-    height: 2.75em;
-    min-height: 2.75em;
+    height: 44px;
+    min-height: 44px;
     padding-block: 0.5em;
     font-size: 0.85em;
   }
@@ -1189,8 +1194,8 @@ select {
     right: 0;
     width: 100%;
     max-width: none;
-    height: 48px;
-    min-height: 48px;
+    height: 44px;
+    min-height: 44px;
     border-color: var(--border-strong);
     background-color: var(--surface);
   }

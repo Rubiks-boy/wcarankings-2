@@ -433,7 +433,16 @@ export async function GET(request: Request) {
     const isCacheablePage = paged && !search && !locate && !cursorRank && !cursorId;
     const data = await (isCacheablePage ? getCachedNormalPage(input) : queryMysql(input));
     return Response.json(data, { headers: { "Cache-Control": "public, max-age=60, s-maxage=3600" } });
-  } catch {
+  } catch (error) {
+    console.error("Rankings query failed", {
+      eventId,
+      type,
+      scope,
+      paged,
+      search: Boolean(search),
+      locate: Boolean(locate),
+      error,
+    });
     return Response.json(
       { error: "Rankings are unavailable." },
       { status: 503 },

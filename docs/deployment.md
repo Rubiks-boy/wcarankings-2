@@ -79,11 +79,15 @@ also be started with `workflow_dispatch`. Deploys are serialized so two producti
 deploys do not overlap.
 
 Pull-request checks build the application and Flyway images from the checked-out
-merge result, verify them, and publish them to GitHub Container Registry. They
-are tagged with the Git tree SHA, rather than a commit SHA, because GitHub can
-create a different commit SHA when a pull request is merged while retaining the
-same source tree. The same published Flyway image is run against a temporary
-MariaDB before its pull request can pass.
+merge result and tag them with the Git tree SHA, rather than a commit SHA,
+because GitHub can create a different commit SHA when a pull request is merged
+while retaining the same source tree. Before publishing either image, the job
+runs the Flyway image against temporary MariaDB, loads a small WCA-like fixture,
+refreshes ranking projections using the application image, starts that exact
+image, and runs a Chromium smoke test against it. The test asserts a seeded
+ranking is visible and uploads a screenshot plus Playwright report as a
+14-day workflow artifact. Only a successful same-repository pull request pushes
+those already-tested image tags to GitHub Container Registry.
 
 The deployment workflow does the following:
 

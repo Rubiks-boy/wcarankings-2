@@ -239,11 +239,22 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(manifest, /display: "standalone"/);
   assert.match(manifest, /icon-192\.png/);
   assert.match(manifest, /icon-512\.png/);
-  assert.match(pwaRegistration, /serviceWorker\.register\(SERVICE_WORKER_URL/);
+  assert.match(
+    pwaRegistration,
+    /serviceWorker[\s\S]*\.register\(SERVICE_WORKER_URL/,
+  );
   assert.match(pwaRegistration, /updateViaCache: "none"/);
+  assert.match(pwaRegistration, /controllerchange/);
+  assert.match(pwaRegistration, /SKIP_WAITING/);
+  assert.match(pwaRegistration, /Update available/);
   assert.doesNotMatch(pwaRegistration, /unregister\(\)/);
   assert.match(serviceWorker, /CACHE_NAME/);
   assert.match(serviceWorker, /cache\.match/);
+  assert.match(serviceWorker, /event\.data\?\.type === "SKIP_WAITING"/);
+  assert.doesNotMatch(
+    serviceWorker,
+    /cache\.addAll\(APP_SHELL\)\)\.then\(\(\) => self\.skipWaiting/,
+  );
   assert.match(packageJson, /"name": "wcarankings-2"/);
   assert.match(packageJson, /"@tanstack\/react-virtual"/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);

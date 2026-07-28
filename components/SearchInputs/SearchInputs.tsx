@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type KeyboardEvent, type Ref } from "react";
+import { useEffect, useRef, type KeyboardEvent, type Ref } from "react";
 import CloseIcon from "../Icon/close.svg?react";
 import SearchIcon from "../Icon/search.svg?react";
 import {
@@ -25,7 +25,7 @@ export function SearchInputs({
   onCycle,
 }: {
   barRef?: Ref<HTMLDivElement>;
-  inputRef?: Ref<HTMLInputElement>;
+  inputRef?: (input: HTMLInputElement | null) => void;
   findOpen: boolean;
   findQuery: string;
   findError: string;
@@ -41,11 +41,10 @@ export function SearchInputs({
 }) {
   const localInputRef = useRef<HTMLInputElement>(null);
 
-  const setInputRef = (input: HTMLInputElement | null) => {
-    localInputRef.current = input;
-    if (typeof inputRef === "function") inputRef(input);
-    else if (inputRef) inputRef.current = input;
-  };
+  useEffect(() => {
+    inputRef?.(localInputRef.current);
+    return () => inputRef?.(null);
+  }, [inputRef]);
 
   const openSearch = () => {
     onOpen();
@@ -92,7 +91,7 @@ export function SearchInputs({
         <SearchIcon />
       </button>
       <input
-        ref={setInputRef}
+        ref={localInputRef}
         className="findInput"
         type="text"
         value={findQuery}

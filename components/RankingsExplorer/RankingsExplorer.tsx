@@ -518,6 +518,12 @@ export function RankingsExplorer({
   const headerFindInputRef = useRef<HTMLInputElement>(null);
   const railFindInputRef = useRef<HTMLInputElement>(null);
   const tableReachedTopRef = useRef(false);
+  const setHeaderFindInputRef = useCallback((input: HTMLInputElement | null) => {
+    headerFindInputRef.current = input;
+  }, []);
+  const setRailFindInputRef = useCallback((input: HTMLInputElement | null) => {
+    railFindInputRef.current = input;
+  }, []);
   const pendingSearchFocusHandoffRef =
     useRef<PendingSearchFocusHandoff | null>(null);
   const searchCompositionActiveRef = useRef(false);
@@ -2383,7 +2389,7 @@ export function RankingsExplorer({
           </div>
           <div className="headerActions">
             <SearchInputs
-              inputRef={headerFindInputRef}
+              inputRef={setHeaderFindInputRef}
               findOpen={findOpen}
               findQuery={findQuery}
               findError={findError}
@@ -2419,7 +2425,7 @@ export function RankingsExplorer({
           onJump={handleJumpUp}
           event={currentEvent}
           onEventChange={changeEvent}
-          searchInputRef={railFindInputRef}
+          searchInputRef={setRailFindInputRef}
           findQuery={findQuery}
           findError={findError}
           findLoading={findLoading}

@@ -1,7 +1,7 @@
 "use client";
 
 import "./JumpControls.css";
-import { useEffect, useRef, type KeyboardEvent, type Ref } from "react";
+import { useEffect, useRef, type KeyboardEvent } from "react";
 import { EventPicker } from "../EventPicker/EventPicker";
 import ArrowDownIcon from "../Icon/arrow-down.svg?react";
 import ArrowUpIcon from "../Icon/arrow-up.svg?react";
@@ -36,7 +36,7 @@ export function JumpUpControls({
   onJump: () => void;
   event: (typeof WCA_EVENTS)[number];
   onEventChange: (eventId: (typeof WCA_EVENTS)[number]["id"]) => void;
-  searchInputRef?: Ref<HTMLInputElement>;
+  searchInputRef?: (input: HTMLInputElement | null) => void;
   findQuery: string;
   findError: string;
   findLoading: boolean;
@@ -68,6 +68,11 @@ export function JumpUpControls({
     return () => document.removeEventListener("keydown", handleEscape);
   }, [findQuery, onSearchClose, onSearchQueryChange]);
 
+  useEffect(() => {
+    searchInputRef?.(inputRef.current);
+    return () => searchInputRef?.(null);
+  }, [searchInputRef]);
+
   const label =
     armed || currentPosition <= 5000
       ? "Jump to top"
@@ -86,12 +91,6 @@ export function JumpUpControls({
       keyboardEvent.preventDefault();
       onSearchCycle(keyboardEvent.shiftKey ? -1 : 1);
     }
-  };
-
-  const setInputRef = (input: HTMLInputElement | null) => {
-    inputRef.current = input;
-    if (typeof searchInputRef === "function") searchInputRef(input);
-    else if (searchInputRef) searchInputRef.current = input;
   };
 
   const openSearch = () => {
@@ -130,7 +129,7 @@ export function JumpUpControls({
             <SearchIcon />
           </button>
           <input
-            ref={setInputRef}
+            ref={inputRef}
             className="findInput"
             type="text"
             value={findQuery}

@@ -12,7 +12,7 @@
   min-height: 3.25em;
   padding: 0.75em 1em;
   padding-right: 2.5em;
-  border: 1px solid var(--border-accent);
+  border: 1px solid var(--border);
   border-radius: 0.5em;
   background: var(--surface);
   color: var(--text);
@@ -60,13 +60,6 @@
 .regionPickerClear:hover,
 .regionPickerClear:focus-visible {
   color: var(--focus);
-  outline: none;
-}
-
-.regionPickerTrigger:focus-visible,
-.regionPickerTrigger[aria-expanded="true"] {
-  border-color: var(--border-accent);
-  box-shadow: 0 0 0 2px var(--focus-ring);
   outline: none;
 }
 
@@ -230,10 +223,10 @@
 .rankingTypeToggle::before {
   position: absolute;
   z-index: 0;
-  top: 1px;
-  bottom: 1px;
-  left: 1px;
-  width: calc((100% - 2px) / 2);
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / 2);
   border-radius: 0.35em;
   background: var(--surface-selected);
   content: "";
@@ -295,13 +288,11 @@
   opacity: 0.45;
 }
 
-.rankingTypeOption:has(input:focus-visible) {
-  color: var(--focus);
-}
-
-.selectInput select:focus-visible {
-  border: 1px solid var(--focus);
-  box-shadow: 0 0 5px var(--focus-ring);
+.selectInput select:focus-visible,
+.rankingTypeToggle:has(input:focus-visible),
+.regionPickerTrigger:focus-visible,
+.regionPickerTrigger[aria-expanded="true"] {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 2px var(--focus-ring);
   outline: none;
 }
-

@@ -103,7 +103,7 @@ jobs:
       - name: Switch production services
         run: |
           ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
-            'cd /srv/wcarankings && docker compose up -d --no-build --remove-orphans app proxy'
+            'cd /srv/wcarankings && docker compose up -d --no-build --remove-orphans --force-recreate app proxy'
 
       - name: Verify deployment
         run: |

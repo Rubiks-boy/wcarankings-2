@@ -15,6 +15,7 @@ import {
   cancelScrollAnimation,
   getCurrentViewportPosition,
   getCurrentViewportSubRank,
+  getPrefetchRowCount,
   getScrollAnimationDuration,
   getSearchAnimationDuration,
   getSearchBridgePageStarts,
@@ -595,6 +596,7 @@ export function RankingsExplorer({
     clearProgrammaticTimer: null,
     settleTimer: null,
   });
+  const scrollVelocityRef = useRef({ top: 0, timestamp: 0, downwardPixelsPerMs: 0 });
 
   const rowVirtualizer = useWindowVirtualizer({
     count: entries.length + 1,
@@ -1835,9 +1837,28 @@ export function RankingsExplorer({
   }, [entries, focusRowAtIndex]);
 
   useEffect(() => {
+    const onScroll = () => {
+      const now = performance.now();
+      const previous = scrollVelocityRef.current;
+      const elapsed = now - previous.timestamp;
+      const distance = window.scrollY - previous.top;
+      const velocity = elapsed > 0 && distance > 0 ? distance / elapsed : 0;
+      scrollVelocityRef.current = {
+        top: window.scrollY,
+        timestamp: now,
+        downwardPixelsPerMs: velocity,
+      };
+    };
+    scrollVelocityRef.current = { top: window.scrollY, timestamp: performance.now(), downwardPixelsPerMs: 0 };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
     const lastVirtualRow = virtualRows.at(-1);
     // Loading the next bucket is the synchronization performed by this effect.
-    if (lastVirtualRow && lastVirtualRow.index >= entries.length - 12) {
+    const prefetchRows = getPrefetchRowCount(scrollVelocityRef.current.downwardPixelsPerMs);
+    if (lastVirtualRow && lastVirtualRow.index >= entries.length - prefetchRows) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       void loadMore();
     }

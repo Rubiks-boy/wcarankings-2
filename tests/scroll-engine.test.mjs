@@ -5,6 +5,7 @@ import {
   getSearchAnimationDuration,
   getSearchBridgePageStarts,
   getSearchJumpMode,
+  getPrefetchRowCount,
   isDuplicateRank,
   DISTANT_SCROLL_DURATION_MS,
   MAX_LOCAL_SCROLL_DURATION_MS,
@@ -48,6 +49,13 @@ test("marks only an adjacent repeated rank as a duplicate", () => {
   assert.equal(isDuplicateRank(41, 42), false);
   assert.equal(isDuplicateRank(undefined, 42), false);
   assert.equal(isDuplicateRank(null, 42), false);
+});
+
+test("extends the page prefetch buffer for fast downward scrolling", () => {
+  assert.equal(getPrefetchRowCount(0), 12);
+  assert.equal(getPrefetchRowCount(0.99), 12);
+  assert.equal(getPrefetchRowCount(1), 32);
+  assert.equal(getPrefetchRowCount(2), 48);
 });
 
 test("keeps same-page, adjacent-page, and wrapped search jumps local", () => {

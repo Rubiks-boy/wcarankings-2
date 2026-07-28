@@ -5,6 +5,13 @@ export const MAX_LOCAL_SCROLL_DURATION_MS = 640;
 export const MAX_LOCAL_SCROLL_DISTANCE = 100;
 export const DISTANT_SCROLL_DURATION_MS = 640;
 export const MULTI_PAGE_SCROLL_DURATION_MS = 1200;
+export const NORMAL_PREFETCH_ROWS = 12;
+
+export function getPrefetchRowCount(downwardPixelsPerMs: number) {
+  if (downwardPixelsPerMs >= 2) return 48;
+  if (downwardPixelsPerMs >= 1) return 32;
+  return NORMAL_PREFETCH_ROWS;
+}
 
 export type SearchJumpMode = "local" | "multi-page";
 

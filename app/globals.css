@@ -109,8 +109,16 @@ select {
 }
 
 .competitionRankingDropdown {
-  padding-left: 0.45em;
-  border-left: 1px solid var(--border-subtle);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding-left: 0.1em;
+}
+
+.competitionRankingDropdown::before {
+  color: var(--text-subtle);
+  content: "·";
+  font-size: 1.1em;
 }
 
 .competitionRankingDropdown .TextDropdown-trigger {

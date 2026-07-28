@@ -1,27 +1,12 @@
 import { loadRankings } from "@/lib/rankings";
-import { loadRankingMatrix } from "@/lib/ranking-matrix";
-import { parseRankingView } from "@/lib/ranking-views";
 import { isEventId, isRankingType, parseRegionQuery } from "@/lib/wca";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const searchParams = new URL(request.url).searchParams;
-  const view = parseRankingView(searchParams.get("view"));
-
   try {
-    const rawType = searchParams.get("result") ?? searchParams.get("type");
-    const type = isRankingType(rawType) ? rawType : "single";
-    const { scope, regionId } = parseRegionQuery(searchParams.get("region"));
-    const data = view === "wca"
-      ? await loadRankings(searchParams)
-      : await loadRankingMatrix({
-        view,
-        type,
-        scope,
-        regionId,
-        search: (searchParams.get("search") ?? "").trim().slice(0, 80),
-      });
+    const data = await loadRankings(searchParams);
     return Response.json(data, {
       headers: { "Cache-Control": "public, max-age=60, s-maxage=3600" },
     });

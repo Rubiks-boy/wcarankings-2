@@ -33,8 +33,8 @@ import {
 } from "@/lib/wca";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
 import {
-  JumpDownControls,
-  JumpUpControls,
+  RankingsJumpRail,
+  RankingsPagerRail,
 } from "../JumpControls/JumpControls";
 import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVisibility";
 import { RankingControls } from "../RankingControls/RankingControls";
@@ -43,7 +43,6 @@ import { SearchInputs } from "../SearchInputs/SearchInputs";
 import { ThemeToggle } from "../ThemeToggle/ThemeToggle";
 import { VimHelp } from "../VimHelp/VimHelp";
 import { VimSearchInput } from "../VimSearchInput/VimSearchInput";
-import { ViewSwitcher } from "../ViewSwitcher/ViewSwitcher";
 import {
   formatFetchedAgo,
   type InitialRankingData,
@@ -1663,10 +1662,9 @@ export function RankingsExplorer({
         !event.ctrlKey &&
         !event.metaKey
       ) {
-        const trigger =
-          tableReachedTop || jumpUpArmed
-            ? railEventPickerTriggerRef.current
-            : eventPickerTriggerRef.current;
+        const trigger = tableReachedTop
+          ? railEventPickerTriggerRef.current
+          : eventPickerTriggerRef.current;
         if (!trigger) return;
         event.preventDefault();
         if (trigger.getAttribute("aria-expanded") !== "true") trigger.click();
@@ -2621,7 +2619,6 @@ export function RankingsExplorer({
             <ThemeToggle />
           </div>
         </div>
-        <ViewSwitcher view="wca" rankingType={rankingType} region={regionSelection} />
         <RankingControls
           eventId={eventId}
           rankingType={rankingType}
@@ -2638,33 +2635,30 @@ export function RankingsExplorer({
 
       <main>
         <JumpControlsVisibility
-          progress={jumpUpArmed ? 1 : topRailProgress}
+          progress={topRailProgress}
         >
-          <JumpUpControls
-          armed={jumpUpArmed}
-          currentPosition={visibleSubRank}
-          onJump={handleJumpUp}
-          event={currentEvent}
-          onEventChange={changeEvent}
-          rankingType={rankingType}
-          onRankingTypeChange={changeRankingType}
-          regions={regions}
-          regionSelection={regionSelection}
-          onRegionChange={changeRegion}
-          onEventPickerTrigger={(trigger) => {
-            railEventPickerTriggerRef.current = trigger;
-          }}
-          searchInputRef={setRailFindInputRef}
-          findQuery={findQuery}
-          findError={findError}
-          findLoading={findLoading}
-          findPending={findPending}
-          findMatches={findMatches}
-          findIndex={findIndex}
-          onSearchOpen={activateFind}
-          onSearchClose={closeFind}
-          onSearchQueryChange={changeFindQuery}
-          onSearchCycle={cycleFind}
+          <RankingsJumpRail
+            event={currentEvent}
+            onEventChange={changeEvent}
+            rankingType={rankingType}
+            onRankingTypeChange={changeRankingType}
+            regions={regions}
+            regionSelection={regionSelection}
+            onRegionChange={changeRegion}
+            onEventPickerTrigger={(trigger) => {
+              railEventPickerTriggerRef.current = trigger;
+            }}
+            searchInputRef={setRailFindInputRef}
+            findQuery={findQuery}
+            findError={findError}
+            findLoading={findLoading}
+            findPending={findPending}
+            findMatches={findMatches}
+            findIndex={findIndex}
+            onSearchOpen={activateFind}
+            onSearchClose={closeFind}
+            onSearchQueryChange={changeFindQuery}
+            onSearchCycle={cycleFind}
           />
         </JumpControlsVisibility>
 
@@ -2699,16 +2693,18 @@ export function RankingsExplorer({
         </div>
 
         <JumpControlsVisibility
-          progress={jumpDownArmed ? 1 : bottomRailProgress}
+          progress={jumpUpArmed || jumpDownArmed ? 1 : bottomRailProgress}
         >
-          <JumpDownControls
-          armed={jumpDownArmed}
-          currentPosition={visibleSubRank}
-          total={total}
-          onJump={handleJumpDown}
-          searchActive={findOpen && findMatches.length > 0}
-          onSearchPrevious={() => cycleFind(-1)}
-          onSearchNext={() => cycleFind(1)}
+          <RankingsPagerRail
+            upArmed={jumpUpArmed}
+            downArmed={jumpDownArmed}
+            currentPosition={visibleSubRank}
+            total={total}
+            onJumpUp={handleJumpUp}
+            onJumpDown={handleJumpDown}
+            searchActive={findOpen && findMatches.length > 0}
+            onSearchPrevious={() => cycleFind(-1)}
+            onSearchNext={() => cycleFind(1)}
           />
         </JumpControlsVisibility>
       </main>

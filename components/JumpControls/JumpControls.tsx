@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useRef,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { EventPicker } from "../EventPicker/EventPicker";
 import { RegionPicker } from "../RegionPicker/RegionPicker";
 import ArrowDownIcon from "../Icon/arrow-down.svg?react";
@@ -15,18 +21,28 @@ import {
 } from "../RankingsExplorer/types";
 import { WCA_EVENTS } from "@/lib/wca";
 
-export function JumpUpControls({
-  armed,
-  currentPosition,
-  onJump,
-  event,
-  onEventChange,
-  rankingType,
-  onRankingTypeChange,
-  regions,
-  regionSelection,
-  onRegionChange,
-  onEventPickerTrigger,
+export const JumpRail = forwardRef<
+  HTMLDivElement,
+  {
+    children: ReactNode;
+    className?: string;
+    direction: "up" | "down";
+    searchNavigation?: boolean;
+  }
+>(({ children, className = "", direction, searchNavigation }, ref) => (
+  <div
+    ref={ref}
+    className={`Jump JumpRail ${className}`}
+    data-direction={direction}
+    data-search-navigation={searchNavigation || undefined}
+  >
+    {children}
+  </div>
+));
+
+JumpRail.displayName = "JumpRail";
+
+function RailSearch({
   searchInputRef,
   findQuery,
   findError,
@@ -39,17 +55,6 @@ export function JumpUpControls({
   onSearchQueryChange,
   onSearchCycle,
 }: {
-  armed: boolean;
-  currentPosition: number;
-  onJump: () => void;
-  event: (typeof WCA_EVENTS)[number];
-  onEventChange: (eventId: (typeof WCA_EVENTS)[number]["id"]) => void;
-  rankingType: "single" | "average";
-  onRankingTypeChange: (rankingType: "single" | "average") => void;
-  regions: RegionOption[];
-  regionSelection: RegionSelection;
-  onRegionChange: (region: RegionOption) => void;
-  onEventPickerTrigger?: (trigger: HTMLButtonElement | null) => void;
   searchInputRef?: (input: HTMLInputElement | null) => void;
   findQuery: string;
   findError: string;
@@ -68,7 +73,6 @@ export function JumpUpControls({
   useEffect(() => {
     const handleEscape = (keyboardEvent: globalThis.KeyboardEvent) => {
       if (keyboardEvent.key !== "Escape") return;
-
       const searchHasFocus = searchBarRef.current?.contains(document.activeElement);
       if (!findQuery && !searchHasFocus) return;
 
@@ -87,10 +91,6 @@ export function JumpUpControls({
     return () => searchInputRef?.(null);
   }, [searchInputRef]);
 
-  const label =
-    armed || currentPosition <= 5000
-      ? "Jump to top"
-      : `Jump ${formatRankingNumber(5000)}`;
   const searching = findLoading || findPending;
   let searchStatus = "";
   if (findError) searchStatus = findError;
@@ -100,13 +100,6 @@ export function JumpUpControls({
       : "No matches";
   }
 
-  const handleSearchKeyDown = (keyboardEvent: KeyboardEvent<HTMLInputElement>) => {
-    if (keyboardEvent.key === "Enter") {
-      keyboardEvent.preventDefault();
-      onSearchCycle(keyboardEvent.shiftKey ? -1 : 1);
-    }
-  };
-
   const openSearch = () => {
     onSearchOpen();
     inputRef.current?.focus();
@@ -114,85 +107,97 @@ export function JumpUpControls({
   };
 
   return (
-    <div className="Jump" data-direction="up">
-      <EventPicker
-        event={event}
-        onChange={onEventChange}
-        onTriggerReady={onEventPickerTrigger}
-      />
-      <div className="Jump-buttonWrapper">
-        <div className="Jump-buttonClip">
-          <button className="Jump-button" onClick={onJump} type="button">
-            <ArrowUpIcon />
-            <span>{label}</span>
-            <ArrowUpIcon />
-          </button>
-        </div>
-      </div>
-      <div
-        ref={searchBarRef}
-        className="findBar findBar--rail"
-        data-has-text={findQuery.length > 0}
-        role="search"
+    <div
+      ref={searchBarRef}
+      className="findBar findBar--rail"
+      data-has-text={findQuery.length > 0}
+      role="search"
+    >
+      <button
+        className="findIcon"
+        type="button"
+        tabIndex={-1}
+        onMouseDown={(mouseEvent) => mouseEvent.preventDefault()}
+        onClick={openSearch}
+        aria-label="Search names or WCA IDs"
+        title="Search names or WCA IDs (Ctrl+F)"
       >
-          <button
-            className="findIcon"
-            type="button"
-            tabIndex={-1}
-            onMouseDown={(mouseEvent) => mouseEvent.preventDefault()}
-            onClick={openSearch}
-            aria-label="Search names or WCA IDs"
-            title="Search names or WCA IDs (Ctrl+F)"
-          >
-            <SearchIcon />
-          </button>
-          <input
-            ref={inputRef}
-            className="findInput"
-            type="text"
-            value={findQuery}
-            onFocus={onSearchOpen}
-            onChange={(inputEvent) => onSearchQueryChange(inputEvent.target.value)}
-            onKeyDown={handleSearchKeyDown}
-            aria-label="Find a name or WCA ID"
-          />
-          <span
-            className={`findStatus${findError ? " isError" : ""}`}
-            aria-live="polite"
-          >
-            {searching ? (
-              <span className="searchSpinner" aria-label="Searching" />
-            ) : (
-              searchStatus
-            )}
-          </span>
-          <button
-            className="findClose"
-            type="button"
-            onMouseDown={(mouseEvent) => mouseEvent.preventDefault()}
-            onClick={() => {
-              inputRef.current?.blur();
-              onSearchClose();
-            }}
-            aria-label="Close search"
-          >
-            <CloseIcon />
-          </button>
-      </div>
-      <div className="Jump-secondaryControls">
+        <SearchIcon />
+      </button>
+      <input
+        ref={inputRef}
+        className="findInput"
+        type="text"
+        value={findQuery}
+        onFocus={onSearchOpen}
+        onChange={(inputEvent) => onSearchQueryChange(inputEvent.target.value)}
+        onKeyDown={(keyboardEvent: KeyboardEvent<HTMLInputElement>) => {
+          if (keyboardEvent.key !== "Enter") return;
+          keyboardEvent.preventDefault();
+          onSearchCycle(keyboardEvent.shiftKey ? -1 : 1);
+        }}
+        aria-label="Find a name or WCA ID"
+      />
+      <span className={`findStatus${findError ? " isError" : ""}`} aria-live="polite">
+        {searching ? <span className="searchSpinner" aria-label="Searching" /> : searchStatus}
+      </span>
+      <button
+        className="findClose"
+        type="button"
+        onMouseDown={(mouseEvent) => mouseEvent.preventDefault()}
+        onClick={() => {
+          inputRef.current?.blur();
+          onSearchClose();
+        }}
+        aria-label="Close search"
+      >
+        <CloseIcon />
+      </button>
+    </div>
+  );
+}
+
+export function RankingsJumpRail({
+  event,
+  onEventChange,
+  rankingType,
+  onRankingTypeChange,
+  regions,
+  regionSelection,
+  onRegionChange,
+  onEventPickerTrigger,
+  ...searchProps
+}: {
+  event: (typeof WCA_EVENTS)[number];
+  onEventChange: (eventId: (typeof WCA_EVENTS)[number]["id"]) => void;
+  rankingType: "single" | "average";
+  onRankingTypeChange: (rankingType: "single" | "average") => void;
+  regions: RegionOption[];
+  regionSelection: RegionSelection;
+  onRegionChange: (region: RegionOption) => void;
+  onEventPickerTrigger?: (trigger: HTMLButtonElement | null) => void;
+} & Parameters<typeof RailSearch>[0]) {
+  const nextRankingType = rankingType === "single" ? "average" : "single";
+
+  return (
+    <JumpRail className="Jump--rankings" direction="up">
+      <div className="Jump-railSettings">
+        <EventPicker
+          event={event}
+          onChange={onEventChange}
+          onTriggerReady={onEventPickerTrigger}
+        />
         <button
           className="Jump-resultTypeToggle"
           type="button"
           disabled={event.id === "333mbf"}
-          aria-label={`Switch to ${rankingType === "single" ? "average" : "single"} rankings`}
+          aria-label={`Switch to ${nextRankingType} rankings`}
           title={
             event.id === "333mbf"
               ? "Multi-Blind has no average"
-              : `Switch to ${rankingType === "single" ? "average" : "single"} rankings`
+              : `Switch to ${nextRankingType} rankings`
           }
-          onClick={() =>
-            onRankingTypeChange(rankingType === "single" ? "average" : "single")
-          }
+          onClick={() => onRankingTypeChange(nextRankingType)}
         >
           {rankingType === "single" ? "Single" : "Average"}
         </button>
@@ -203,77 +208,65 @@ export function JumpUpControls({
           onChange={onRegionChange}
         />
       </div>
-    </div>
+      <RailSearch {...searchProps} />
+    </JumpRail>
   );
 }
 
-export function JumpDownControls({
-  armed,
+export function RankingsPagerRail({
+  upArmed,
+  downArmed,
   currentPosition,
   total,
-  onJump,
+  onJumpUp,
+  onJumpDown,
   searchActive,
   onSearchPrevious,
   onSearchNext,
 }: {
-  armed: boolean;
+  upArmed: boolean;
+  downArmed: boolean;
   currentPosition: number;
   total: number;
-  onJump: () => void;
+  onJumpUp: () => void;
+  onJumpDown: () => void;
   searchActive: boolean;
   onSearchPrevious: () => void;
   onSearchNext: () => void;
 }) {
+  const nearTop = currentPosition <= 5000;
   const nearEnd = Number.isFinite(total) && currentPosition >= total - 5000;
-  const label =
-    armed || nearEnd ? "Jump to end" : `Jump ${formatRankingNumber(5000)}`;
+  const upLabel = upArmed || nearTop ? "Jump to top" : `Up ${formatRankingNumber(5000)}`;
+  const downLabel = downArmed || nearEnd ? "Jump to end" : `Down ${formatRankingNumber(5000)}`;
 
   return (
-    <div
-      className="Jump"
-      data-direction="down"
-      data-search-navigation={searchActive}
+    <JumpRail
+      className="Jump--pager"
+      direction="down"
+      searchNavigation={searchActive}
     >
-      <div className="Jump-buttonWrapper">
-        <div className="Jump-buttonClip">
-          <button
-            className="Jump-button"
-            onClick={onJump}
-            type="button"
-            disabled={searchActive}
-            aria-hidden={searchActive}
-          >
-            <ArrowDownIcon />
-            <span>{label}</span>
-            <ArrowDownIcon />
-          </button>
-        </div>
+      <div className="Jump-pagerActions" aria-hidden={searchActive}>
+        <button className="Jump-pagerButton" onClick={onJumpUp} type="button" disabled={searchActive}>
+          <ArrowUpIcon />
+          <span>{upLabel}</span>
+        </button>
+        <button className="Jump-pagerButton" onClick={onJumpDown} type="button" disabled={searchActive}>
+          <ArrowDownIcon />
+          <span>{downLabel}</span>
+        </button>
       </div>
-      <div
-        className="Jump-searchNavigation"
-        aria-hidden={!searchActive}
-      >
+      <div className="Jump-searchNavigation" aria-hidden={!searchActive}>
         <div className="Jump-searchNavigationContent">
-          <button
-            className="Jump-searchNavigationButton"
-            onClick={onSearchPrevious}
-            type="button"
-            disabled={!searchActive}
-          >
+          <button className="Jump-searchNavigationButton" onClick={onSearchPrevious} type="button" disabled={!searchActive}>
             <ArrowUpIcon />
             <span>Previous person</span>
           </button>
-          <button
-            className="Jump-searchNavigationButton"
-            onClick={onSearchNext}
-            type="button"
-            disabled={!searchActive}
-          >
+          <button className="Jump-searchNavigationButton" onClick={onSearchNext} type="button" disabled={!searchActive}>
             <span>Next person</span>
             <ArrowDownIcon />
           </button>
         </div>
       </div>
-    </div>
+    </JumpRail>
   );
 }

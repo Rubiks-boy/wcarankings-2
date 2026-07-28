@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { RankingsExplorer } from "@/components/RankingsExplorer/RankingsExplorer";
-import { MatrixExplorer } from "@/components/MatrixExplorer/MatrixExplorer";
 import type {
   RankingEntry,
   RankingPage,
@@ -9,8 +8,6 @@ import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
 import { isEventId, isRankingType, isValidRegexPattern, parseRegionQuery } from "@/lib/wca";
 import { getRegions } from "@/lib/regions";
 import { loadRankings } from "@/lib/rankings";
-import { loadRankingMatrix } from "@/lib/ranking-matrix";
-import { parseRankingView, type RankingView } from "@/lib/ranking-views";
 
 const PAGE_SIZE = RESULTS_PAGE_SIZE;
 
@@ -41,7 +38,6 @@ function getCanonicalSearchParams(
   eventId: string,
   rankingType: "single" | "average",
   regionId: string,
-  view: RankingView,
 ) {
   const params = new URLSearchParams();
   Object.entries(searchParams).forEach(([key, value]) => {
@@ -53,12 +49,6 @@ function getCanonicalSearchParams(
   params.delete("scope");
   params.delete("regex");
   params.delete("view");
-  if (view !== "wca") params.set("view", view);
-  if (view !== "wca") {
-    params.delete("eventId");
-    params.delete("event");
-    params.delete("mode");
-  }
   if (eventId === "333") params.delete("eventId");
   else params.set("eventId", eventId);
   if (rankingType === "single") params.delete("result");
@@ -174,11 +164,10 @@ export default async function Home({
   const resolvedSearchParams = await searchParams;
   const rawEventId = getSearchParamWithLegacyKey(resolvedSearchParams, "eventId", "event");
   const rawRankingType = getSearchParamWithLegacyKey(resolvedSearchParams, "result", "type");
-  const view = parseRankingView(getSearchParam(resolvedSearchParams, "view"));
-  const eventId = view === "wca" && isEventId(rawEventId) ? rawEventId : "333";
+  const eventId = isEventId(rawEventId) ? rawEventId : "333";
   const rankingType = eventId === "333mbf" ? "single" : isRankingType(rawRankingType) ? rawRankingType : "single";
   const { scope, regionId } = parseRegionQuery(getSearchParam(resolvedSearchParams, "region"));
-  const canonicalParams = getCanonicalSearchParams(resolvedSearchParams, eventId, rankingType, regionId, view);
+  const canonicalParams = getCanonicalSearchParams(resolvedSearchParams, eventId, rankingType, regionId);
   const currentParams = new URLSearchParams();
   Object.entries(resolvedSearchParams).forEach(([key, value]) => {
     if (Array.isArray(value)) value.forEach((item) => currentParams.append(key, item));
@@ -189,23 +178,6 @@ export default async function Home({
     redirect(query ? `/?${query}` : "/");
   }
   const initialSearch = getSearchParam(resolvedSearchParams, "search").trim().slice(0, 80);
-  if (view !== "wca") {
-    const [initialMatrix, continents, countries] = await Promise.all([
-      loadRankingMatrix({ view, type: rankingType, scope, regionId, search: initialSearch }),
-      fetchRegions("continent"),
-      fetchRegions("country"),
-    ]);
-    return (
-      <MatrixExplorer
-        initialData={initialMatrix}
-        initialView={view}
-        initialRankingType={rankingType}
-        initialRegionSelection={{ scope, regionId }}
-        initialSearch={initialSearch}
-        initialRegions={{ continents, countries }}
-      />
-    );
-  }
   const [initialRankings, continents, countries] = await Promise.all([
     getInitialRankings(resolvedSearchParams),
     fetchRegions("continent"),

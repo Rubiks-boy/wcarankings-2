@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { useState } from "react";
 import { WCA_EVENTS } from "@/lib/wca";
 import type { RankingEntry, RegionOption } from "../RankingsExplorer/types";
-import { JumpDownControls, JumpUpControls } from "./JumpControls";
+import { RankingsJumpRail, RankingsPagerRail } from "./JumpControls";
 import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVisibility";
 
 const matches: RankingEntry[] = [
@@ -35,29 +35,26 @@ function InteractiveTopRail() {
 
   return (
     <JumpControlsVisibility visible>
-      <JumpUpControls
-      armed
-      currentPosition={1}
-      onJump={() => undefined}
-      event={event}
-      onEventChange={setEventId}
-      rankingType={rankingType}
-      onRankingTypeChange={setRankingType}
-      regions={regions}
-      regionSelection={regionSelection}
-      onRegionChange={setRegionSelection}
-      findQuery={query}
-      findError=""
-      findLoading={false}
-      findPending={false}
-      findMatches={matches}
-      findIndex={0}
-      onSearchOpen={() => undefined}
-      onSearchClose={() => {
-        setQuery("");
-      }}
-      onSearchQueryChange={setQuery}
-      onSearchCycle={() => undefined}
+      <RankingsJumpRail
+        event={event}
+        onEventChange={setEventId}
+        rankingType={rankingType}
+        onRankingTypeChange={setRankingType}
+        regions={regions}
+        regionSelection={regionSelection}
+        onRegionChange={setRegionSelection}
+        findQuery={query}
+        findError=""
+        findLoading={false}
+        findPending={false}
+        findMatches={matches}
+        findIndex={0}
+        onSearchOpen={() => undefined}
+        onSearchClose={() => {
+          setQuery("");
+        }}
+        onSearchQueryChange={setQuery}
+        onSearchCycle={() => undefined}
       />
     </JumpControlsVisibility>
   );
@@ -65,18 +62,20 @@ function InteractiveTopRail() {
 
 const meta = {
   title: "Rankings/JumpControls",
-  component: JumpDownControls,
+  component: RankingsPagerRail,
   parameters: { layout: "fullscreen" },
   args: {
-    armed: false,
+    upArmed: false,
+    downArmed: false,
     currentPosition: 100,
     total: 10_000,
-    onJump: () => undefined,
+    onJumpUp: () => undefined,
+    onJumpDown: () => undefined,
     searchActive: false,
     onSearchPrevious: () => undefined,
     onSearchNext: () => undefined,
   },
-} satisfies Meta<typeof JumpDownControls>;
+} satisfies Meta<typeof RankingsPagerRail>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -86,10 +85,10 @@ export const Top: Story = {
 };
 
 export const Bottom: Story = {
-  args: { armed: true },
+  args: { downArmed: true },
   render: (args) => (
     <JumpControlsVisibility visible>
-      <JumpDownControls {...args} />
+      <RankingsPagerRail {...args} />
     </JumpControlsVisibility>
   ),
 };

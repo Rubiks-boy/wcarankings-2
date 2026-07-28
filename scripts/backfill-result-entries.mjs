@@ -1,8 +1,8 @@
 import mysql from "mysql2/promise";
-import { promoteResultEntriesSchema, refreshResultEntriesSchema } from "./mysql-schema.mjs";
+import { PUBLISHED_PROJECTION_TABLES, promoteProjectionTables, refreshMysqlSchema } from "./mysql-schema.mjs";
 
 const force = process.argv.includes("--force");
-const TABLES = ["result_entries_single", "result_counts"];
+const TABLES = PUBLISHED_PROJECTION_TABLES;
 
 function databaseOptions(connectionString = process.env.DATABASE_URL) {
   if (!connectionString) throw new Error("DATABASE_URL is required");
@@ -28,12 +28,12 @@ async function projectionExists(connection) {
 const connection = await mysql.createConnection(databaseOptions());
 try {
   if (!force && await projectionExists(connection)) {
-    process.stdout.write("Result-level single projection is already present. Nothing to do.\n");
+    process.stdout.write("Projection generation is already present. Nothing to do.\n");
   } else {
-    process.stdout.write("Building staged result-level single projection from existing WCA results…\n");
-    await refreshResultEntriesSchema(connection, { projectionSuffix: "_staging" });
-    await promoteResultEntriesSchema(connection);
-    process.stdout.write("Result-level single projection is ready.\n");
+    process.stdout.write("Building a complete staged projection generation…\n");
+    await refreshMysqlSchema(connection, { projectionSuffix: "_staging" });
+    await promoteProjectionTables(connection);
+    process.stdout.write("Projection generation is ready.\n");
   }
 } finally {
   await connection.end();

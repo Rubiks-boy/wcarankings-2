@@ -44,9 +44,10 @@ docker compose run --rm app node /app/scripts/sync-wca-export.mjs
 ```
 
 The import downloads one SQL archive per export date into the persistent cache,
-streams the SQL dump into MariaDB, and then creates the indexed ranking and
-result-level single tables with competition-name lookups. Result-level rows are
-every positive official round single, not just each competitor's personal best.
+streams the SQL dump into MariaDB, and then builds the compatibility rankings
+plus the dependency-ordered semantic projections documented in
+`docs/projection-architecture-proposal.md`. The shared `result_facts` table is
+the only new general-purpose layer that scans raw `results`.
 Use `--force` to re-import an already recorded export.
 For a manually downloaded archive, set `WCA_SQL_EXPORT_PATH` in the environment or
 pass `--sql-path=/path/to/WCA_export.sql.zip`.
@@ -56,12 +57,12 @@ inspect or validate app-owned migrations without importing WCA data, run
 `docker compose run --rm flyway info` or `docker compose run --rm flyway validate`.
 To rebuild every ranking projection from raw WCA tables already present in MariaDB,
 run `docker compose run --rm app node /app/scripts/refresh-rankings.mjs`. The
-deployment workflow also performs a one-time, staged result-level backfill when
-`result_entries_single` is absent. It builds only that new projection from the
-existing raw WCA tables, adds its `(event_id, best, id)` source index if needed,
-and atomically publishes the result table and counts together. To run that
+deployment workflow also performs a staged full-generation backfill when any
+managed projection is absent. It builds dependencies in registry order,
+validates row counts, and atomically publishes all compatibility and semantic
+tables together. To run that
 operation manually, use `docker compose run --rm app node /app/scripts/backfill-result-entries.mjs`;
-add `--force` only when deliberately rebuilding that projection.
+add `--force` only when deliberately rebuilding the complete generation.
 
 To keep the self-hosted database current, install the included systemd timer and
 failure alert as root after copying the repository to the deployment directory:

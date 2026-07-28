@@ -43,8 +43,8 @@ test("builds an indexed, result-level single projection for cursor paging", asyn
   assert.match(importer, /published_result_count/);
   assert.match(preflight, /result_entries_single/);
   assert.match(preflight, /idx_result_entries_single_world/);
-  assert.match(backfill, /refreshResultEntriesSchema/);
-  assert.match(backfill, /promoteResultEntriesSchema/);
+  assert.match(backfill, /refreshMysqlSchema/);
+  assert.match(backfill, /promoteProjectionTables/);
   assert.match(deploy, /backfill-result-entries\.mjs/);
   assert.match(fixture, /year SMALLINT/);
   assert.match(fixture, /month TINYINT/);

@@ -26,6 +26,95 @@ async function projectionSql(file) {
   return readFile(join(projectionDirectory, file), "utf8");
 }
 
+const proposalProjectionDefinitions = [
+  { name: "result-facts", dependencies: ["raw-wca"], files: ["result_facts.sql"], tables: ["result_facts"] },
+  { name: "person-event-rankings", dependencies: ["result-facts"], files: ["person_event_rankings.sql"], tables: ["person_event_rankings"] },
+  { name: "result-rankings", dependencies: ["result-facts"], files: ["result_rankings.sql"], tables: ["result_rankings"] },
+  { name: "person-ranking-counts", dependencies: ["person-event-rankings", "result-rankings"], files: ["proposal_counts.sql"], tables: ["person_ranking_counts", "result_ranking_counts"] },
+  { name: "person-metric-values", dependencies: ["person-event-rankings"], files: ["person_metric_values.sql"], tables: ["person_metric_values"] },
+  { name: "person-metric-scores", dependencies: ["person-metric-values"], files: ["person_metric_scores.sql"], tables: ["person_metric_scores", "person_metric_counts"] },
+  { name: "competition-podium-members", dependencies: ["result-facts"], files: ["competition_podium_members.sql"], tables: ["competition_podium_members"] },
+  { name: "competition-event-stats", dependencies: ["result-facts", "competition-podium-members"], files: ["competition_event_stats.sql"], tables: ["competition_event_stats"] },
+  { name: "competition-stats", dependencies: ["result-facts"], files: ["competition_stats.sql"], tables: ["competition_stats"] },
+  { name: "city-event-stats", dependencies: ["result-facts"], files: ["city_event_stats.sql"], tables: ["city_event_stats"] },
+];
+
+export const PROPOSAL_PROJECTION_TABLES = proposalProjectionDefinitions.flatMap(({ tables }) => tables);
+export const COMPATIBILITY_PROJECTION_TABLES = [
+  "ranking_entries_single",
+  "ranking_entries_average",
+  "ranking_counts",
+  "result_entries_single",
+  "result_counts",
+];
+export const PUBLISHED_PROJECTION_TABLES = [
+  ...COMPATIBILITY_PROJECTION_TABLES,
+  ...PROPOSAL_PROJECTION_TABLES,
+];
+
+function projectionNames(sql, suffix) {
+  return [...PROPOSAL_PROJECTION_TABLES]
+    .sort((left, right) => right.length - left.length)
+    .reduce((renamed, table) => renamed.replaceAll(table, `${table}${suffix}`), sql);
+}
+
+async function buildSqlProjection(connection, definition, suffix) {
+  for (const file of definition.files) {
+    const sql = projectionNames(await projectionSql(file), suffix);
+    for (const statement of statements(sql)) await connection.query(statement);
+  }
+}
+
+async function validateProjection(connection, definition, suffix) {
+  const rowCounts = {};
+  for (const table of definition.tables) {
+    const [rows] = await connection.query(`SELECT COUNT(*) AS count FROM \`${table}${suffix}\``);
+    rowCounts[table] = Number(rows[0]?.count ?? 0);
+  }
+  return rowCounts;
+}
+
+export const PROJECTION_REGISTRY = proposalProjectionDefinitions.map((definition) => ({
+  ...definition,
+  build: (connection, suffix) => buildSqlProjection(connection, definition, suffix),
+  validate: (connection, suffix) => validateProjection(connection, definition, suffix),
+}));
+
+function orderedProjections(selectedNames = PROJECTION_REGISTRY.map(({ name }) => name)) {
+  const selected = new Set(selectedNames);
+  const byName = new Map(PROJECTION_REGISTRY.map((projection) => [projection.name, projection]));
+  const ordered = [];
+  const visiting = new Set();
+  const visited = new Set();
+  function visit(name) {
+    if (visited.has(name) || name === "raw-wca") return;
+    if (visiting.has(name)) throw new Error(`Projection dependency cycle at ${name}`);
+    const projection = byName.get(name);
+    if (!projection) throw new Error(`Unknown projection dependency: ${name}`);
+    visiting.add(name);
+    for (const dependency of projection.dependencies) visit(dependency);
+    visiting.delete(name);
+    visited.add(name);
+    ordered.push(projection);
+  }
+  for (const name of selected) visit(name);
+  return ordered;
+}
+
+export async function buildRegisteredProjections(connection, { projectionSuffix = "", projectionNames: selectedNames } = {}) {
+  const timings = [];
+  for (const projection of orderedProjections(selectedNames)) {
+    const startedAt = performance.now();
+    for (const table of projection.tables) await dropManagedObject(connection, `${table}${projectionSuffix}`);
+    await projection.build(connection, projectionSuffix);
+    const rowCounts = await projection.validate(connection, projectionSuffix);
+    const durationMs = Math.round(performance.now() - startedAt);
+    timings.push({ name: projection.name, durationMs, rowCounts });
+    process.stdout.write(`Built projection ${projection.name} in ${durationMs}ms (${JSON.stringify(rowCounts)})\n`);
+  }
+  return timings;
+}
+
 async function ensureIndexes(connection, indexes) {
   for (const [table, name, columns, columnList] of indexes) {
     if (table === "results" && process.env.WCA_SKIP_LARGE_INDEXES === "1") {
@@ -50,6 +139,30 @@ export async function dropManagedObject(connection, name) {
   );
   if (rows[0]?.type === "VIEW") await connection.query(`DROP VIEW \`${name}\``);
   if (rows[0]?.type === "BASE TABLE") await connection.query(`DROP TABLE \`${name}\``);
+}
+
+async function tableExists(connection, name) {
+  const [rows] = await connection.query(
+    "SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ? LIMIT 1",
+    [name],
+  );
+  return rows.length > 0;
+}
+
+export async function promoteProjectionTables(connection, { projectionSuffix = "_staging" } = {}) {
+  const renames = [];
+  const obsolete = [];
+  for (const published of PUBLISHED_PROJECTION_TABLES) {
+    const previous = `${published}_previous`;
+    await dropManagedObject(connection, previous);
+    if (await tableExists(connection, published)) {
+      renames.push(`\`${published}\` TO \`${previous}\``);
+      obsolete.push(`\`${previous}\``);
+    }
+    renames.push(`\`${published}${projectionSuffix}\` TO \`${published}\``);
+  }
+  await connection.query(`RENAME TABLE ${renames.join(", ")}`);
+  if (obsolete.length > 0) await connection.query(`DROP TABLE ${obsolete.join(", ")}`);
 }
 
 export async function refreshMysqlSchema(connection, { projectionSuffix = "" } = {}) {
@@ -123,6 +236,7 @@ export async function refreshMysqlSchema(connection, { projectionSuffix = "" } =
         .replaceAll("result_counts", resultCountsTable),
     );
   }
+  await buildRegisteredProjections(connection, { projectionSuffix });
 }
 
 export async function refreshResultEntriesSchema(connection, { projectionSuffix = "" } = {}) {
@@ -149,14 +263,6 @@ export async function refreshResultEntriesSchema(connection, { projectionSuffix 
         .replaceAll("result_counts", resultCountsTable),
     );
   }
-}
-
-async function tableExists(connection, name) {
-  const [rows] = await connection.query(
-    "SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ? LIMIT 1",
-    [name],
-  );
-  return rows.length > 0;
 }
 
 export async function promoteResultEntriesSchema(connection, { projectionSuffix = "_staging" } = {}) {

@@ -5,7 +5,7 @@ import { basename, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import mysql from "mysql2/promise";
 import * as unzipper from "unzipper";
-import { dropManagedObject, refreshMysqlSchema } from "./mysql-schema.mjs";
+import { dropManagedObject, promoteProjectionTables, refreshMysqlSchema } from "./mysql-schema.mjs";
 
 const EXPORT_API = "https://www.worldcubeassociation.org/api/v0/export/public";
 const force = process.argv.includes("--force");
@@ -220,39 +220,13 @@ async function tableExists(connection, name) {
 async function promoteRankings() {
   const connection = await mysql.createConnection(databaseOptions());
   try {
-    const hasPublished = await tableExists(connection, "ranking_entries_single");
     const hasLegacyProjection = await tableExists(connection, "ranking_entries");
-    const projections = [
-      ["ranking_entries_single", "ranking_entries_single_staging"],
-      ["ranking_entries_average", "ranking_entries_average_staging"],
-      ["ranking_counts", "ranking_counts_staging"],
-      ["result_entries_single", "result_entries_single_staging"],
-      ["result_counts", "result_counts_staging"],
-    ];
-    const renames = [];
-    const obsoleteTables = [];
-    if (hasPublished) {
-      for (const [published, staging] of projections) {
-        if (await tableExists(connection, published)) {
-          const previous = `${published}_previous`;
-          renames.push(`\`${published}\` TO \`${previous}\``);
-          obsoleteTables.push(`\`${previous}\``);
-        }
-        renames.push(`\`${staging}\` TO \`${published}\``);
-      }
-    } else if (hasLegacyProjection) {
-      renames.push("`ranking_entries` TO `ranking_entries_legacy_previous`");
-      obsoleteTables.push("`ranking_entries_legacy_previous`");
-      if (await tableExists(connection, "ranking_counts")) {
-        renames.push("`ranking_counts` TO `ranking_counts_legacy_previous`");
-        obsoleteTables.push("`ranking_counts_legacy_previous`");
-      }
-      for (const [published, staging] of projections) renames.push(`\`${staging}\` TO \`${published}\``);
-    } else {
-      for (const [published, staging] of projections) renames.push(`\`${staging}\` TO \`${published}\``);
+    if (hasLegacyProjection) {
+      await dropManagedObject(connection, "ranking_entries_legacy_previous");
+      await connection.query("RENAME TABLE ranking_entries TO ranking_entries_legacy_previous");
     }
-    await connection.query(`RENAME TABLE ${renames.join(", ")}`);
-    if (obsoleteTables.length > 0) await connection.query(`DROP TABLE ${obsoleteTables.join(", ")}`);
+    await promoteProjectionTables(connection);
+    await dropManagedObject(connection, "ranking_entries_legacy_previous");
   } finally {
     await connection.end();
   }

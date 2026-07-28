@@ -1,6 +1,7 @@
 import mysql from "mysql2/promise";
+import { PUBLISHED_PROJECTION_TABLES } from "./mysql-schema.mjs";
 
-const TABLES = ["ranking_entries_single", "ranking_entries_average", "ranking_counts", "result_entries_single", "result_counts", "export_metadata"];
+const TABLES = [...PUBLISHED_PROJECTION_TABLES, "export_metadata"];
 const ENTRY_COLUMNS = [
   "event_id",
   "world_rank",

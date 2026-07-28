@@ -1,18 +1,24 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
-import { Geist, Geist_Mono } from "next/font/google";
 import { PwaRegistration } from "@/components/PwaRegistration/PwaRegistration";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+const themeInitScript = `
+  try {
+    var savedTheme = window.localStorage.getItem("wca-rankings-theme");
+    var theme = savedTheme === "dark" || savedTheme === "light"
+      ? savedTheme
+      : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+  } catch (error) {}
+`;
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const stylesReadyScript = `
+  window.addEventListener("load", function () {
+    document.documentElement.dataset.stylesReady = "true";
+  }, { once: true });
+`;
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
@@ -55,10 +61,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <style>{`
+          html { background: #fffcff; }
+          html[data-theme="dark"] { background: #121417; }
+          body { visibility: hidden; }
+          html[data-styles-ready="true"] body { visibility: visible; }
+        `}</style>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <script dangerouslySetInnerHTML={{ __html: stylesReadyScript }} />
+      </head>
+      <body>
+        <noscript><style>{"body { visibility: visible; }"}</style></noscript>
         <PwaRegistration />
         {children}
       </body>

@@ -1,15 +1,17 @@
-import type { GetServerSideProps } from "next";
+import { redirect } from "next/navigation";
 import { RankingsExplorer } from "@/components/RankingsExplorer/RankingsExplorer";
-import { loadRankings } from "@/app/api/rankings/route";
 import type {
   RankingEntry,
   RankingPage,
 } from "@/components/RankingsExplorer/types";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
-import { getRegions, type RegionKind } from "@/lib/regions";
-import { isEventId, isRankingType, isValidRegexPattern, parseRegionQuery, WCA_EVENTS } from "@/lib/wca";
+import { isEventId, isRankingType, isValidRegexPattern, parseRegionQuery } from "@/lib/wca";
+import { getRegions } from "@/lib/regions";
+import { loadRankings } from "@/lib/rankings";
 
 const PAGE_SIZE = RESULTS_PAGE_SIZE;
+
+export const dynamic = "force-dynamic";
 
 function pageFirstSubRank(subRank: number) {
   return Math.floor((Math.max(1, subRank) - 1) / PAGE_SIZE) * PAGE_SIZE + 1;
@@ -67,6 +69,8 @@ type RegionRecord = {
   name: string;
   iso2?: string;
 };
+
+type RegionKind = "continent" | "country";
 
 async function fetchRankings(
   params: URLSearchParams,
@@ -149,70 +153,36 @@ async function getInitialRankings(
   };
 }
 
-type QueryParams = Record<string, string | string[] | undefined>;
+type SearchParams = Record<string, string | string[] | undefined>;
 
-type PageProps = {
-  initialRankings: Awaited<ReturnType<typeof getInitialRankings>>;
-  initialSearch: string;
-  initialRegexSearch: boolean;
-  eventId: (typeof WCA_EVENTS)[number]["id"];
-  rankingType: "single" | "average";
-  scope: ReturnType<typeof parseRegionQuery>["scope"];
-  regionId: string;
-  continents: Array<{ id: string; name: string }>;
-  countries: Array<{ id: string; name: string; iso2?: string }>;
-};
-
-export const getServerSideProps: GetServerSideProps<PageProps> = async ({ query }) => {
-  const searchParams = query as QueryParams;
-  const rawEventId = getSearchParamWithLegacyKey(searchParams, "eventId", "event");
-  const rawRankingType = getSearchParamWithLegacyKey(searchParams, "result", "type");
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const resolvedSearchParams = await searchParams;
+  const rawEventId = getSearchParamWithLegacyKey(resolvedSearchParams, "eventId", "event");
+  const rawRankingType = getSearchParamWithLegacyKey(resolvedSearchParams, "result", "type");
   const eventId = isEventId(rawEventId) ? rawEventId : "333";
   const rankingType = eventId === "333mbf" ? "single" : isRankingType(rawRankingType) ? rawRankingType : "single";
-  const { scope, regionId } = parseRegionQuery(getSearchParam(searchParams, "region"));
-  const canonicalParams = getCanonicalSearchParams(searchParams, eventId, rankingType, regionId);
+  const { scope, regionId } = parseRegionQuery(getSearchParam(resolvedSearchParams, "region"));
+  const canonicalParams = getCanonicalSearchParams(resolvedSearchParams, eventId, rankingType, regionId);
   const currentParams = new URLSearchParams();
-  Object.entries(searchParams).forEach(([key, value]) => {
+  Object.entries(resolvedSearchParams).forEach(([key, value]) => {
     if (Array.isArray(value)) value.forEach((item) => currentParams.append(key, item));
     else if (value !== undefined) currentParams.set(key, value);
   });
   if (canonicalParams.toString() !== currentParams.toString()) {
     const query = canonicalParams.toString();
-    return { redirect: { destination: query ? `/?${query}` : "/", permanent: false } };
+    redirect(query ? `/?${query}` : "/");
   }
   const [initialRankings, continents, countries] = await Promise.all([
-    getInitialRankings(searchParams),
+    getInitialRankings(resolvedSearchParams),
     fetchRegions("continent"),
     fetchRegions("country"),
   ]);
-  const initialSearch = getSearchParam(searchParams, "search").trim().slice(0, 80);
-  const initialRegexSearch = getSearchParam(searchParams, "mode") === "vim" && isValidRegexPattern(initialSearch);
-  return {
-    props: {
-      initialRankings,
-      initialSearch,
-      initialRegexSearch,
-      eventId,
-      rankingType,
-      scope,
-      regionId,
-      continents,
-      countries,
-    },
-  };
-};
-
-export default function Home({
-  initialRankings,
-  initialSearch,
-  initialRegexSearch,
-  eventId,
-  rankingType,
-  scope,
-  regionId,
-  continents,
-  countries,
-}: PageProps) {
+  const initialSearch = getSearchParam(resolvedSearchParams, "search").trim().slice(0, 80);
+  const initialRegexSearch = getSearchParam(resolvedSearchParams, "mode") === "vim" && isValidRegexPattern(initialSearch);
   return (
     <RankingsExplorer
       initialData={initialRankings}

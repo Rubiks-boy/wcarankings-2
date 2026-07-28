@@ -7,9 +7,11 @@ import { WCA_EVENTS } from "@/lib/wca";
 export function EventPicker({
   event,
   onChange,
+  onTriggerReady,
 }: {
   event: (typeof WCA_EVENTS)[number];
   onChange: (eventId: (typeof WCA_EVENTS)[number]["id"]) => void;
+  onTriggerReady?: (trigger: HTMLButtonElement | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -99,7 +101,10 @@ export function EventPicker({
   return (
     <>
       <button
-        ref={triggerRef}
+        ref={(trigger) => {
+          triggerRef.current = trigger;
+          onTriggerReady?.(trigger);
+        }}
         className={`EventPicker-preview cubing-icon event-${event.id}`}
         aria-label={event.name}
         title={event.name}

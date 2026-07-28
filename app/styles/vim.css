@@ -1,0 +1,139 @@
+.vimCommandLine {
+  position: fixed;
+  z-index: 4;
+  right: 0;
+  bottom: 2.5em;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.15em;
+  min-height: 2.4em;
+  padding: 0.4em 1em;
+  border-top: 1px solid var(--border);
+  background: var(--overlay-strong);
+  color: var(--text-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85em;
+  box-shadow: 0 -3px 12px var(--shadow-soft);
+}
+
+.vimCommandText {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.15em;
+  min-width: 0;
+}
+
+.vimInput {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.vimInput:read-only {
+  cursor: default;
+}
+
+.vimMatchStatus {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.vimHelpButton,
+.vimHelpClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--rail-surface);
+  color: var(--text-strong);
+  cursor: pointer;
+  font: inherit;
+}
+
+.vimHelpButton {
+  width: 1.65em;
+  height: 1.65em;
+  margin-left: auto;
+  padding: 0;
+  flex-shrink: 0;
+  font-size: 0.85em;
+}
+
+.vimHelpButton:hover,
+.vimHelpButton:focus-visible,
+.vimHelpClose:hover,
+.vimHelpClose:focus-visible {
+  border-color: var(--focus);
+  color: var(--focus);
+}
+
+.vimHelpPopup {
+  position: fixed;
+  z-index: 5;
+  right: 0.75em;
+  bottom: 5.8em;
+  width: min(27em, calc(100vw - 1.5em));
+  padding: 0.85em 1em 1em;
+  border: 1px solid var(--border);
+  border-radius: 0.35em;
+  background: var(--overlay-strong);
+  color: var(--text-strong);
+  font-size: 0.8em;
+  box-shadow: 0 4px 18px var(--shadow);
+}
+
+.vimHelpHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  margin-bottom: 0.65em;
+}
+
+.vimHelpClose {
+  width: 1.5em;
+  height: 1.5em;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+.vimHelpPopup dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35em 1em;
+  margin: 0;
+}
+
+.vimHelpPopup dt {
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+}
+
+.vimHelpPopup dd {
+  margin: 0;
+}
+
+.vimCaret {
+  width: 0.55em;
+  height: 1.1em;
+  background: currentColor;
+  animation: vimCaretBlink 1s steps(2, jump-none) infinite;
+}
+
+@keyframes vimCaretBlink {
+  50% { opacity: 0; }
+}
+

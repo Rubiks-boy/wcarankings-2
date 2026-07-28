@@ -41,11 +41,13 @@ test("renders rows and highlights tied results", () => {
       eventId="333"
       rankingType="single"
       loading={false}
+      showLoading={false}
       preserveListDuringLoad={false}
       hasMore
       loadingMore={false}
       highlightedPersonId="2024TIED02"
       measureElement={() => undefined}
+      onRowNavigate={() => undefined}
     />,
   );
   assert.match(markup, /Fast Solver/);

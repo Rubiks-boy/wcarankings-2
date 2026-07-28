@@ -26,7 +26,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
       "../lib/rankings-config.ts",
     ].map((path) => readFile(new URL(path, import.meta.url), "utf8"))).then((files) => files.join("\n")),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/api/rankings/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/rankings.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/wca.ts", import.meta.url), "utf8"),
     Promise.all([
       "../scripts/mysql-schema.mjs",
@@ -176,31 +176,36 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
 });
 
 test("does not replace SQL failures with synthetic ranking data", async () => {
-  const [page, rankingsRoute, readme] = await Promise.all([
-    readFile(new URL("../pages/index.tsx", import.meta.url), "utf8"),
+  const [page, rankingsService, rankingsRoute, readme] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/rankings.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/rankings/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../README.md", import.meta.url), "utf8"),
   ]);
 
   assert.doesNotMatch(page, /demo-data|makeDemoRankings/);
-  assert.doesNotMatch(rankingsRoute, /demo-data|makeDemoRankings|source: "demo"/);
+  assert.doesNotMatch(rankingsService, /demo-data|makeDemoRankings|source: "demo"/);
   assert.match(rankingsRoute, /status: 503/);
   assert.doesNotMatch(readme, /preview rows/);
   await assert.rejects(access(new URL("../lib/demo-data.ts", import.meta.url)));
 });
 
 test("uses the copied WCA Rankings visual language", async () => {
-  const [globalCss, jumpCss, page, layout, manifest, pwaRegistration, serviceWorker, packageJson] = await Promise.all([
+  const [globalCss, controlsCss, rankingsCss, searchCss, vimCss, jumpCss, page, layout, manifest, pwaRegistration, serviceWorker, packageJson] = await Promise.all([
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/styles/controls.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/styles/rankings.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/styles/search.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/styles/vim.css", import.meta.url), "utf8"),
     readFile(new URL("../components/JumpControls/JumpControls.css", import.meta.url), "utf8"),
-    readFile(new URL("../pages/index.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/manifest.ts", import.meta.url), "utf8"),
     readFile(new URL("../components/PwaRegistration/PwaRegistration.tsx", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
-  const css = `${globalCss}\n${jumpCss}`;
+  const css = `${globalCss}\n${controlsCss}\n${rankingsCss}\n${searchCss}\n${vimCss}\n${jumpCss}`;
 
   assert.match(page, /<RankingsExplorer/);
   assert.match(page, /initialData=\{initialRankings\}/);
@@ -232,6 +237,10 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(page, /pages\.flatMap/);
   assert.match(layout, /title:\s*"WCA Rankings"/);
   assert.match(layout, /PwaRegistration/);
+  assert.match(layout, /window\.addEventListener\("load"/);
+  assert.match(layout, /data-styles-ready/);
+  assert.match(layout, /body \{ visibility: hidden; \}/);
+  assert.match(layout, /<noscript>/);
   assert.match(manifest, /display: "standalone"/);
   assert.match(manifest, /icon-192\.png/);
   assert.match(manifest, /icon-512\.png/);
@@ -277,6 +286,19 @@ test("uses the copied WCA Rankings visual language", async () => {
     access(previewRoot),
   );
   await assert.rejects(access(new URL("public/_sites-preview", templateRoot)));
+});
+
+test("production build links the EventPicker stylesheet", async () => {
+  const manifest = JSON.parse(
+    await readFile(new URL("../dist/client/.vite/ssr-manifest.json", import.meta.url), "utf8"),
+  );
+  const rankingsAssets = manifest["components/RankingsExplorer/RankingsExplorer.tsx"] ?? [];
+  const stylesheet = rankingsAssets.find((asset) => asset.endsWith(".css"));
+
+  assert.ok(stylesheet, "RankingsExplorer must retain a stylesheet in the SSR manifest");
+  const css = await readFile(new URL(`../dist/client/${stylesheet}`, import.meta.url), "utf8");
+  assert.match(css, /\.EventPicker-menu\{[\s\S]*visibility:hidden/);
+  assert.match(css, /\.EventPicker-preview\{[\s\S]*width:44px/);
 });
 
 test("self-hosted ranking buckets preserve a tie larger than the page size", async (context) => {

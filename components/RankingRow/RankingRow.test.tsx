@@ -37,6 +37,8 @@ test("renders a result row without exposing internal ordering", () => {
   assert.ok(markup.indexOf('class="countryFlag"') < markup.indexOf('class="wcaId">2024WALK01'));
   assert.equal((markup.match(/class="recordBadge /g) ?? []).length, 1);
   assert.match(markup, /rank--duplicate/);
+  assert.match(markup, /tabindex="0"/);
+  assert.match(markup, /aria-label="Rank 42: Cailyn Sinclair, 12\.34"/);
   assert.doesNotMatch(markup, /sub-rank/);
 });
 

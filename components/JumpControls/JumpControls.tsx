@@ -19,6 +19,7 @@ export function JumpUpControls({
   onJump,
   event,
   onEventChange,
+  onEventPickerTrigger,
   searchInputRef,
   findQuery,
   findError,
@@ -36,6 +37,7 @@ export function JumpUpControls({
   onJump: () => void;
   event: (typeof WCA_EVENTS)[number];
   onEventChange: (eventId: (typeof WCA_EVENTS)[number]["id"]) => void;
+  onEventPickerTrigger?: (trigger: HTMLButtonElement | null) => void;
   searchInputRef?: (input: HTMLInputElement | null) => void;
   findQuery: string;
   findError: string;
@@ -77,9 +79,9 @@ export function JumpUpControls({
     armed || currentPosition <= 5000
       ? "Jump to top"
       : `Jump ${formatRankingNumber(5000)}`;
+  const searching = findLoading || findPending;
   let searchStatus = "";
   if (findError) searchStatus = findError;
-  else if (findLoading || findPending) searchStatus = "Searching…";
   else if (findQuery.trim()) {
     searchStatus = findMatches.length
       ? `${findIndex + 1} of ${findMatches.length}`
@@ -101,7 +103,11 @@ export function JumpUpControls({
 
   return (
     <div className="Jump" data-direction="up">
-      <EventPicker event={event} onChange={onEventChange} />
+      <EventPicker
+        event={event}
+        onChange={onEventChange}
+        onTriggerReady={onEventPickerTrigger}
+      />
       <div className="Jump-buttonWrapper">
         <div className="Jump-buttonClip">
           <button className="Jump-button" onClick={onJump} type="button">
@@ -142,22 +148,24 @@ export function JumpUpControls({
             className={`findStatus${findError ? " isError" : ""}`}
             aria-live="polite"
           >
-            {searchStatus}
+            {searching ? (
+              <span className="searchSpinner" aria-label="Searching" />
+            ) : (
+              searchStatus
+            )}
           </span>
-          {findQuery.length > 0 && (
-            <button
-              className="findClose"
-              type="button"
-              onMouseDown={(mouseEvent) => mouseEvent.preventDefault()}
-              onClick={() => {
-                inputRef.current?.blur();
-                onSearchClose();
-              }}
-              aria-label="Close search"
-            >
-              <CloseIcon />
-            </button>
-          )}
+          <button
+            className="findClose"
+            type="button"
+            onMouseDown={(mouseEvent) => mouseEvent.preventDefault()}
+            onClick={() => {
+              inputRef.current?.blur();
+              onSearchClose();
+            }}
+            aria-label="Close search"
+          >
+            <CloseIcon />
+          </button>
       </div>
     </div>
   );
@@ -217,7 +225,7 @@ export function JumpDownControls({
             disabled={!searchActive}
           >
             <ArrowUpIcon />
-            <span>Previous</span>
+            <span>Previous person</span>
           </button>
           <button
             className="Jump-searchNavigationButton"
@@ -225,7 +233,7 @@ export function JumpDownControls({
             type="button"
             disabled={!searchActive}
           >
-            <span>Next</span>
+            <span>Next person</span>
             <ArrowDownIcon />
           </button>
         </div>

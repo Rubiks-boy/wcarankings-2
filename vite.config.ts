@@ -6,6 +6,7 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const isStorybook = process.env.STORYBOOK === "true";
 
 export default defineConfig({
+  assetsInclude: ["**/*.woff2"],
   build: {
     ssrManifest: true,
   },

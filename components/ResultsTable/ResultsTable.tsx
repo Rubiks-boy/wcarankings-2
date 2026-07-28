@@ -17,12 +17,14 @@ export function ResultsTable({
   eventId,
   rankingType,
   loading,
+  showLoading,
   preserveListDuringLoad,
   hasMore,
   loadingMore,
   highlightedPersonId,
   searchMatchPersonIds,
   measureElement,
+  onRowNavigate,
 }: {
   entries: RankingEntry[];
   listRef?: Ref<HTMLOListElement>;
@@ -32,14 +34,16 @@ export function ResultsTable({
   eventId: string;
   rankingType: "single" | "average";
   loading: boolean;
+  showLoading: boolean;
   preserveListDuringLoad: boolean;
   hasMore: boolean;
   loadingMore: boolean;
   highlightedPersonId: string;
   searchMatchPersonIds?: ReadonlySet<string>;
   measureElement: (element: Element | null) => void;
+  onRowNavigate: (rowIndex: number, direction: -1 | 1) => void;
 }) {
-  if (loading && !preserveListDuringLoad) {
+  if (loading && showLoading && !preserveListDuringLoad) {
     return <div className="listMessage">Loading rankings…</div>;
   }
 
@@ -66,6 +70,8 @@ export function ResultsTable({
                 virtualRow.index > 0 &&
                 entries[virtualRow.index - 1]?.rank === entry.rank
               }
+              rowIndex={virtualRow.index}
+              onNavigate={onRowNavigate}
             />
           );
         } else if (hasMore) {

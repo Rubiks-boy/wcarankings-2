@@ -53,11 +53,13 @@ const meta = {
     eventId: "333",
     rankingType: "single",
     loading: false,
+    showLoading: false,
     preserveListDuringLoad: false,
     hasMore: true,
     loadingMore: false,
     highlightedPersonId: "",
     measureElement: () => undefined,
+    onRowNavigate: () => undefined,
   },
 } satisfies Meta<typeof ResultsTable>;
 

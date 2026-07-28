@@ -9,6 +9,8 @@ export function RankingRow({
   searchMatched = false,
   highlighted = false,
   rankIsDuplicate = false,
+  rowIndex,
+  onNavigate,
 }: {
   entry: RankingEntry;
   eventId: string;
@@ -17,6 +19,8 @@ export function RankingRow({
   searchMatched?: boolean;
   highlighted?: boolean;
   rankIsDuplicate?: boolean;
+  rowIndex?: number;
+  onNavigate?: (rowIndex: number, direction: -1 | 1) => void;
 }) {
   const style = {
     "--t-animation-delay": `${animationIndex * 10}ms`,
@@ -33,7 +37,20 @@ export function RankingRow({
     <li
       className="listItem"
       data-person-id={entry.personId}
+      data-row-index={rowIndex}
       style={style}
+      tabIndex={0}
+      aria-label={`Rank ${formatRankingNumber(rank)}: ${name}, ${formatWcaResult(eventId, entry.best, rankingType)}`}
+      onKeyDown={(keyboardEvent) => {
+        if (keyboardEvent.altKey || keyboardEvent.ctrlKey || keyboardEvent.metaKey)
+          return;
+        let direction: -1 | 1 | null = null;
+        if (keyboardEvent.key === "ArrowUp") direction = -1;
+        if (keyboardEvent.key === "ArrowDown") direction = 1;
+        if (direction === null || rowIndex === undefined || !onNavigate) return;
+        keyboardEvent.preventDefault();
+        onNavigate(rowIndex, direction);
+      }}
     >
       <div
         className={`row${animationIndex % 2 === 1 ? " row--alternate" : ""}${

@@ -14,6 +14,7 @@ export function RankingControls({
   onEventChange,
   onRankingTypeChange,
   onRegionChange,
+  onEventPickerTrigger,
 }: {
   eventId: (typeof WCA_EVENTS)[number]["id"];
   rankingType: "single" | "average";
@@ -22,13 +23,18 @@ export function RankingControls({
   onEventChange: (eventId: (typeof WCA_EVENTS)[number]["id"]) => void;
   onRankingTypeChange: (rankingType: "single" | "average") => void;
   onRegionChange: (region: RegionOption) => void;
+  onEventPickerTrigger?: (trigger: HTMLButtonElement | null) => void;
 }) {
   const selectedEvent = WCA_EVENTS.find((event) => event.id === eventId)!;
 
   return (
     <div className="chooser">
       <div className="chooserEventPicker">
-        <EventPicker event={selectedEvent} onChange={onEventChange} />
+        <EventPicker
+          event={selectedEvent}
+          onChange={onEventChange}
+          onTriggerReady={onEventPickerTrigger}
+        />
       </div>
       <div className="selectInput eventInput">
         <select

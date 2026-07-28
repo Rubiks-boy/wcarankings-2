@@ -479,6 +479,7 @@ export function RankingsExplorer({
   const [offlineStale, setOfflineStale] = useState(false);
   const [hasMore, setHasMore] = useState(initialData?.hasMore ?? true);
   const [loading, setLoading] = useState(!initialData);
+  const [showLoading, setShowLoading] = useState(false);
   const [preserveListDuringLoad, setPreserveListDuringLoad] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingPrevious, setLoadingPrevious] = useState(false);
@@ -517,13 +518,13 @@ export function RankingsExplorer({
   const listRef = useRef<HTMLDivElement>(null);
   const headerFindInputRef = useRef<HTMLInputElement>(null);
   const railFindInputRef = useRef<HTMLInputElement>(null);
-  const tableReachedTopRef = useRef(false);
   const setHeaderFindInputRef = useCallback((input: HTMLInputElement | null) => {
     headerFindInputRef.current = input;
   }, []);
   const setRailFindInputRef = useCallback((input: HTMLInputElement | null) => {
     railFindInputRef.current = input;
   }, []);
+  const tableReachedTopRef = useRef(false);
   const pendingSearchFocusHandoffRef =
     useRef<PendingSearchFocusHandoff | null>(null);
   const searchCompositionActiveRef = useRef(false);
@@ -574,6 +575,13 @@ export function RankingsExplorer({
   );
   const findIndexRef = useRef(initialData?.searchMatches.length ? 0 : -1);
   const rankingListRef = useRef<HTMLOListElement>(null);
+  const eventPickerTriggerRef = useRef<HTMLButtonElement>(null);
+  const railEventPickerTriggerRef = useRef<HTMLButtonElement>(null);
+  const pendingRowFocusRef = useRef<{
+    anchorPersonId: string;
+    direction: -1 | 1;
+  } | null>(null);
+  const rowFocusFrameRef = useRef<number | null>(null);
   const searchAnimationTimerRef = useRef<number | null>(null);
   const searchTransformOffsetRef = useRef(0);
   const pendingSearchLayoutAnchorRef = useRef<SearchLayoutAnchor | null>(null);
@@ -721,6 +729,15 @@ export function RankingsExplorer({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      const frame = window.requestAnimationFrame(() => setShowLoading(false));
+      return () => window.cancelAnimationFrame(frame);
+    }
+    const timer = window.setTimeout(() => setShowLoading(true), 200);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
 
   const scrollStorageKey = [
     "wca-rankings-scroll-v1",
@@ -1578,6 +1595,23 @@ export function RankingsExplorer({
         return;
       }
       if (vimMode) return;
+      if (
+        key === "e" &&
+        !isEditable &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey
+      ) {
+        const trigger =
+          tableReachedTop || jumpUpArmed
+            ? railEventPickerTriggerRef.current
+            : eventPickerTriggerRef.current;
+        if (!trigger) return;
+        event.preventDefault();
+        if (trigger.getAttribute("aria-expanded") !== "true") trigger.click();
+        trigger.focus();
+        return;
+      }
       if (vimSearchActive && key === "n" && !isEditable) {
         event.preventDefault();
         setFindOpen(false);
@@ -1612,6 +1646,7 @@ export function RankingsExplorer({
     regexSearch,
     resetFind,
     tableReachedTop,
+    jumpUpArmed,
     vimMode,
     vimSearchActive,
   ]);
@@ -1668,7 +1703,7 @@ export function RankingsExplorer({
 
   const loadPrevious = useCallback(async () => {
     if (
-      !previousPageStart ||
+      previousPageStart === null ||
       previousRequestRef.current ||
       loading ||
       preserveListDuringLoadRef.current ||
@@ -1729,6 +1764,76 @@ export function RankingsExplorer({
     rowVirtualizer,
   ]);
 
+  const focusRowAtIndex = useCallback(
+    (index: number) => {
+      rowVirtualizer.scrollToIndex(index, { align: "auto" });
+      if (rowFocusFrameRef.current !== null)
+        window.cancelAnimationFrame(rowFocusFrameRef.current);
+
+      let attemptsRemaining = 4;
+      const focusWhenRendered = () => {
+        rowFocusFrameRef.current = window.requestAnimationFrame(() => {
+          const row = rankingListRef.current?.querySelector<HTMLElement>(
+            `[data-row-index="${index}"]`,
+          );
+          if (row) {
+            row.focus({ preventScroll: true });
+            rowFocusFrameRef.current = null;
+            return;
+          }
+          attemptsRemaining -= 1;
+          if (attemptsRemaining > 0) focusWhenRendered();
+          else rowFocusFrameRef.current = null;
+        });
+      };
+      focusWhenRendered();
+    },
+    [rowVirtualizer],
+  );
+
+  const handleRowNavigate = useCallback(
+    (rowIndex: number, direction: -1 | 1) => {
+      const targetIndex = rowIndex + direction;
+      if (targetIndex >= 0 && targetIndex < entries.length) {
+        focusRowAtIndex(targetIndex);
+        return;
+      }
+
+      const anchor = entries[rowIndex];
+      if (!anchor) return;
+      if (direction === -1 && previousPageStart === null) return;
+      if (direction === 1 && !hasMore) return;
+
+      pendingRowFocusRef.current = {
+        anchorPersonId: anchor.personId,
+        direction,
+      };
+      if (direction === -1) void loadPrevious();
+      else void loadMore();
+    },
+    [
+      entries,
+      focusRowAtIndex,
+      hasMore,
+      loadMore,
+      loadPrevious,
+      previousPageStart,
+    ],
+  );
+
+  useEffect(() => {
+    const pending = pendingRowFocusRef.current;
+    if (!pending) return;
+    const anchorIndex = entries.findIndex(
+      (entry) => entry.personId === pending.anchorPersonId,
+    );
+    const targetIndex = anchorIndex + pending.direction;
+    if (anchorIndex < 0 || targetIndex < 0 || targetIndex >= entries.length)
+      return;
+    pendingRowFocusRef.current = null;
+    focusRowAtIndex(targetIndex);
+  }, [entries, focusRowAtIndex]);
+
   useEffect(() => {
     const lastVirtualRow = virtualRows.at(-1);
     // Loading the next bucket is the synchronization performed by this effect.
@@ -1739,20 +1844,32 @@ export function RankingsExplorer({
   }, [entries.length, loadMore, virtualRows]);
 
   useEffect(() => {
-    let lastScrollY = window.scrollY;
     const onScroll = () => {
       if (
         !scrollAnimationStateRef.current.programmatic &&
-        window.scrollY < lastScrollY
+        window.scrollY <= listOffset + ROW_HEIGHT * 14
       ) {
         navigationTargetRankRef.current = null;
-        if (window.scrollY <= listOffset + ROW_HEIGHT * 14) void loadPrevious();
+        void loadPrevious();
       }
-      lastScrollY = window.scrollY;
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, [listOffset, loadPrevious]);
+
+  useEffect(() => {
+    // A search result can be rendered at the document's top. In that state an
+    // additional upward gesture does not emit a scroll event, so prime the
+    // previous window after the virtual list has committed.
+    const frame = window.requestAnimationFrame(() => {
+      if (
+        !scrollAnimationStateRef.current.programmatic &&
+        window.scrollY <= listOffset + ROW_HEIGHT * 14
+      )
+        void loadPrevious();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [entries.length, listOffset, loadPrevious]);
 
   useEffect(() => {
     const cancelOnUserInput = () => {
@@ -1793,6 +1910,14 @@ export function RankingsExplorer({
       window.removeEventListener("pointerdown", cancelOnUserInput);
     };
   }, []);
+
+  useEffect(
+    () => () => {
+      if (rowFocusFrameRef.current !== null)
+        window.cancelAnimationFrame(rowFocusFrameRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     const animationState = scrollAnimationStateRef.current;
@@ -2414,6 +2539,9 @@ export function RankingsExplorer({
           onEventChange={changeEvent}
           onRankingTypeChange={changeRankingType}
           onRegionChange={changeRegion}
+          onEventPickerTrigger={(trigger) => {
+            eventPickerTriggerRef.current = trigger;
+          }}
         />
       </header>
 
@@ -2425,6 +2553,9 @@ export function RankingsExplorer({
           onJump={handleJumpUp}
           event={currentEvent}
           onEventChange={changeEvent}
+          onEventPickerTrigger={(trigger) => {
+            railEventPickerTriggerRef.current = trigger;
+          }}
           searchInputRef={setRailFindInputRef}
           findQuery={findQuery}
           findError={findError}
@@ -2456,12 +2587,14 @@ export function RankingsExplorer({
                 eventId={eventId}
                 rankingType={entriesRankingType}
                 loading={loading}
+                showLoading={showLoading}
                 preserveListDuringLoad={preserveListDuringLoad}
                 hasMore={hasMore}
                 loadingMore={loadingMore}
                 searchMatchPersonIds={searchMatchPersonIds}
                 highlightedPersonId={highlightedPersonId}
                 measureElement={rowVirtualizer.measureElement}
+                onRowNavigate={handleRowNavigate}
               />
             )}
           </div>

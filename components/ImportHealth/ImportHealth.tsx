@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatDate, formatDuration, type ImportHealthStatus } from "@/lib/import-health";

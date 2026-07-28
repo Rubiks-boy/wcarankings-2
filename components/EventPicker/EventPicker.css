@@ -57,23 +57,28 @@
 }
 
 .EventPicker-preview:hover,
-.EventPicker-option:hover,
-.EventPicker-option[data-selected="true"] {
+.EventPicker-option:hover {
   color: var(--focus);
 }
 
+.EventPicker-option[data-selected="true"] {
+  background: var(--surface-selected);
+  color: var(--text-strong);
+}
+
 .EventPicker-preview:focus-visible {
-  color: var(--focus);
+  color: var(--text-strong);
+  box-shadow: 0 0 0 2px var(--focus-ring);
   outline: none;
 }
 
 .EventPicker-option:focus-visible {
-  color: var(--focus);
-  outline: 2px solid var(--focus);
-  outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px var(--focus-ring);
+  outline: none;
 }
 
 .EventPicker-preview:focus-visible,
 .EventPicker-preview[aria-expanded="true"] {
-  color: var(--focus);
+  color: var(--text-strong);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }

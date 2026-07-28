@@ -1,0 +1,307 @@
+.regionPicker {
+  position: relative;
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.regionPickerTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 3.25em;
+  padding: 0.75em 1em;
+  padding-right: 2.5em;
+  border: 1px solid var(--border-accent);
+  border-radius: 0.5em;
+  background: var(--surface);
+  color: var(--text);
+  cursor: text;
+  font-size: 0.85em;
+  font: inherit;
+  appearance: none;
+  text-align: left;
+  transition: border-color 150ms var(--cubic-move),
+    box-shadow 150ms var(--cubic-move);
+}
+
+.regionPicker > svg {
+  position: absolute;
+  top: 50%;
+  right: 0.5em;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.regionPickerClear {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-strong);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: color 150ms var(--cubic-move);
+}
+
+.regionPickerClear svg {
+  width: 20px;
+  height: 20px;
+}
+
+.regionPickerClear:hover,
+.regionPickerClear:focus-visible {
+  color: var(--focus);
+  outline: none;
+}
+
+.regionPickerTrigger:focus-visible,
+.regionPickerTrigger[aria-expanded="true"] {
+  border-color: var(--border-accent);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+  outline: none;
+}
+
+.regionPickerValue,
+.regionOption {
+  display: flex;
+  align-items: center;
+}
+
+.regionPickerMenu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.5em);
+  right: 0;
+  left: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.5em;
+  background: var(--surface);
+  box-shadow: 0 4px 16px var(--shadow);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.97);
+  transform-origin: top left;
+  transition: opacity 150ms var(--cubic-exit),
+    transform 150ms var(--cubic-exit),
+    visibility 0s linear 150ms;
+}
+
+.regionPickerMenu[data-open="true"] {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+  transition: opacity 150ms var(--cubic-enter),
+    transform 150ms var(--cubic-enter), visibility 0s;
+}
+
+.regionOptions {
+  max-height: min(30em, 70vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.regionGroupLabel {
+  padding: 0.65em 1em 0.4em;
+  color: var(--text-subtle);
+  background: var(--surface-muted);
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+.regionOption {
+  width: 100%;
+  padding: 0.7em 1em;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
+  color: var(--text-strong);
+  cursor: pointer;
+  font-size: 0.95em;
+  text-align: left;
+}
+
+.regionOption:hover,
+.regionOption.isActive {
+  background: var(--surface-hover);
+}
+
+.regionOption.isSelected {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.searchSpinner {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  border: 2px solid var(--border-strong);
+  border-right-color: var(--focus);
+  border-radius: 50%;
+  animation: searchSpinnerRotate 650ms linear infinite;
+  vertical-align: -0.1em;
+}
+
+@keyframes searchSpinnerRotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.regionEmpty {
+  padding: 1em;
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.selectInput {
+  position: relative;
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.selectInput select {
+  width: 100%;
+  padding: 1em;
+  padding-right: 2.5em;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0.5em;
+  background-color: var(--surface);
+  cursor: pointer;
+  font-size: 0.85em;
+  appearance: none;
+  transition: background-color 150ms ease, border 150ms ease;
+}
+
+.eventInput {
+  flex: 0.85 1 0;
+}
+
+.eventInput select {
+  font-weight: 500;
+}
+
+.selectInput svg {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  right: 0.5em;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.selectInput:hover select {
+  background-color: var(--control-hover);
+}
+
+.selectInput:hover svg {
+  transform: translateY(-50%) scale(110%);
+}
+
+.rankingTypeToggle {
+  box-sizing: border-box;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  min-width: 0;
+  min-height: 2.75em;
+  margin: 0;
+  padding: 1px;
+  border: 1px solid var(--border);
+  border-radius: 0.5em;
+  background: var(--surface);
+  flex: 0.8 1 0;
+  overflow: hidden;
+}
+
+.rankingTypeToggle::before {
+  position: absolute;
+  z-index: 0;
+  top: 1px;
+  bottom: 1px;
+  left: 1px;
+  width: calc((100% - 2px) / 2);
+  border-radius: 0.35em;
+  background: var(--surface-selected);
+  content: "";
+  pointer-events: none;
+  transform: translateX(0);
+  transition: transform 250ms var(--cubic-move);
+}
+
+.rankingTypeToggle[data-ranking-type="average"]::before {
+  transform: translateX(100%);
+}
+
+.selectInput select,
+.rankingTypeToggle,
+.regionPickerTrigger {
+  height: 44px;
+  min-height: 44px;
+}
+
+.eventInput select {
+  height: 44px;
+  min-height: 44px;
+}
+
+.rankingTypeOption {
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.5em;
+  padding: 0.55em 0.65em;
+  place-items: center;
+  border-radius: 0.35em;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85em;
+  transition: color 150ms ease;
+}
+
+.rankingTypeOption input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.rankingTypeOption.isSelected {
+  color: var(--text-strong);
+}
+
+.rankingTypeOption:hover {
+  color: var(--text-strong);
+}
+
+.rankingTypeOption.isDisabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.rankingTypeOption:has(input:focus-visible) {
+  color: var(--focus);
+}
+
+.selectInput select:focus-visible {
+  border: 1px solid var(--focus);
+  box-shadow: 0 0 5px var(--focus-ring);
+  outline: none;
+}
+

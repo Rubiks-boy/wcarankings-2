@@ -62,9 +62,9 @@ export function SearchInputs({
       onClose();
     }
   };
+  const searching = findLoading || findPending;
   let status = "";
   if (findError) status = findError;
-  else if (findLoading || findPending) status = "Searching…";
   else if (findQuery.trim()) {
     status = findMatches.length
       ? `${findIndex + 1} of ${findMatches.length}`
@@ -104,7 +104,11 @@ export function SearchInputs({
         className={`findStatus${findError ? " isError" : ""}`}
         aria-live="polite"
       >
-        {status}
+        {searching ? (
+          <span className="searchSpinner" aria-label="Searching" />
+        ) : (
+          status
+        )}
       </span>
       <button
         className="findClose"

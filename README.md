@@ -47,7 +47,7 @@ npm run build-storybook
 
 Storybook runs the client-side rankings explorer with deterministic preview data
 at `http://localhost:6006`, so it does not require MariaDB or a WCA export.
-The main page lives in `pages/index.tsx`. UI components live in `components/`;
+The main page lives in `app/page.tsx`. UI components live in `components/`;
 each component folder contains its source, Storybook stories, and colocated unit
 tests.
 

@@ -27,6 +27,8 @@ services:
       FLYWAY_USER: ${MYSQL_USER:?MYSQL_USER must be set}
       FLYWAY_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set}
       FLYWAY_LOCATIONS: filesystem:/flyway/migrations
+      # Production predates Flyway; baseline its existing V1 metadata table once.
+      FLYWAY_BASELINE_ON_MIGRATE: "true"
       FLYWAY_CONNECT_RETRIES: 60
     depends_on:
       db:

@@ -36,6 +36,7 @@ function RailSearch({ searchInputRef, findOpen, findQuery, findError, findLoadin
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const searchBarRef = useRef<HTMLDivElement>(null);
+  const focusAfterOpenRef = useRef(false);
 
   useEffect(() => {
     const handleEscape = (event: globalThis.KeyboardEvent) => {
@@ -56,11 +57,17 @@ function RailSearch({ searchInputRef, findOpen, findQuery, findError, findLoadin
     return () => searchInputRef?.(null);
   }, [searchInputRef]);
 
+  useEffect(() => {
+    if (!findOpen || !focusAfterOpenRef.current) return;
+    focusAfterOpenRef.current = false;
+    const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [findOpen]);
+
   const status = findError || (findQuery.trim() ? findMatches.length ? `${findIndex + 1} of ${findMatches.length}` : "No matches" : "");
   const openSearch = () => {
+    focusAfterOpenRef.current = true;
     onSearchOpen();
-    inputRef.current?.focus();
-    setTimeout(() => inputRef.current?.focus(), 25);
   };
 
   return (

@@ -147,6 +147,13 @@ select {
   background: var(--surface);
 }
 
+.stickyRankingsRail > .Jump--rankings:has(
+  .findBar--rail:is([data-has-text="true"], [data-open="true"])
+) {
+  background: transparent;
+  box-shadow: none;
+}
+
 .debugScrollY {
   margin-left: auto;
   color: var(--text-muted);

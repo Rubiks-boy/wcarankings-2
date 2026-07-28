@@ -472,6 +472,9 @@ country_count
 event_count
 attempt_count
 record_count
+largest_rank
+northernmost_rank
+southernmost_rank
 ```
 
 One latitude index supports both northernmost and southernmost scans.
@@ -489,17 +492,22 @@ Columns:
 ```text
 competition_id
 event_id
+start_date
 competitor_count
 fastest_single
 fastest_single_result_id
+fastest_single_rank
 fastest_average
 fastest_average_result_id
+fastest_average_rank
 winning_single
 winning_single_result_id
 winning_average
 winning_average_result_id
 podium_single_score
+podium_single_rank
 podium_average_score
+podium_average_rank
 ```
 
 Every displayed best or winner must retain its source `result_id`.
@@ -543,12 +551,27 @@ country_id
 event_id
 fastest_single
 fastest_single_result_id
+fastest_single_rank
 fastest_average
 fastest_average_result_id
+fastest_average_rank
 ```
 
 The first version must not merge aliases, metro areas, or identically named
 cities in different countries.
+
+### `entity_ranking_counts`
+
+Grain:
+
+```text
+ranking kind + event + result type
+```
+
+This small metadata projection stores totals for competition-result, podium,
+city, competition-size, and latitude leaderboards. It avoids counting a full
+leaderboard during page requests and is published with the same generation as
+the projections it describes.
 
 ## Cohorts and persisted lists
 
@@ -579,6 +602,36 @@ materialized cohort rankings after measurement.
 - Social previews read the first three rows from an existing ranked projection.
 - Offline snapshots and generation-aware caches identify one atomically
   published export generation.
+
+## Ranking API contract
+
+The semantic projections are exposed through resource routes:
+
+```text
+GET /api/people/search
+GET /api/rankings/people
+GET /api/rankings/results
+GET /api/rankings/metrics
+GET /api/rankings/competitions
+GET /api/rankings/podiums
+GET /api/rankings/cities
+```
+
+`/api/rankings` remains the compatibility endpoint for the current person
+ranking UI. New clients should search `persons` first and pass the selected
+`personId` to the appropriate ranking resource. Semantic projection requests
+must not apply name searches to projection tables.
+
+New endpoints return `entries`, `context`, bounded `page` metadata, `total`, and
+an export `snapshot`. They use a default limit of 50 and a maximum of 100.
+Deep result and entity pages use explicit value and stable-identifier cursor
+fields matching their browse indexes. Person and metric pages use their
+materialized positions internally but never serialize position or sub-rank
+fields in entries.
+
+All display joins occur after the projection page has been selected. Podium and
+metric matrices join only the selected page to their component rows, avoiding
+raw-result scans and per-row queries.
 
 ## Publication
 

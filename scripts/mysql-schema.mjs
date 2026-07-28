@@ -34,9 +34,10 @@ const projectionDefinitions = [
   { name: "person-metric-values", dependencies: ["person-event-rankings"], files: ["person_metric_values.sql"], tables: ["person_metric_values"] },
   { name: "person-metric-scores", dependencies: ["person-metric-values"], files: ["person_metric_scores.sql"], tables: ["person_metric_scores", "person_metric_counts"] },
   { name: "competition-podium-members", dependencies: ["result-facts"], files: ["competition_podium_members.sql"], tables: ["competition_podium_members"] },
-  { name: "competition-event-stats", dependencies: ["result-facts", "competition-podium-members"], files: ["competition_event_stats.sql"], tables: ["competition_event_stats"] },
   { name: "competition-stats", dependencies: ["result-facts"], files: ["competition_stats.sql"], tables: ["competition_stats"] },
+  { name: "competition-event-stats", dependencies: ["result-facts", "competition-podium-members", "competition-stats"], files: ["competition_event_stats.sql"], tables: ["competition_event_stats"] },
   { name: "city-event-stats", dependencies: ["result-facts"], files: ["city_event_stats.sql"], tables: ["city_event_stats"] },
+  { name: "entity-ranking-counts", dependencies: ["competition-event-stats", "competition-stats", "city-event-stats"], files: ["entity_ranking_counts.sql"], tables: ["entity_ranking_counts"] },
 ];
 
 export const SEMANTIC_PROJECTION_TABLES = projectionDefinitions.flatMap(({ tables }) => tables);

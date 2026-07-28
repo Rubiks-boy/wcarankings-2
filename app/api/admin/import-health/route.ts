@@ -50,6 +50,7 @@ const expectedProjectionTables = [
   "competition_event_stats",
   "competition_podium_members",
   "city_event_stats",
+  "entity_ranking_counts",
 ] as const;
 
 function serializeRun(run: ImportRunRow | null) {
@@ -114,7 +115,8 @@ export async function GET() {
             'competition_stats',
             'competition_event_stats',
             'competition_podium_members',
-            'city_event_stats'
+            'city_event_stats',
+            'entity_ranking_counts'
           )
       `),
     ]);

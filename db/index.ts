@@ -52,6 +52,7 @@ function getDatabaseOptions() {
     connectionLimit: Math.floor(positiveNumber(process.env.DATABASE_POOL_MAX, 5)),
     idleTimeout: 30_000,
     enableKeepAlive: true,
+    dateStrings: true,
   } as const;
 }
 

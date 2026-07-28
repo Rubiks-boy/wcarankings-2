@@ -12,17 +12,30 @@ WITH ordered AS (
   FROM result_facts facts
   INNER JOIN competitions comp ON comp.id = facts.competition_id
   WHERE comp.city_name <> ''
+), aggregates AS (
+  SELECT
+    city_name,
+    country_id,
+    event_id,
+    MIN(CASE WHEN best > 0 THEN best END) AS fastest_single,
+    MAX(CASE WHEN single_choice = 1 AND best > 0 THEN result_id END) AS fastest_single_result_id,
+    MIN(CASE WHEN average > 0 THEN average END) AS fastest_average,
+    MAX(CASE WHEN average_choice = 1 AND average > 0 THEN result_id END) AS fastest_average_result_id
+  FROM ordered
+  GROUP BY city_name, country_id, event_id
 )
-SELECT
-  city_name,
-  country_id,
-  event_id,
-  MIN(NULLIF(best, 0)) AS fastest_single,
-  MAX(CASE WHEN single_choice = 1 AND best > 0 THEN result_id END) AS fastest_single_result_id,
-  MIN(NULLIF(average, 0)) AS fastest_average,
-  MAX(CASE WHEN average_choice = 1 AND average > 0 THEN result_id END) AS fastest_average_result_id
-FROM ordered
-GROUP BY city_name, country_id, event_id;
+SELECT aggregates.*,
+  CASE WHEN fastest_single IS NOT NULL THEN
+    DENSE_RANK() OVER (
+      PARTITION BY event_id, fastest_single IS NULL ORDER BY fastest_single
+    )
+  END AS fastest_single_rank,
+  CASE WHEN fastest_average IS NOT NULL THEN
+    DENSE_RANK() OVER (
+      PARTITION BY event_id, fastest_average IS NULL ORDER BY fastest_average
+    )
+  END AS fastest_average_rank
+FROM aggregates;
 
 ALTER TABLE city_event_stats
   ADD PRIMARY KEY (city_name, country_id, event_id),

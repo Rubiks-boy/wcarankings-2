@@ -5,7 +5,7 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("implements the permanent registry and semantic projection grains", async () => {
-  const [schema, facts, people, results, metrics, scores, podiums, competitionEvents, cities, importer] =
+  const [schema, facts, people, results, metrics, scores, podiums, competitionEvents, competitions, cities, counts, importer] =
     await Promise.all([
       readFile(new URL("scripts/mysql-schema.mjs", root), "utf8"),
       readFile(new URL("sql/ranking-projections/result_facts.sql", root), "utf8"),
@@ -15,7 +15,9 @@ test("implements the permanent registry and semantic projection grains", async (
       readFile(new URL("sql/ranking-projections/person_metric_scores.sql", root), "utf8"),
       readFile(new URL("sql/ranking-projections/competition_podium_members.sql", root), "utf8"),
       readFile(new URL("sql/ranking-projections/competition_event_stats.sql", root), "utf8"),
+      readFile(new URL("sql/ranking-projections/competition_stats.sql", root), "utf8"),
       readFile(new URL("sql/ranking-projections/city_event_stats.sql", root), "utf8"),
+      readFile(new URL("sql/ranking-projections/entity_ranking_counts.sql", root), "utf8"),
       readFile(new URL("scripts/sync-wca-export.mjs", root), "utf8"),
     ]);
 
@@ -48,7 +50,16 @@ test("implements the permanent registry and semantic projection grains", async (
   assert.match(podiums, /is_final_round = 1/);
   assert.match(competitionEvents, /fastest_single_result_id/);
   assert.match(competitionEvents, /winning_average_result_id/);
+  assert.match(competitionEvents, /fastest_single_rank/);
+  assert.match(competitionEvents, /podium_average_rank/);
+  assert.match(competitionEvents, /CASE WHEN best > 0 THEN best END/);
+  assert.match(competitions, /northernmost_rank/);
+  assert.match(competitions, /southernmost_rank/);
+  assert.match(competitions, /NOT \(latitude = 0 AND longitude = 0\)/);
   assert.match(cities, /fastest_average_result_id/);
+  assert.match(cities, /fastest_average_rank/);
+  assert.match(counts, /CREATE TABLE entity_ranking_counts AS/);
+  assert.match(schema, /entity-ranking-counts/);
 });
 
 test("does not introduce entries or sub-rank vocabulary in new schemas", async () => {
@@ -61,12 +72,41 @@ test("does not introduce entries or sub-rank vocabulary in new schemas", async (
     "competition_event_stats.sql",
     "competition_stats.sql",
     "city_event_stats.sql",
+    "entity_ranking_counts.sql",
   ];
   const sources = await Promise.all(files.map((file) =>
     readFile(new URL(`sql/ranking-projections/${file}`, root), "utf8")));
   for (const source of sources) {
     assert.doesNotMatch(source, /_entries\b/);
     assert.doesNotMatch(source, /sub_rank/);
+  }
+});
+
+test("exposes bounded resource APIs without semantic ordering fields", async () => {
+  const [shared, people, results, metrics, entities, search] = await Promise.all([
+    readFile(new URL("lib/projection-api.ts", root), "utf8"),
+    readFile(new URL("lib/semantic-person-rankings.ts", root), "utf8"),
+    readFile(new URL("lib/semantic-result-rankings.ts", root), "utf8"),
+    readFile(new URL("lib/semantic-metric-rankings.ts", root), "utf8"),
+    readFile(new URL("lib/semantic-entity-rankings.ts", root), "utf8"),
+    readFile(new URL("lib/person-search.ts", root), "utf8"),
+  ]);
+
+  assert.match(shared, /MAX_PAGE_SIZE = 100/);
+  assert.match(shared, /ApiInputError/);
+  assert.match(people, /WITH page AS/);
+  assert.match(people, /FROM person_event_rankings ranking/);
+  assert.match(results, /FROM result_rankings ranking/);
+  assert.match(results, /afterCompetitionId/);
+  assert.match(metrics, /FROM person_metric_scores score/);
+  assert.match(metrics, /INNER JOIN person_metric_values value/);
+  assert.match(entities, /FROM competition_event_stats stats/);
+  assert.match(entities, /FROM city_event_stats stats/);
+  assert.match(search, /FROM persons person/);
+
+  for (const source of [people, results, metrics, entities]) {
+    assert.doesNotMatch(source, /FROM results\b/);
+    assert.doesNotMatch(source, /person_name LIKE/);
   }
 });
 

@@ -118,14 +118,8 @@ jobs:
             exit 1
           fi
 
-          for attempt in $(seq 1 30); do
-            curl --fail --silent --show-error \
-              --connect-timeout 5 --max-time 15 \
-              --resolve "${PUBLIC_HOST}:443:${SERVER_IP}" \
-              "https://${PUBLIC_HOST}/" >/dev/null && exit 0
-            sleep 2
-          done
-          exit 1
+          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
+            "for attempt in \$(seq 1 30); do curl --fail --silent --show-error --max-time 15 -H 'Host: ${PUBLIC_HOST}' http://127.0.0.1/ >/dev/null && exit 0; sleep 2; done; exit 1"
 
       - name: Roll back failed deployment
         if: failure()

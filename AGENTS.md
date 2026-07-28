@@ -1,0 +1,5 @@
+# Project UI conventions
+
+- On mobile widths up to 759px, keep the event, ranking-type, and region controls in one row when possible.
+- Those mobile controls must retain a minimum height of 40px as touch targets, even when their padding or font size changes.
+- Sub-rank is an internal ordering concept and must never be shown or exposed in the user-facing UI, labels, search results, or other copy.

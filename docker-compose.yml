@@ -1,0 +1,77 @@
+services:
+  db:
+    image: mariadb:11.8
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${MYSQL_DATABASE:?MYSQL_DATABASE must be set}
+      MARIADB_USER: ${MYSQL_USER:?MYSQL_USER must be set}
+      MARIADB_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set}
+      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    ports:
+      - "127.0.0.1:13307:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u$$MARIADB_USER -p$$MARIADB_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  flyway:
+    image: wcarankings-flyway:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.flyway
+    environment:
+      FLYWAY_URL: jdbc:mariadb://db:3306/${MYSQL_DATABASE:?MYSQL_DATABASE must be set}
+      FLYWAY_USER: ${MYSQL_USER:?MYSQL_USER must be set}
+      FLYWAY_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set}
+      FLYWAY_LOCATIONS: filesystem:/flyway/migrations
+      # Production predates Flyway; baseline its existing V1 metadata table once.
+      FLYWAY_BASELINE_ON_MIGRATE: "true"
+      FLYWAY_CONNECT_RETRIES: 60
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    image: wcarankings-app:latest
+    build: .
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-5}
+      WCA_EXPORT_CACHE_DIR: /var/cache/wcarankings
+      WCA_CLIENT_ID: ${WCA_CLIENT_ID:-}
+      WCA_CLIENT_SECRET: ${WCA_CLIENT_SECRET:-}
+      WCA_REDIRECT_URI: ${WCA_REDIRECT_URI:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - wca_export_cache:/var/cache/wcarankings
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  mariadb_data:
+  wca_export_cache:
+  caddy_data:
+  caddy_config:

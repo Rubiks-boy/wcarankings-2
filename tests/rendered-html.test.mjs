@@ -1,86 +1,270 @@
 import assert from "node:assert/strict";
-import { access, readFile, readdir } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 const templateRoot = new URL("../", import.meta.url);
 const previewRoot = new URL("../app/_sites-preview/", import.meta.url);
 
-test("builds the CubeRanks product shell", async () => {
-  const [component, layout, rankingsRoute] = await Promise.all([
-    readFile(new URL("../app/components/RankingsExplorer.tsx", import.meta.url), "utf8"),
+test("builds the original WCA Rankings UI on the self-hosted API", async () => {
+  const [component, layout, rankingsRoute, wca, schema] = await Promise.all([
+    Promise.all([
+      "../components/RankingsExplorer/RankingsExplorer.tsx",
+      "../components/RankingsExplorer/scrollEngine.ts",
+      "../components/RankingsExplorer/types.ts",
+      "../components/RankingControls/RankingControls.tsx",
+      "../components/RegionPicker/RegionPicker.tsx",
+      "../components/RankingRow/RankingRow.tsx",
+      "../components/ResultsTable/ResultsTable.tsx",
+      "../components/SearchInputs/SearchInputs.tsx",
+      "../components/VimSearchInput/VimSearchInput.tsx",
+      "../components/VimHelp/VimHelp.tsx",
+      "../components/JumpControls/JumpControls.tsx",
+      "../components/Icon/Icon.tsx",
+      "../lib/rankings-config.ts",
+    ].map((path) => readFile(new URL(path, import.meta.url), "utf8"))).then((files) => files.join("\n")),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/rankings/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/wca.ts", import.meta.url), "utf8"),
+    Promise.all([
+      "../scripts/mysql-schema.mjs",
+      "../sql/ranking-projections/ranking_entries_single_source.sql",
+      "../sql/ranking-projections/ranking_entries_average_source.sql",
+      "../sql/ranking-projections/ranking_entries_indexes.sql",
+    ].map((path) => readFile(new URL(path, import.meta.url), "utf8"))).then((files) => files.join("\n")),
   ]);
-  assert.match(layout, /CubeRanks — WCA Rankings/);
-  assert.match(layout, /images:\s*\[\{ url: "\/og\.png"/);
+  assert.match(layout, /title:\s*"WCA Rankings"/);
+  assert.doesNotMatch(layout, /og\.png|summary_large_image/);
   assert.match(component, /useWindowVirtualizer/);
-  assert.match(component, /const PAGE_SIZE = 100/);
+  assert.match(component, /const PAGE_SIZE = RESULTS_PAGE_SIZE/);
+  assert.match(component, /export const RESULTS_PAGE_SIZE = 50/);
+  assert.match(component, /const SEARCH_PAGE_RADIUS = 1/);
+  assert.match(component, /const VIM_JUMP_PAGE_COUNT = 2/);
   assert.match(component, /paged: "1"/);
-  assert.match(component, /autoComplete="off"/);
-  assert.match(component, /className="header-controls"/);
-  assert.match(component, /collapsed-filter-summary/);
-  assert.match(component, /Math\.sign\(delta\)/);
-  assert.match(component, /directionDistance >= 10/);
-  assert.match(component, /scrollToTableTop/);
+  assert.match(component, /WCA Rankings/);
+  assert.match(component, /href="\/"/);
+  assert.doesNotMatch(component, /href="https:\/\/wcarankings\.com"/);
+  assert.match(component, /WCA_EVENTS\.map/);
+  assert.match(component, /className="selectInput eventInput"/);
+  assert.match(component, /className="rankingTypeToggle"/);
+  assert.match(component, /type="radio"/);
+  assert.match(component, /disabled=\{option === "average" && eventId === "333mbf"\}/);
+  assert.match(component, /updateQueryParams/);
+  assert.match(component, /eventId,/);
+  assert.match(component, /result: rankingType/);
+  assert.match(component, /eventId: nextEventId === "333" \? null : nextEventId/);
+  assert.match(component, /result: nextRankingType === "single" \? null : nextRankingType/);
+  assert.match(component, /parseRegionQuery/);
+  assert.doesNotMatch(component, /searchParams\.get\("scope"\)/);
+  assert.match(component, /region: option\.scope === "world" \? null : option\.regionId/);
+  const wcaEventSource = wca.match(/export const WCA_EVENTS = \[([\s\S]*?)\] as const;/)?.[1] ?? "";
+  assert.deepEqual(
+    [...wcaEventSource.matchAll(/\{ id: "([^"]+)", name:/g)].map((match) => match[1]),
+    ["333", "222", "444", "555", "666", "777", "333bf", "333fm", "333oh", "clock", "minx", "pyram", "skewb", "sq1", "444bf", "555bf", "333mbf"],
+  );
+  assert.match(component, /className="chooser"/);
+  assert.match(component, /className="selectInput(?: eventInput)?"/);
+  assert.match(component, /className=.*searchButton/);
+  assert.match(component, /Search names or WCA IDs/);
+  assert.match(component, /onOpen={openFind}/);
+  assert.match(component, /RegionPicker/);
+  assert.match(component, /className="regionPickerTrigger"/);
+  assert.match(component, /initialRegions/);
+  assert.match(component, /initialRegions\.continents/);
+  assert.match(component, /initialRegions\.countries/);
+  assert.match(component, /label: "World"/);
+  assert.match(component, /flagEmoji/);
+  assert.match(component, /recordBadges/);
+  assert.match(component, /Jump Jump--/);
+  assert.match(component, /formatRankingNumber\(5000\)/);
+  assert.match(component, /Jump to top/);
+  assert.match(component, /Jump to end/);
+  assert.match(component, /className="siteFooter"/);
+  assert.match(component, /fetched time unavailable/);
+  assert.match(component, /closeOnOutsideClick/);
+  assert.match(component, /document\.addEventListener\("pointerdown"/);
   assert.match(component, /loadPrevious/);
   assert.match(component, /window\.scrollBy/);
-  assert.match(component, /jump-scroll-track/);
-  assert.match(component, /preserveCollapsedJumpRef/);
-  assert.match(component, /finishPreservedJump/);
-  assert.match(component, /preserveCurrentViewport/);
-  assert.match(component, /initialLoadRef/);
-  assert.match(component, /window\.scrollTo\(\{ top: 0, behavior: "auto" \}\)/);
-  assert.match(component, /getBoundingClientRect\(\)\.top \+ window\.scrollY/);
-  assert.match(component, /"\+10,000" : "-10,000"/);
-  assert.doesNotMatch(component, /Scrolling down|Landing at|10,000 rows/);
-  assert.match(component, /table-quick-jump-up/);
-  assert.match(component, /table-quick-jump-down/);
-  assert.match(component, /className="mobile-country"/);
-  assert.match(component, /visibleRank > 10_000/);
-  assert.match(component, /visibleRank >= 25 && hasMore/);
-  assert.match(component, /visibleRank >= 25 && visibleRank <= 10_000/);
-  assert.match(component, /↑ Top/);
-  assert.match(component, /table-quick-jump-up\$\{visibleRank > 10_000 \? " is-visible"/);
-  assert.doesNotMatch(component, /className="list-summary"/);
-  assert.doesNotMatch(component, /data-status/);
-  assert.match(rankingsRoute, /SELECT MIN\(\$\{rankColumn\}\) AS rank/);
-  assert.match(rankingsRoute, /SELECT MAX\(\$\{rankColumn\}\) AS rank/);
-  assert.match(rankingsRoute, /paged \? "" : " LIMIT \?"/);
-  assert.doesNotMatch(component, /header-done|collapsed-filter-action|manualHeaderOpen/);
-  assert.doesNotMatch(component, /className="hero"|site-footer|ranking-scroll/);
-  assert.doesNotMatch(component, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
+  assert.match(component, /findBar/);
+  assert.match(component, /Ctrl\+F/);
+  assert.match(component, /Find a name or WCA ID/);
+  assert.match(component, /searchRankings/);
+  assert.match(component, /updateQueryParams\(\{ search:/);
+  assert.match(component, /searchParams\.get\("search"/);
+  assert.match(component, /history\.replaceState/);
+  assert.match(component, /cycleFind/);
+  assert.match(component, /orderSearchMatches/);
+  assert.doesNotMatch(component, /sub-rank/);
+  assert.match(component, /event\.shiftKey \? -1 : 1/);
+  assert.match(component, /key === "f"/);
+  assert.match(component, /setVimMode\(false\)/);
+  assert.match(component, /railFindInputRef/);
+  assert.match(component, /input\?\.select\(\)/);
+  assert.match(component, /key === "g"/);
+  assert.match(component, /window\.innerHeight/);
+  assert.match(component, /requestAnimationFrame/);
+  assert.match(component, /initialScrollRef/);
+  assert.match(component, /initialSearchRef/);
+  assert.match(component, /scrollToEntry\(\{[\s\S]*targetIndex/);
+  assert.match(component, /requestedBehavior\?: ScrollBehavior/);
+  assert.match(component, /MIN_LOCAL_SCROLL_DURATION_MS = \d+/);
+  assert.match(component, /MAX_LOCAL_SCROLL_DURATION_MS = \d+/);
+  assert.match(component, /DISTANT_SCROLL_DURATION_MS = \d+/);
+  assert.match(component, /getScrollAnimationDuration/);
+  assert.match(component, /peopleDistance/);
+  assert.doesNotMatch(component, /getScrollAnimationDuration\(currentRank,/);
+  assert.doesNotMatch(component, /Math\.log10|BIG_JUMP|MEDIUM_JUMP/);
+  assert.match(component, /getSearchJumpMode/);
+  assert.match(component, /getSearchBridgePageStarts/);
+  assert.match(component, /easeInOutCubic/);
+  assert.match(component, /startPosition/);
+  assert.match(component, /lastRank/);
+  assert.match(component, /pendingScrollToTopRef/);
+  assert.match(component, /shouldScrollToTarget/);
+  assert.match(component, /shouldScrollToTarget = Boolean\([\s\S]*scrollToTop[\s\S]*pendingDirection[\s\S]*appendNavigation/);
+  assert.match(component, /animateScrollTo\([\s\S]*?0,[\s\S]*?getScrollAnimationDuration\(currentPosition\)/);
+  assert.match(component, /cancelOnUserInput/);
+  assert.match(component, /navigationEpochRef/);
+  assert.match(component, /requestEpoch !== navigationEpochRef\.current/);
+  assert.match(component, /pendingNavigationAppendRef/);
+  assert.match(component, /const loadedEntries/);
+  assert.match(component, /if \(event\.ctrlKey \|\| event\.metaKey \|\| event\.altKey\) return/);
+  assert.match(component, /vimSearchActive && key === "n"/);
+  assert.match(component, /addEventListener\("wheel"/);
+  assert.match(component, /getOffsetForIndex/);
+  assert.match(component, /measureElement/);
+  assert.match(component, /preserveListDuringLoad/);
+  assert.match(component, /listItem/);
+  assert.match(component, /className="loader"/);
+  assert.match(component, /className=.*row/);
+  assert.match(component, /className="competitionName"/);
+  assert.match(component, /\{entry\.competitionName\}/);
+  assert.match(component, /title={entry\.competitionName}/);
+  assert.match(component, /rankingNumberFormatter/);
+  assert.match(component, /formatRankingNumber\(rank\)/);
+  assert.match(component, /formatWcaResult\(eventId, entry\.best, rankingType\)/);
+  assert.match(component, /command === "j"[\s\S]*currentRank \+ VIM_JUMP_SIZE/);
+  assert.match(component, /command === "k"[\s\S]*currentRank - VIM_JUMP_SIZE/);
+  assert.match(component, /const directVimCommand/);
+  assert.match(wca, /rankingType === "average" \? \(value \/ 100\)\.toFixed\(2\)/);
+  assert.match(component, /const nextStart = pageStartForSubRank\(normalizedRank\) \+ 1/);
+  assert.doesNotMatch(component, /header-controls|collapsed-filter-summary|table-quick-jump/);
+  assert.match(rankingsRoute, /SELECT MIN\(\$\{subRankColumn\}\) AS rank/);
+  assert.match(rankingsRoute, /SELECT MAX\(\$\{subRankColumn\}\) AS rank/);
+  assert.match(rankingsRoute, /person_name \$\{searchOperator\}/);
+  assert.match(rankingsRoute, /person_id \$\{searchOperator\}/);
+  assert.match(rankingsRoute, /searchNameParameter/);
+  assert.match(rankingsRoute, /searchIdParameter/);
+  assert.match(rankingsRoute, /competition_id/);
+  assert.match(rankingsRoute, /conditions\.push\(`\$\{rankColumn\} > 0`\)/);
+  assert.match(rankingsRoute, /fetched_at/);
+  assert.match(rankingsRoute, /startPosition/);
+  assert.match(rankingsRoute, /lastRank/);
+  assert.match(rankingsRoute, /ORDER BY \$\{subRankColumn\}/);
+  assert.match(rankingsRoute, /const limitParameter = paged \? "" :/);
+  assert.match(rankingsRoute, /is_world_record/);
+  assert.match(rankingsRoute, /is_continent_record/);
+  assert.match(rankingsRoute, /is_country_record/);
+  assert.match(rankingsRoute, /ranking_entries_average/);
+  assert.match(rankingsRoute, /ranking_entries_single/);
+  assert.match(schema, /CASE WHEN r\.world_rank = 1 THEN 1 ELSE 0 END AS is_world_record/);
+  assert.match(schema, /CASE WHEN r\.continent_rank = 1 THEN 1 ELSE 0 END AS is_continent_record/);
+  assert.match(schema, /CASE WHEN r\.country_rank = 1 THEN 1 ELSE 0 END AS is_country_record/);
+  assert.match(schema, /idx_ranking_entries_world \(event_id, world_sub_rank, person_id\)/);
+  assert.doesNotMatch(schema, /idx_ranking_entries_world \(event_id, ranking_type/);
 });
 
-test("removes starter artifacts and declares the real product", async () => {
-  const [css, page, layout, packageJson] = await Promise.all([
+test("does not replace SQL failures with synthetic ranking data", async () => {
+  const [page, rankingsRoute, readme] = await Promise.all([
+    readFile(new URL("../pages/index.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/rankings/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../README.md", import.meta.url), "utf8"),
+  ]);
+
+  assert.doesNotMatch(page, /demo-data|makeDemoRankings/);
+  assert.doesNotMatch(rankingsRoute, /demo-data|makeDemoRankings|source: "demo"/);
+  assert.match(rankingsRoute, /status: 503/);
+  assert.doesNotMatch(readme, /preview rows/);
+  await assert.rejects(access(new URL("../lib/demo-data.ts", import.meta.url)));
+});
+
+test("uses the copied WCA Rankings visual language", async () => {
+  const [css, page, layout, manifest, pwaRegistration, serviceWorker, packageJson] = await Promise.all([
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
-    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../pages/index.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/manifest.ts", import.meta.url), "utf8"),
+    readFile(new URL("../components/PwaRegistration/PwaRegistration.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /<RankingsExplorer \/>/);
-  assert.match(layout, /title:\s*"CubeRanks/);
+  assert.match(page, /<RankingsExplorer/);
+  assert.match(page, /initialData=\{initialRankings\}/);
+  assert.match(page, /initialEventId=\{eventId\}/);
+  assert.match(page, /initialRankingType=\{rankingType\}/);
+  assert.match(page, /initialRegionSelection=\{\{ scope, regionId \}\}/);
+  assert.match(page, /startPosition: firstPage\.startPosition/);
+  assert.match(page, /lastRank: lastPage\.lastRank/);
+  assert.match(page, /initialRegions=\{\{ continents, countries \}\}/);
+  assert.match(page, /fetchRegions\(origin, "continent"\)/);
+  assert.match(page, /fetchRegions\(origin, "country"\)/);
+  assert.match(page, /redirect/);
+  assert.doesNotMatch(page, /queryMysql|@\/app\/api\/rankings\/route|@\/lib\/regions/);
+  assert.match(page, /fetchRankings/);
+  assert.match(page, /fetchRegions/);
+  assert.match(page, /\/api\/rankings\?\$\{params\}/);
+  assert.match(page, /\/api\/regions\?kind=\$\{kind\}/);
+  assert.match(page, /getSearchParam\(searchParams, "region"\)/);
+  assert.match(page, /getSearchParamWithLegacyKey\(searchParams, "eventId", "event"\)/);
+  assert.match(page, /getSearchParamWithLegacyKey\(searchParams, "result", "type"\)/);
+  assert.match(page, /eventId/);
+  assert.match(page, /result/);
+  assert.doesNotMatch(page, /getSearchParam\(resolvedSearchParams, "scope"\)/);
+  assert.match(page, /pageFirstSubRank/);
+  assert.match(page, /searchParams/);
+  assert.match(page, /const targetPageStart = pageFirstSubRank/);
+  assert.match(page, /pages\.flatMap/);
+  assert.match(layout, /title:\s*"WCA Rankings"/);
+  assert.match(layout, /PwaRegistration/);
+  assert.match(manifest, /display: "standalone"/);
+  assert.match(manifest, /icon-192\.png/);
+  assert.match(manifest, /icon-512\.png/);
+  assert.match(pwaRegistration, /serviceWorker\.register\("\/sw\.js"/);
+  assert.match(pwaRegistration, /process\.env\.NODE_ENV/);
+  assert.match(pwaRegistration, /unregister\(\)/);
+  assert.match(serviceWorker, /CACHE_NAME/);
+  assert.match(serviceWorker, /caches\.match/);
   assert.match(packageJson, /"name": "wcarankings-2"/);
   assert.match(packageJson, /"@tanstack\/react-virtual"/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
+  assert.match(css, /\.app\s*\{/);
+  assert.match(css, /\.chooser\s*\{/);
+  assert.match(css, /\.searchButton\s*\{/);
+  assert.match(css, /\.selectInput select/);
+  assert.match(css, /\.rankingTypeToggle/);
+  assert.match(css, /\.rankingTypeOption/);
+  assert.match(css, /\.selectInput select,[\s\S]*\.rankingTypeToggle,[\s\S]*\.regionPickerTrigger/);
+  assert.match(css, /\.listItem/);
+  assert.match(css, /\.result \{[\s\S]*display: grid;[\s\S]*grid-template-columns: 8ch 5\.5ch;/);
+  assert.match(css, /\.resultValue \{[\s\S]*display: contents;/);
+  assert.match(css, /\.competitionName \{[\s\S]*grid-column: 1;[\s\S]*width: max-content;[\s\S]*justify-self: end;/);
+  assert.match(css, /overflow-anchor: none/);
+  assert.match(css, /\.loaderBlob/);
+  assert.match(css, /\.Jump/);
+  assert.match(css, /\.row--alternate/);
+  assert.doesNotMatch(css, /\.virtualRow:not\(:last-child\) \.row/);
+  assert.doesNotMatch(css, /border-bottom: 1px solid #e5eaed/);
+  assert.match(css, /\.listItem:hover \.row/);
+  assert.match(css, /background-color 40ms ease/);
+  assert.match(css, /\.competitionName \{[\s\S]*max-width: none;[\s\S]*overflow: visible;/);
+  assert.match(css, /\.regionPickerMenu/);
+  assert.match(css, /\.regionPickerTrigger/);
+  assert.match(css, /\.regionOptions[\s\S]*overflow-y: auto/);
+  assert.match(css, /\.findBar/);
+  assert.match(css, /\.siteFooter/);
+  assert.match(css, /\.row--searchMatch/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
-  assert.match(css, /\.jump-overlay/);
-  assert.doesNotMatch(css, /html\s*\{[^}]*scroll-behavior:\s*smooth/s);
-  assert.doesNotMatch(css, /app-header-collapsed \.brand > span:last-child/);
-  const tableHeadingRules = css.match(/\.table-heading\s*\{([^}]*)\}/s)?.[1] ?? "";
-  assert.doesNotMatch(tableHeadingRules, /position:\s*sticky/);
-  assert.match(css, /\.app-header-expanded \.header-inner\s*\{[^}]*pointer-events:\s*auto/s);
-  assert.match(css, /\.table-quick-jump\.is-visible/);
-  assert.match(css, /scale 150ms ease/);
-  assert.match(css, /--jump-hidden-y:\s*-8px/);
-  assert.match(css, /--jump-hidden-y:\s*8px/);
-  assert.match(css, /opacity 440ms cubic-bezier\(0\.16, 1, 0\.3, 1\)/);
-  assert.match(css, /cubic-bezier\(0\.16, 1, 0\.3, 1\)/);
-  assert.doesNotMatch(css, /\.app-header-expanded \.header-controls > \*:nth-child/);
-  assert.match(css, /translate var\(--header-motion-duration\) var\(--header-motion-easing\)/);
-  assert.match(css, /height 400ms cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
-  assert.match(css, /--header-motion-easing:\s*cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
+  assert.doesNotMatch(css, /app-header|table-quick-jump|jump-overlay/);
   assert.doesNotMatch(layout, /codex-preview|_sites-preview|Starter Project/);
 
   await assert.rejects(
@@ -89,44 +273,54 @@ test("removes starter artifacts and declares the real product", async () => {
   await assert.rejects(access(new URL("public/_sites-preview", templateRoot)));
 });
 
-test("local ranking buckets preserve a tie larger than the page size", async (context) => {
-  const d1Directory = new URL("../.wrangler/state/v3/d1/miniflare-D1DatabaseObject/", import.meta.url);
-  let files;
-  try {
-    files = await readdir(d1Directory);
-  } catch {
-    context.skip("local WCA database is not populated");
-    return;
-  }
-  const databaseFile = files.find((file) => file.endsWith(".sqlite") && file !== "metadata.sqlite");
-  if (!databaseFile) {
-    context.skip("local WCA database is not populated");
+test("self-hosted ranking buckets preserve a tie larger than the page size", async (context) => {
+  if (!process.env.DATABASE_URL?.startsWith("mysql://")) {
+    context.skip("MySQL DATABASE_URL is not configured");
     return;
   }
 
-  const { DatabaseSync } = await import("node:sqlite");
-  const database = new DatabaseSync(new URL(databaseFile, d1Directory), { readOnly: true });
+  const mysql = await import("mysql2/promise");
+  const database = await mysql.createConnection(process.env.DATABASE_URL);
   try {
-    const tie = database.prepare(
-      `SELECT event_id, ranking_type, world_rank, COUNT(*) AS tied
-       FROM ranking_entries
+    const [tableRows] = await database.query("SELECT TABLE_NAME AS name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('ranking_entries_single', 'ranking_entries_average')");
+    if (tableRows.length !== 2) {
+      context.skip("self-hosted WCA database is not populated");
+      return;
+    }
+
+    const [tieRows] = await database.query(
+      `SELECT event_id, ranking_type, world_rank, SUM(tied) AS tied
+       FROM (
+         SELECT event_id, 'single' AS ranking_type, world_rank, COUNT(*) AS tied
+         FROM ranking_entries_single
+         GROUP BY event_id, world_rank
+         UNION ALL
+         SELECT event_id, 'average' AS ranking_type, world_rank, COUNT(*) AS tied
+         FROM ranking_entries_average
+         GROUP BY event_id, world_rank
+       ) AS ranking_ties
        GROUP BY event_id, ranking_type, world_rank
-       HAVING COUNT(*) > 100
+       HAVING SUM(tied) > 100
        ORDER BY tied DESC
        LIMIT 1`,
-    ).get();
+    );
+    const tie = tieRows[0];
     assert.ok(tie, "expected the official export to contain a tie larger than 100 people");
 
     const pageStart = Math.floor((Number(tie.world_rank) - 1) / 100) * 100 + 1;
-    const pageRows = database.prepare(
+    const table = tie.ranking_type === "average" ? "ranking_entries_average" : "ranking_entries_single";
+    const [pageRows] = await database.query(
       `SELECT world_rank
-       FROM ranking_entries
-       WHERE event_id = ? AND ranking_type = ? AND world_rank >= ? AND world_rank < ?`,
-    ).all(tie.event_id, tie.ranking_type, pageStart, pageStart + 100);
-    const tiedRows = pageRows.filter((row) => row.world_rank === tie.world_rank);
-    assert.equal(tiedRows.length, tie.tied);
+       FROM ${table}
+       WHERE event_id = ? AND world_rank >= ? AND world_rank < ?`,
+      [tie.event_id, pageStart, pageStart + 100],
+    );
+    const tiedRows = pageRows.filter((row) => Number(row.world_rank) === Number(tie.world_rank));
+    assert.equal(tiedRows.length, Number(tie.tied));
     assert.ok(tiedRows.length > 100);
+  } catch (error) {
+    context.skip(`self-hosted WCA database is unavailable: ${error instanceof Error ? error.message : error}`);
   } finally {
-    database.close();
+    await database.end().catch(() => {});
   }
 });

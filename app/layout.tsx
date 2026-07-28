@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
+import { PwaRegistration } from "@/components/PwaRegistration/PwaRegistration";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -21,24 +22,32 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     metadataBase,
-    title: "CubeRanks — WCA Rankings",
-    description: "Browse official World Cube Association rankings by event, result type, and region.",
-    icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
+    title: "WCA Rankings",
+    description: "Browse official World Cube Association rankings by event and result type.",
+    manifest: "/manifest.webmanifest",
+    appleWebApp: {
+      capable: true,
+      title: "WCA Rankings",
+      statusBarStyle: "default",
+    },
+    icons: { icon: "/favicon.svg", shortcut: "/favicon.svg", apple: "/icon-192.png" },
     openGraph: {
-      title: "CubeRanks — WCA Rankings",
-      description: "Browse every official WCA ranking with fast filters, infinite scroll, and direct competitor jumps.",
+      title: "WCA Rankings",
+      description: "Browse official World Cube Association rankings.",
       type: "website",
       url: metadataBase,
-      images: [{ url: "/og.png", width: 1731, height: 909, alt: "CubeRanks WCA rankings" }],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: "CubeRanks — WCA Rankings",
-      description: "Browse official WCA rankings by event, result type, and region.",
-      images: ["/og.png"],
     },
   };
 }
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fffcff" },
+    { media: "(prefers-color-scheme: dark)", color: "#121417" },
+  ],
+};
 
 export default function RootLayout({
   children,
@@ -50,6 +59,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <PwaRegistration />
         {children}
       </body>
     </html>

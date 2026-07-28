@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS export_metadata (
+  `key` VARCHAR(64) NOT NULL PRIMARY KEY,
+  `value` TEXT NOT NULL
+);

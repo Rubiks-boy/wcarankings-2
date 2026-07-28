@@ -6,27 +6,12 @@ SELECT
   r.person_country_id,
   COALESCE(country.continent_id, '') AS person_continent_id,
   r.competition_id,
-  comp.country_id AS competition_country_id,
-  comp.city_name AS competition_city_name,
   STR_TO_DATE(CONCAT(comp.year, '-', LPAD(comp.month, 2, '0'), '-', LPAD(comp.day, 2, '0')), '%Y-%m-%d') AS competition_start_date,
-  STR_TO_DATE(CONCAT(comp.end_year, '-', LPAD(comp.end_month, 2, '0'), '-', LPAD(comp.end_day, 2, '0')), '%Y-%m-%d') AS competition_end_date,
-  comp.year AS competition_year,
-  DATE_SUB(
-    STR_TO_DATE(CONCAT(comp.year, '-', LPAD(comp.month, 2, '0'), '-', LPAD(comp.day, 2, '0')), '%Y-%m-%d'),
-    INTERVAL WEEKDAY(STR_TO_DATE(CONCAT(comp.year, '-', LPAD(comp.month, 2, '0'), '-', LPAD(comp.day, 2, '0')), '%Y-%m-%d')) DAY
-  ) AS competition_week_start,
   r.round_type_id,
-  round_type.rank AS round_rank,
   COALESCE(round_type.final, 0) AS is_final_round,
-  r.format_id,
   r.pos AS position,
   r.best,
   r.average,
-  CAST(NULL AS SIGNED) AS value1,
-  CAST(NULL AS SIGNED) AS value2,
-  CAST(NULL AS SIGNED) AS value3,
-  CAST(NULL AS SIGNED) AS value4,
-  CAST(NULL AS SIGNED) AS value5,
   COALESCE(format.expected_solve_count, 0) AS attempt_count,
   COALESCE(r.regional_single_record, '') AS regional_single_record,
   COALESCE(r.regional_average_record, '') AS regional_average_record
@@ -40,5 +25,11 @@ ALTER TABLE result_facts
   ADD PRIMARY KEY (result_id),
   ADD INDEX idx_result_facts_person_event_date (person_id, event_id, competition_start_date, result_id),
   ADD INDEX idx_result_facts_competition_event (competition_id, event_id, result_id),
-  ADD INDEX idx_result_facts_event_single (event_id, best, result_id),
-  ADD INDEX idx_result_facts_event_average (event_id, average, result_id);
+  ADD INDEX idx_result_facts_single_ranking_cover (
+    event_id, best, competition_start_date, competition_id, person_id,
+    result_id, round_type_id, person_country_id, person_continent_id
+  ),
+  ADD INDEX idx_result_facts_average_ranking_cover (
+    event_id, average, competition_start_date, competition_id, person_id,
+    result_id, round_type_id, person_country_id, person_continent_id
+  );

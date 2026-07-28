@@ -29,14 +29,19 @@ test("implements the permanent registry and semantic projection grains", async (
 
   assert.match(facts, /CREATE TABLE result_facts AS/);
   assert.match(facts, /FROM results r/);
-  assert.match(facts, /CAST\(NULL AS SIGNED\) AS value1/);
+  assert.doesNotMatch(facts, /AS value1/);
   assert.match(facts, /format\.expected_solve_count/);
+  assert.match(facts, /idx_result_facts_single_ranking_cover/);
+  assert.match(facts, /idx_result_facts_average_ranking_cover/);
   assert.match(people, /CREATE TABLE person_event_rankings AS/);
   assert.match(people, /world_position/);
   assert.match(results, /CREATE TABLE result_rankings AS/);
   assert.match(results, /competition_start_date/);
+  assert.doesNotMatch(results, /ROW_NUMBER\(\)/);
   assert.match(metrics, /metric_version/);
   assert.match(metrics, /event_set_version/);
+  assert.match(metrics, /sum_of_ranks_value/);
+  assert.match(metrics, /kinch_value/);
   assert.match(scores, /required_coverage/);
   assert.match(scores, /CREATE TABLE person_metric_counts AS/);
   assert.match(podiums, /podium_position/);

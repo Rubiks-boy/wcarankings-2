@@ -107,33 +107,23 @@ person_id
 person_country_id
 person_continent_id
 competition_id
-competition_country_id
-competition_city_name
 competition_start_date
-competition_end_date
-competition_year
-competition_week_start
 round_type_id
-round_rank
 is_final_round
-format_id
 position
 best
 average
-value1
-value2
-value3
-value4
-value5
 attempt_count
 regional_single_record
 regional_average_record
 ```
 
 The current public export v2 omits the five attempt values from `results`.
-Until the export exposes them, `value1` through `value5` are nullable
-placeholders and `attempt_count` uses `formats.expected_solve_count`. Consumers
-must not treat the absent values as failed or unattempted solves.
+They are therefore not repeated as always-NULL columns in `result_facts`;
+`attempt_count` uses `formats.expected_solve_count`. Consumers must not treat
+the absent source values as failed or unattempted solves. Competition city,
+country, end-date, year, and week attributes remain in `competitions` until a
+current projection needs to repeat them.
 
 This should be the only new general-purpose downstream layer that directly
 scans raw `results`. Event-aware validity and comparison semantics should be
@@ -145,9 +135,17 @@ Indexes should initially cover:
 PRIMARY KEY (result_id)
 (person_id, event_id, competition_start_date, result_id)
 (competition_id, event_id, result_id)
-(event_id, best, result_id)
-(event_id, average, result_id)
+(event_id, best, competition_start_date, competition_id, person_id, result_id, round_type_id, person_country_id, person_continent_id)
+(event_id, average, competition_start_date, competition_id, person_id, result_id, round_type_id, person_country_id, person_continent_id)
 ```
+
+The two wider ranking-cover indexes are benchmark candidates for
+`result_rankings`. They match its World ordering and cover the scope and round
+columns selected while calculating all six window positions. Retain them only
+if the full-import benchmark improvement justifies their build time and storage.
+Their `(event_id, result value)` prefixes also replace the narrower event/value
+indexes; do not maintain both pairs unless another measured query requires the
+different tie ordering.
 
 Yearly indexes are intentionally absent while time-based projections are
 planned. Add them only if benchmarks show that the yearly projections benefit
@@ -242,11 +240,8 @@ result_value
 country_id
 continent_id
 world_rank
-world_position
 continent_rank
-continent_position
 country_rank
-country_position
 ```
 
 As with person rankings, physical Single and Average tables are acceptable:
@@ -265,6 +260,11 @@ competition_id
 person_id
 result_id
 ```
+
+Result rankings keyset-page directly on that tuple. They do not store separate
+World, continent, or country position columns; removing those three
+`ROW_NUMBER()` windows materially reduces generation cost while preserving the
+public tied ranks.
 
 ### `result_ranking_counts`
 
@@ -291,13 +291,12 @@ count
 Grain:
 
 ```text
-metric + metric version + result type + scope + region + person + event
+metric version + event-set version + result type + scope + region + person + event
 ```
 
 Columns:
 
 ```text
-metric
 metric_version
 event_set_version
 result_type
@@ -308,8 +307,16 @@ event_id
 event_rank
 personal_result
 reference_result
-metric_value
+sum_of_ranks_value
+kinch_value
 ```
+
+The shared input and reference values are stored once per scope/person/event.
+Metric values use separate columns rather than duplicating the row once per
+metric. This keeps the components auditable while halving the largest metric
+table. Its primary key already supports person-detail lookup, so no duplicate
+secondary index is maintained. Metric scores aggregate both value columns in
+one pass before expanding the much smaller person totals by metric.
 
 Initial metrics:
 
@@ -579,7 +586,8 @@ These decisions affect future migrations or planned projection layers; they do
 not make the current contract provisional:
 
 1. When compatibility `_entries` tables can be retired after consumers move to
-   unified semantic ranking tables.
+   unified semantic ranking tables. `result_entries_single` is the highest
+   priority because it repeats millions of result rows and a full index set.
 2. Whether a future metric version should use different event sets or Kinch
    aggregation semantics.
 3. Whether yearly source indexes justify their storage cost.

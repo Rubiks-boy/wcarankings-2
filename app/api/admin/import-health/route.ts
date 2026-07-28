@@ -1,5 +1,5 @@
 import { query } from "@/db";
-import { getImportHealthStatus } from "@/lib/import-health";
+import { getImportHealthStatus, getMigrationHealthStatus } from "@/lib/import-health";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +21,16 @@ type ImportRunRow = {
   event_count: number | null;
   region_count: number | null;
   aggregate_count: number | null;
+};
+
+type MigrationRow = {
+  installed_rank: number;
+  version: string | null;
+  description: string;
+  script: string;
+  installed_on: string;
+  execution_time: number;
+  success: number | boolean;
 };
 
 function serializeRun(run: ImportRunRow | null) {
@@ -48,13 +58,43 @@ function serializeRun(run: ImportRunRow | null) {
   };
 }
 
+async function getMigrationHealth() {
+  try {
+    const migrations = await query<MigrationRow>(`
+      SELECT installed_rank, version, description, script, installed_on, execution_time, success
+      FROM flyway_schema_history
+      ORDER BY installed_rank DESC
+      LIMIT 1
+    `);
+    const latest = migrations.rows[0] ?? null;
+    return {
+      status: getMigrationHealthStatus(latest),
+      latest: latest ? {
+        installedRank: Number(latest.installed_rank),
+        version: latest.version,
+        description: latest.description,
+        script: latest.script,
+        installedOn: latest.installed_on,
+        executionTimeMs: Number(latest.execution_time),
+        success: Boolean(latest.success),
+      } : null,
+    };
+  } catch {
+    return {
+      status: "unavailable" as const,
+      latest: null,
+    };
+  }
+}
+
 export async function GET() {
   try {
-    const [metadata, latest, successful, failures] = await Promise.all([
+    const [metadata, latest, successful, failures, migrations] = await Promise.all([
       query<{ key: string; value: string }>("SELECT `key`, value FROM export_metadata WHERE `key` IN ('export_date', 'export_format_version', 'fetched_at')"),
       query<ImportRunRow>("SELECT * FROM import_runs ORDER BY id DESC LIMIT 1"),
       query<ImportRunRow>("SELECT * FROM import_runs WHERE status = 'succeeded' ORDER BY id DESC LIMIT 1"),
       query<ImportRunRow>("SELECT * FROM import_runs WHERE status = 'failed' ORDER BY id DESC LIMIT 5"),
+      getMigrationHealth(),
     ]);
     const currentExport = Object.fromEntries(metadata.rows.map((row) => [row.key, row.value]));
     const latestRun = latest.rows[0] ?? null;
@@ -68,9 +108,10 @@ export async function GET() {
       latestRun: serializeRun(latestRun),
       lastSuccessfulRun: serializeRun(successful.rows[0] ?? null),
       recentFailures: failures.rows.map(serializeRun),
+      migrations,
       diagnostics: latestRun
-        ? `import_run_id=${latestRun.id}; status=${latestRun.status}; projection_swap=${latestRun.projection_swap_status}`
-        : "No import run has been recorded.",
+        ? `import_run_id=${latestRun.id}; status=${latestRun.status}; projection_swap=${latestRun.projection_swap_status}; migration=${migrations.status}; migration_version=${migrations.latest?.version ?? "none"}`
+        : `No import run has been recorded. migration=${migrations.status}; migration_version=${migrations.latest?.version ?? "none"}`,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return Response.json({
@@ -79,6 +120,10 @@ export async function GET() {
       latestRun: null,
       lastSuccessfulRun: null,
       recentFailures: [],
+      migrations: {
+        status: "unavailable",
+        latest: null,
+      },
       diagnostics: "Import health is unavailable because the application database could not be queried.",
     }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }

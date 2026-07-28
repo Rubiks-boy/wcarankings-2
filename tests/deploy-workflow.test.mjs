@@ -20,3 +20,15 @@ test("builds deploy images from main when PR images are unavailable", () => {
   );
   assert.match(workflow, /V3__projection_build_timing\.sql/);
 });
+
+test("reclaims obsolete deployment images before loading a new release", () => {
+  assert.match(workflow, /protected_images=\$\(/);
+  assert.match(workflow, /docker ps -q \| xargs -r docker inspect/);
+  assert.match(
+    workflow,
+    /docker image inspect wcarankings-app:latest wcarankings-app:previous wcarankings-flyway:latest/,
+  );
+  assert.match(workflow, /wcarankings-app:\*\|wcarankings-flyway:\*/);
+  assert.match(workflow, /docker image rm "\$image_ref" \|\| true/);
+  assert.match(workflow, /docker image prune -f/);
+});

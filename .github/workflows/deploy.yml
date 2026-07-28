@@ -114,6 +114,23 @@ jobs:
           set -o pipefail
           ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
             'cd /srv/wcarankings && if docker image inspect wcarankings-app:latest >/dev/null 2>&1; then docker tag wcarankings-app:latest wcarankings-app:previous; fi'
+          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
+            'set -eu
+            protected_images=$( {
+              docker ps -q | xargs -r docker inspect --format "{{.Image}}"
+              docker image inspect wcarankings-app:latest wcarankings-app:previous wcarankings-flyway:latest --format "{{.Id}}" 2>/dev/null || true
+            } | sort -u )
+            docker images --format "{{.Repository}}:{{.Tag}} {{.ID}}" | while IFS=" " read -r image_ref image_id; do
+              case "$image_ref" in
+                wcarankings-app:*|wcarankings-flyway:*) ;;
+                *) continue ;;
+              esac
+              case " $protected_images " in
+                *" $image_id "*) continue ;;
+              esac
+              docker image rm "$image_ref" || true
+            done
+            docker image prune -f'
           docker save "wcarankings-app:${GITHUB_SHA}" "wcarankings-flyway:${GITHUB_SHA}" \
             | gzip -1 \
             | ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \

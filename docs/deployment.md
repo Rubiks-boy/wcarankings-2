@@ -96,7 +96,9 @@ The deployment workflow does the following:
 3. Uses repository-configured SSH credentials and host verification to establish
    non-interactive access to the production host.
 4. Copies `docker-compose.yml` and `ops/Caddyfile` to the deployment directory.
-5. Preserves the current image as `wcarankings-app:previous`.
+5. Preserves the current image as `wcarankings-app:previous`, then removes
+   obsolete application and Flyway image tags while retaining images used by
+   running containers and the rollback image.
 6. Streams the new image directly to the server with
    `docker save | gzip | ssh ... 'gzip -d | docker load'`. There is no container
    registry involved.
@@ -165,6 +167,6 @@ current ranking projections before replacing the app container. If the projectio
 check fails, it prints the projection-only rebuild command and leaves traffic on the
 current app. The previous image remains available until health checks succeed. MariaDB,
 the export cache, Caddy certificates, and their data survive because they are stored
-in named Docker volumes. A deployment fails before contacting the server if no
-matching pull-request image exists, which prevents direct unverified pushes to
-`main` from being deployed.
+in named Docker volumes. Deployments normally use images verified by the matching
+pull request; when those images are unavailable, the workflow builds the merged
+`main` tree before deploying it.

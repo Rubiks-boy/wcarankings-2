@@ -120,6 +120,41 @@ select {
   text-decoration: none;
 }
 
+.stickyRankingsRail {
+  --rail-scroll-progress: 0;
+
+  position: sticky;
+  z-index: 10;
+  top: 1em;
+  display: flex;
+  width: min(100%, 1000px);
+  margin: 0 auto 1em;
+  justify-content: center;
+}
+
+.stickyRankingsRail > .Jump {
+  background: var(--surface);
+  box-shadow:
+    0 calc(1px * (1 - var(--rail-scroll-progress)))
+      calc(4px * (1 - var(--rail-scroll-progress))) var(--shadow-soft),
+    0 calc(4px * var(--rail-scroll-progress))
+      calc(16px * var(--rail-scroll-progress)) var(--shadow);
+  transform: translateY(calc(-0.25em * var(--rail-scroll-progress)));
+  transition: none;
+}
+
+.stickyRankingsRail .findBar--rail {
+  background: var(--surface);
+}
+
+.debugScrollY {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75em;
+  font-variant-numeric: tabular-nums;
+}
+
 .themeToggle {
   display: inline-grid;
   width: 2.5em;

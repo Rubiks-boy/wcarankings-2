@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from "react";
 import {
   animateScrollTo,
@@ -38,14 +39,9 @@ import {
   notifyAnalyticsNavigation,
   trackGoogleAnalyticsEvent,
 } from "@/lib/google-analytics";
-import {
-  JumpDownControls,
-  JumpUpControls,
-} from "../JumpControls/JumpControls";
+import { RankingsJumpRail, RankingsPagerRail } from "../JumpControls/JumpControls";
 import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVisibility";
-import { RankingControls } from "../RankingControls/RankingControls";
 import { ResultsTable } from "../ResultsTable/ResultsTable";
-import { SearchInputs } from "../SearchInputs/SearchInputs";
 import { ThemeToggle } from "../ThemeToggle/ThemeToggle";
 import { VimHelp } from "../VimHelp/VimHelp";
 import { VimSearchInput } from "../VimSearchInput/VimSearchInput";
@@ -66,6 +62,7 @@ const VIM_JUMP_PAGE_COUNT = 2;
 const VIM_JUMP_SIZE = PAGE_SIZE * VIM_JUMP_PAGE_COUNT;
 const ROW_HEIGHT = 65.45;
 const RAIL_REVEAL_DISTANCE = ROW_HEIGHT * 1.5;
+const TOP_RAIL_TRANSFORM_DISTANCE = ROW_HEIGHT * 2;
 const END_MARKER_PEEK = ROW_HEIGHT + 40;
 
 type NetworkInformationLike = {
@@ -116,15 +113,6 @@ type SearchLayoutAnchor = {
   requestEpoch: number;
   personId: string;
   viewportTop: number;
-};
-
-type SearchSurface = "header" | "rail";
-
-type PendingSearchFocusHandoff = {
-  target: SearchSurface;
-  selectionStart: number | null;
-  selectionEnd: number | null;
-  selectionDirection: "forward" | "backward" | "none" | null;
 };
 
 const CLIENT_PAGE_CACHE_CAPACITY_333 = 512;
@@ -537,26 +525,17 @@ export function RankingsExplorer({
   );
   const [jumpUpArmed, setJumpUpArmed] = useState(false);
   const [jumpDownArmed, setJumpDownArmed] = useState(false);
-  const [tableReachedTop, setTableReachedTop] = useState(false);
   const [topRailProgress, setTopRailProgress] = useState(0);
   const [bottomRailProgress, setBottomRailProgress] = useState(0);
+  const [debugScrollY, setDebugScrollY] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
-  const headerFindInputRef = useRef<HTMLInputElement>(null);
+  const stickyRankingsRailRef = useRef<HTMLDivElement>(null);
   const railFindInputRef = useRef<HTMLInputElement>(null);
-  const setHeaderFindInputRef = useCallback((input: HTMLInputElement | null) => {
-    headerFindInputRef.current = input;
-  }, []);
   const setRailFindInputRef = useCallback((input: HTMLInputElement | null) => {
     railFindInputRef.current = input;
   }, []);
-  const tableReachedTopRef = useRef(false);
   const topRailProgressRef = useRef(0);
   const bottomRailProgressRef = useRef(0);
-  const pendingSearchFocusHandoffRef =
-    useRef<PendingSearchFocusHandoff | null>(null);
-  const searchCompositionActiveRef = useRef(false);
-  const searchFocusHandoffFrameRef = useRef<number | null>(null);
-  const searchFocusHandoffTimerRef = useRef<number | null>(null);
   const vimInputRef = useRef<HTMLInputElement>(null);
   const vimCommandRef = useRef(vimCommand);
   const moreRequestRef = useRef(false);
@@ -601,7 +580,6 @@ export function RankingsExplorer({
   );
   const findIndexRef = useRef(initialData?.searchMatches.length ? 0 : -1);
   const rankingListRef = useRef<HTMLOListElement>(null);
-  const eventPickerTriggerRef = useRef<HTMLButtonElement>(null);
   const railEventPickerTriggerRef = useRef<HTMLButtonElement>(null);
   const pendingRowFocusRef = useRef<{
     anchorPersonId: string;
@@ -631,95 +609,6 @@ export function RankingsExplorer({
   });
   const rowVirtualizerRef = useRef(rowVirtualizer);
   const virtualRows = rowVirtualizer.getVirtualItems();
-
-  const focusPendingSearchSurface = useCallback(() => {
-    const pending = pendingSearchFocusHandoffRef.current;
-    if (!pending || searchCompositionActiveRef.current) return false;
-
-    const targetShouldBeRail = tableReachedTopRef.current;
-    if ((pending.target === "rail") !== targetShouldBeRail) {
-      pendingSearchFocusHandoffRef.current = null;
-      return true;
-    }
-
-    const target =
-      pending.target === "rail"
-        ? railFindInputRef.current
-        : headerFindInputRef.current;
-    if (!target) return false;
-
-    target.focus({ preventScroll: true });
-    if (document.activeElement !== target) return false;
-
-    if (pending.selectionStart !== null && pending.selectionEnd !== null) {
-      try {
-        target.setSelectionRange(
-          pending.selectionStart,
-          pending.selectionEnd,
-          pending.selectionDirection ?? undefined
-        );
-      } catch {
-        // Some mobile browsers can reject selection changes during focus transfer.
-      }
-    }
-
-    pendingSearchFocusHandoffRef.current = null;
-    return true;
-  }, []);
-
-  const schedulePendingSearchFocus = useCallback(() => {
-    if (!pendingSearchFocusHandoffRef.current) return;
-
-    if (searchFocusHandoffFrameRef.current !== null) {
-      window.cancelAnimationFrame(searchFocusHandoffFrameRef.current);
-      searchFocusHandoffFrameRef.current = null;
-    }
-    if (searchFocusHandoffTimerRef.current !== null) {
-      window.clearTimeout(searchFocusHandoffTimerRef.current);
-      searchFocusHandoffTimerRef.current = null;
-    }
-
-    if (focusPendingSearchSurface()) return;
-    if (searchCompositionActiveRef.current) return;
-
-    searchFocusHandoffFrameRef.current = window.requestAnimationFrame(() => {
-      searchFocusHandoffFrameRef.current = null;
-      if (focusPendingSearchSurface()) return;
-
-      searchFocusHandoffTimerRef.current = window.setTimeout(() => {
-        searchFocusHandoffTimerRef.current = null;
-        focusPendingSearchSurface();
-      }, 25);
-    });
-  }, [focusPendingSearchSurface]);
-
-  useLayoutEffect(() => {
-    schedulePendingSearchFocus();
-  }, [schedulePendingSearchFocus, tableReachedTop]);
-
-  useEffect(() => {
-    const isFindInput = (target: EventTarget | null) =>
-      target === headerFindInputRef.current || target === railFindInputRef.current;
-    const handleCompositionStart = (event: CompositionEvent) => {
-      if (isFindInput(event.target)) searchCompositionActiveRef.current = true;
-    };
-    const handleCompositionEnd = (event: CompositionEvent) => {
-      if (!isFindInput(event.target)) return;
-      searchCompositionActiveRef.current = false;
-      schedulePendingSearchFocus();
-    };
-
-    document.addEventListener("compositionstart", handleCompositionStart);
-    document.addEventListener("compositionend", handleCompositionEnd);
-    return () => {
-      document.removeEventListener("compositionstart", handleCompositionStart);
-      document.removeEventListener("compositionend", handleCompositionEnd);
-      if (searchFocusHandoffFrameRef.current !== null)
-        window.cancelAnimationFrame(searchFocusHandoffFrameRef.current);
-      if (searchFocusHandoffTimerRef.current !== null)
-        window.clearTimeout(searchFocusHandoffTimerRef.current);
-    };
-  }, [schedulePendingSearchFocus]);
 
   useLayoutEffect(() => {
     const anchor = pendingSearchLayoutAnchorRef.current;
@@ -818,14 +707,12 @@ export function RankingsExplorer({
 
   useEffect(() => {
     const updateRailVisibility = () => {
-      const railRevealStart = Math.max(0, listOffset - RAIL_REVEAL_DISTANCE);
-      const nextTopRailProgress = Math.max(
+      if (process.env.NODE_ENV !== "production") setDebugScrollY(window.scrollY);
+      const rawProgress = Math.max(
         0,
-        Math.min(
-          1,
-          (window.scrollY - railRevealStart) / RAIL_REVEAL_DISTANCE
-        )
+        Math.min(1, window.scrollY / TOP_RAIL_TRANSFORM_DISTANCE)
       );
+      const nextTopRailProgress = rawProgress * rawProgress * (3 - 2 * rawProgress);
       if (nextTopRailProgress !== topRailProgressRef.current) {
         topRailProgressRef.current = nextTopRailProgress;
         setTopRailProgress(nextTopRailProgress);
@@ -845,23 +732,6 @@ export function RankingsExplorer({
       if (nextBottomRailProgress !== bottomRailProgressRef.current) {
         bottomRailProgressRef.current = nextBottomRailProgress;
         setBottomRailProgress(nextBottomRailProgress);
-      }
-      const nextTableReachedTop =
-        nextTopRailProgress >= 1;
-      if (nextTableReachedTop !== tableReachedTopRef.current) {
-        const source = nextTableReachedTop
-          ? headerFindInputRef.current
-          : railFindInputRef.current;
-        if (source && document.activeElement === source) {
-          pendingSearchFocusHandoffRef.current = {
-            target: nextTableReachedTop ? "rail" : "header",
-            selectionStart: source.selectionStart,
-            selectionEnd: source.selectionEnd,
-            selectionDirection: source.selectionDirection,
-          };
-        }
-        tableReachedTopRef.current = nextTableReachedTop;
-        setTableReachedTop(nextTableReachedTop);
       }
     };
     const frame = window.requestAnimationFrame(updateRailVisibility);
@@ -1591,9 +1461,7 @@ export function RankingsExplorer({
         updateQueryParams({ mode: null });
         setFindOpen(true);
         window.requestAnimationFrame(() => {
-          const input = tableReachedTop
-            ? railFindInputRef.current
-            : headerFindInputRef.current;
+          const input = railFindInputRef.current;
           input?.focus();
           input?.select();
         });
@@ -1607,10 +1475,7 @@ export function RankingsExplorer({
         !event.ctrlKey &&
         !event.metaKey
       ) {
-        const trigger =
-          tableReachedTop || jumpUpArmed
-            ? railEventPickerTriggerRef.current
-            : eventPickerTriggerRef.current;
+        const trigger = railEventPickerTriggerRef.current;
         if (!trigger) return;
         event.preventDefault();
         if (trigger.getAttribute("aria-expanded") !== "true") trigger.click();
@@ -1650,8 +1515,6 @@ export function RankingsExplorer({
     findQuery,
     regexSearch,
     resetFind,
-    tableReachedTop,
-    jumpUpArmed,
     vimMode,
     vimSearchActive,
   ]);
@@ -2547,16 +2410,6 @@ export function RankingsExplorer({
     setFindOpen(true);
   };
 
-  const openFind = () => {
-    activateFind();
-    window.requestAnimationFrame(() =>
-      (tableReachedTop
-        ? railFindInputRef.current
-        : headerFindInputRef.current
-      )?.focus()
-    );
-  };
-
   const changeFindQuery = (value: string) => {
     if (!findQuery.trim() && value.trim()) {
       trackGoogleAnalyticsEvent("ranking_search_used", {
@@ -2602,46 +2455,17 @@ export function RankingsExplorer({
             </h1>
           </div>
           <div className="headerActions">
-            <SearchInputs
-              inputRef={setHeaderFindInputRef}
-              findOpen={findOpen}
-              findQuery={findQuery}
-              findError={findError}
-              findLoading={findLoading}
-              findPending={findPending}
-              findMatches={findMatches}
-              findIndex={findIndex}
-              activeFindMatch={activeFindMatch}
-              onOpen={activateFind}
-              onClose={closeFind}
-              onQueryChange={changeFindQuery}
-              onCycle={cycleFind}
-            />
             <ThemeToggle />
           </div>
         </div>
-        <RankingControls
-          eventId={eventId}
-          rankingType={rankingType}
-          regions={regions}
-          regionSelection={regionSelection}
-          onEventChange={changeEvent}
-          onRankingTypeChange={changeRankingType}
-          onRegionChange={changeRegion}
-          onEventPickerTrigger={(trigger) => {
-            eventPickerTriggerRef.current = trigger;
-          }}
-        />
       </header>
 
-      <main>
-        <JumpControlsVisibility
-          progress={jumpUpArmed ? 1 : topRailProgress}
-        >
-          <JumpUpControls
-          armed={jumpUpArmed}
-          currentPosition={visibleSubRank}
-          onJump={handleJumpUp}
+      <div
+        ref={stickyRankingsRailRef}
+        className="stickyRankingsRail"
+        style={{ "--rail-scroll-progress": topRailProgress } as CSSProperties}
+      >
+        <RankingsJumpRail
           event={currentEvent}
           onEventChange={changeEvent}
           rankingType={rankingType}
@@ -2649,10 +2473,10 @@ export function RankingsExplorer({
           regions={regions}
           regionSelection={regionSelection}
           onRegionChange={changeRegion}
-          onEventPickerTrigger={(trigger) => {
-            railEventPickerTriggerRef.current = trigger;
-          }}
+          onEventPickerTrigger={(trigger) => { railEventPickerTriggerRef.current = trigger; }}
+          compactResultType={topRailProgress >= 1}
           searchInputRef={setRailFindInputRef}
+          findOpen={findOpen}
           findQuery={findQuery}
           findError={findError}
           findLoading={findLoading}
@@ -2663,9 +2487,10 @@ export function RankingsExplorer({
           onSearchClose={closeFind}
           onSearchQueryChange={changeFindQuery}
           onSearchCycle={cycleFind}
-          />
-        </JumpControlsVisibility>
+        />
+      </div>
 
+      <main>
         <div className="outerListWrapper" ref={listRef}>
           <div className="listContainer">
             {loadingPrevious && (
@@ -2697,16 +2522,18 @@ export function RankingsExplorer({
         </div>
 
         <JumpControlsVisibility
-          progress={jumpDownArmed ? 1 : bottomRailProgress}
+          progress={jumpUpArmed || jumpDownArmed ? 1 : bottomRailProgress}
         >
-          <JumpDownControls
-          armed={jumpDownArmed}
-          currentPosition={visibleSubRank}
-          total={total}
-          onJump={handleJumpDown}
-          searchActive={findOpen && findMatches.length > 0}
-          onSearchPrevious={() => cycleFind(-1)}
-          onSearchNext={() => cycleFind(1)}
+          <RankingsPagerRail
+            upArmed={jumpUpArmed}
+            downArmed={jumpDownArmed}
+            currentPosition={visibleSubRank}
+            total={total}
+            onJumpUp={handleJumpUp}
+            onJumpDown={handleJumpDown}
+            searchActive={findOpen && findMatches.length > 0}
+            onSearchPrevious={() => cycleFind(-1)}
+            onSearchNext={() => cycleFind(1)}
           />
         </JumpControlsVisibility>
       </main>
@@ -2740,6 +2567,9 @@ export function RankingsExplorer({
         <span>
           {formatRankingsFreshness(exportDate)}
         </span>
+        {process.env.NODE_ENV !== "production" && (
+          <span className="debugScrollY">scrollY: {Math.round(debugScrollY)}</span>
+        )}
       </footer>
     </div>
   );

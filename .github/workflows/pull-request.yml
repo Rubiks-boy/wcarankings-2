@@ -70,9 +70,9 @@ jobs:
             'test -f /flyway/migrations/V1__export_metadata.sql && test -f /flyway/migrations/V2__import_health.sql'
           docker tag wcarankings-flyway:pull-request wcarankings-flyway:latest
           docker compose up -d db
-          docker compose run --rm --no-build flyway migrate
-          docker compose run --rm --no-build flyway info
-          docker compose run --rm --no-build flyway validate
+          docker compose run --rm flyway migrate
+          docker compose run --rm flyway info
+          docker compose run --rm flyway validate
 
       - name: Build production Docker image
         uses: docker/build-push-action@v6
@@ -102,7 +102,7 @@ jobs:
             --user="$MYSQL_USER" \
             --password="$MYSQL_PASSWORD" \
             "$MYSQL_DATABASE" < tests/fixtures/visual-smoke.sql
-          docker compose run --rm --no-build app node scripts/refresh-rankings.mjs
+          docker compose run --rm app node scripts/refresh-rankings.mjs
 
       - name: Start visual smoke-test app
         run: |

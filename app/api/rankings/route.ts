@@ -5,6 +5,7 @@ import {
   isRankingType,
   isValidRegexPattern,
   parseRegionQuery,
+  getRecordBadges,
   type RankingEntry,
   type RankingType,
   type RegionScope,
@@ -28,6 +29,9 @@ type RankingRow = {
   best: number;
   competition_id: string;
   competition_name: string;
+  is_world_record: number;
+  is_continent_record: number;
+  is_country_record: number;
 };
 
 function toRankingEntry(row: RankingRow): RankingEntry {
@@ -43,6 +47,12 @@ function toRankingEntry(row: RankingRow): RankingEntry {
     best: Number(row.best),
     competitionId: row.competition_id,
     competitionName: row.competition_name,
+    recordBadges: getRecordBadges({
+      isWorldRecord: Number(row.is_world_record) === 1,
+      isContinentRecord: Number(row.is_continent_record) === 1,
+      isCountryRecord: Number(row.is_country_record) === 1,
+      continentId: row.continent_id,
+    }),
   };
 }
 
@@ -164,7 +174,8 @@ export async function queryMysql({
     const locateParameter = addParameter(values, locate);
     const located = await query<RankingRow>(
       `SELECT ${rankColumn} AS rank, ${subRankColumn} AS sub_rank, person_id, person_name, country_id, country_name,
-        country_iso2, continent_id, best, competition_id, competition_name
+        country_iso2, continent_id, best, competition_id, competition_name,
+        is_world_record, is_continent_record, is_country_record
       FROM ${rankingSource}
       WHERE ${conditions.join(" AND ")} AND person_id = ${locateParameter}
       LIMIT 1`,
@@ -185,7 +196,8 @@ export async function queryMysql({
     const searchOperator = regexSearch ? "REGEXP" : "LIKE";
     const searchResult = await query<RankingRow>(
       `SELECT ${rankColumn} AS rank, ${subRankColumn} AS sub_rank, person_id, person_name, country_id, country_name,
-        country_iso2, continent_id, best, competition_id, competition_name
+        country_iso2, continent_id, best, competition_id, competition_name,
+        is_world_record, is_continent_record, is_country_record
       FROM ${rankingSource}
       WHERE ${conditions.join(" AND ")}
         AND (person_name ${searchOperator} ${searchNameParameter} OR person_id ${searchOperator} ${searchIdParameter})
@@ -219,7 +231,8 @@ export async function queryMysql({
   pageConditions.push(cursorClause.slice(5));
   const limitParameter = paged ? "" : ` LIMIT ${addParameter(values, limit + 1)}`;
   const querySql = `SELECT ${rankColumn} AS rank, ${subRankColumn} AS sub_rank, person_id, person_name, country_id, country_name,
-      country_iso2, continent_id, best, competition_id, competition_name
+      country_iso2, continent_id, best, competition_id, competition_name,
+      is_world_record, is_continent_record, is_country_record
     FROM ${rankingSource}
     WHERE ${pageConditions.join(" AND ")}
     ORDER BY ${subRankColumn}${limitParameter}`;

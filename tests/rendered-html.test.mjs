@@ -6,7 +6,7 @@ const templateRoot = new URL("../", import.meta.url);
 const previewRoot = new URL("../app/_sites-preview/", import.meta.url);
 
 test("builds the original WCA Rankings UI on the self-hosted API", async () => {
-  const [component, layout, rankingsRoute, wca] = await Promise.all([
+  const [component, layout, rankingsRoute, wca, schema] = await Promise.all([
     Promise.all([
       "../components/RankingsExplorer/RankingsExplorer.tsx",
       "../components/RankingsExplorer/scrollEngine.ts",
@@ -25,6 +25,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/rankings/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/wca.ts", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/mysql-schema.mjs", import.meta.url), "utf8"),
   ]);
   assert.match(layout, /title:\s*"WCA Rankings"/);
   assert.doesNotMatch(layout, /og\.png|summary_large_image/);
@@ -66,7 +67,8 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /initialRegions\.continents/);
   assert.match(component, /initialRegions\.countries/);
   assert.match(component, /label: "World"/);
-  assert.doesNotMatch(component, /regionOptionIcon|flagEmoji/);
+  assert.match(component, /flagEmoji/);
+  assert.match(component, /recordBadges/);
   assert.match(component, /Jump Jump--/);
   assert.match(component, /formatRankingNumber\(5000\)/);
   assert.match(component, /Jump to top/);
@@ -156,6 +158,12 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(rankingsRoute, /lastRank/);
   assert.match(rankingsRoute, /ORDER BY \$\{subRankColumn\}/);
   assert.match(rankingsRoute, /const limitParameter = paged \? "" :/);
+  assert.match(rankingsRoute, /is_world_record/);
+  assert.match(rankingsRoute, /is_continent_record/);
+  assert.match(rankingsRoute, /is_country_record/);
+  assert.match(schema, /CASE WHEN r\.world_rank = 1 THEN 1 ELSE 0 END AS is_world_record/);
+  assert.match(schema, /CASE WHEN r\.continent_rank = 1 THEN 1 ELSE 0 END AS is_continent_record/);
+  assert.match(schema, /CASE WHEN r\.country_rank = 1 THEN 1 ELSE 0 END AS is_country_record/);
 });
 
 test("does not replace SQL failures with synthetic ranking data", async () => {
@@ -226,6 +234,9 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(css, /\.rankingTypeOption/);
   assert.match(css, /\.selectInput select,[\s\S]*\.rankingTypeToggle,[\s\S]*\.regionPickerTrigger/);
   assert.match(css, /\.listItem/);
+  assert.match(css, /\.result \{[\s\S]*display: grid;[\s\S]*grid-template-columns: 8ch 5\.5ch;/);
+  assert.match(css, /\.resultValue \{[\s\S]*display: contents;/);
+  assert.match(css, /\.competitionName \{[\s\S]*grid-column: 1;[\s\S]*width: max-content;[\s\S]*justify-self: end;/);
   assert.match(css, /overflow-anchor: none/);
   assert.match(css, /\.loaderBlob/);
   assert.match(css, /\.Jump/);

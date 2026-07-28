@@ -1,33 +1,43 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import type { RankingEntry } from "../RankingsExplorer/types";
 import { ResultsTable } from "./ResultsTable";
 
-const entries = [
+const entries: RankingEntry[] = [
   {
     rank: 1,
     subRank: 1,
     personId: "2024FAST01",
     personName: "Fast Solver",
+    countryName: "United States",
+    countryIso2: "US",
     best: 512,
     competitionId: "storybook-open",
     competitionName: "Storybook Open 2026",
+    recordBadges: ["WR"],
   },
   {
     rank: 2,
     subRank: 2,
     personId: "2024TIED01",
     personName: "Tied Solver",
+    countryName: "Canada",
+    countryIso2: "CA",
     best: 600,
     competitionId: "storybook-open",
     competitionName: "Storybook Open 2026",
+    recordBadges: ["NR"],
   },
   {
     rank: 2,
     subRank: 3,
     personId: "2024TIED02",
     personName: "Another Solver",
+    countryName: "Japan",
+    countryIso2: "JP",
     best: 600,
     competitionId: "storybook-open",
     competitionName: "Storybook Open 2026",
+    recordBadges: [],
   },
 ];
 

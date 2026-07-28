@@ -1,13 +1,16 @@
-import type { RegionScope } from "@/lib/wca";
+import type { RecordBadgeCode, RegionScope } from "@/lib/wca";
 
 export type RankingEntry = {
   rank: number;
   subRank: number;
   personId: string;
   personName: string;
+  countryName: string;
+  countryIso2: string;
   best: number;
   competitionId: string;
   competitionName: string;
+  recordBadges: RecordBadgeCode[];
 };
 
 export type RankingPage = {

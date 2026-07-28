@@ -1,5 +1,17 @@
 export type RankingType = "single" | "average";
 export type RegionScope = "world" | "continent" | "country";
+export type RecordBadgeCode = "WR" | "AfR" | "AsR" | "ER" | "NaR" | "OcR" | "SaR" | "NR";
+
+export const RECORD_BADGE_LABELS: Record<RecordBadgeCode, string> = {
+  WR: "World Record",
+  AfR: "African Record",
+  AsR: "Asian Record",
+  ER: "European Record",
+  NaR: "North American Record",
+  OcR: "Oceanian Record",
+  SaR: "South American Record",
+  NR: "National Record",
+};
 
 export type RankingEntry = {
   rank: number;
@@ -13,6 +25,7 @@ export type RankingEntry = {
   best: number;
   competitionId: string;
   competitionName: string;
+  recordBadges: RecordBadgeCode[];
 };
 
 export type RankingCursor = {
@@ -129,4 +142,32 @@ export function formatWcaResult(eventId: string, value: number, rankingType: Ran
 export function flagEmoji(iso2: string) {
   if (!/^[A-Z]{2}$/.test(iso2)) return "🌐";
   return String.fromCodePoint(...[...iso2].map((char) => 127397 + char.charCodeAt(0)));
+}
+
+const continentRecordCodes: Record<string, RecordBadgeCode> = {
+  _Africa: "AfR",
+  _Asia: "AsR",
+  _Europe: "ER",
+  "_North America": "NaR",
+  _Oceania: "OcR",
+  "_South America": "SaR",
+};
+
+export function getRecordBadges({
+  isWorldRecord,
+  isContinentRecord,
+  isCountryRecord,
+  continentId,
+}: {
+  isWorldRecord: boolean;
+  isContinentRecord: boolean;
+  isCountryRecord: boolean;
+  continentId: string;
+}): RecordBadgeCode[] {
+  if (isWorldRecord) return ["WR"];
+  if (isContinentRecord && continentRecordCodes[continentId]) {
+    return [continentRecordCodes[continentId]];
+  }
+  if (isCountryRecord) return ["NR"];
+  return [];
 }

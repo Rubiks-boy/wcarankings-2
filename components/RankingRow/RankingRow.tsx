@@ -1,4 +1,4 @@
-import { formatWcaResult } from "@/lib/wca";
+import { formatWcaResult, flagEmoji, RECORD_BADGE_LABELS } from "@/lib/wca";
 import { formatRankingNumber, type RankingEntry } from "../RankingsExplorer/types";
 
 export function RankingRow({
@@ -27,6 +27,9 @@ export function RankingRow({
   const rank = entry?.rank ?? 0;
   const name = entry?.personName ?? "";
   const id = entry?.personId ?? "";
+  const countryName = entry?.countryName || "Country unavailable";
+  const countryFlag = flagEmoji(entry?.countryIso2 ?? "");
+  const recordBadge = entry?.recordBadges[0];
 
   return (
     <li
@@ -50,12 +53,40 @@ export function RankingRow({
           {formatRankingNumber(rank)}
         </span>
         <span className="identity">
-          <span className="name">{name}</span>
+          <span className="personName">
+            <span
+              className="countryFlag"
+              role="img"
+              aria-label={countryName}
+              title={countryName}
+            >
+              {countryFlag}
+            </span>
+            <span className="name">{name}</span>
+          </span>
           <span className="wcaId">{id}</span>
         </span>
         <span className="result">
-          <span className="best">
-            {entry ? formatWcaResult(eventId, entry.best, rankingType) : ""}
+          <span className="resultValue">
+            <span className="best">
+              {entry ? formatWcaResult(eventId, entry.best, rankingType) : ""}
+            </span>
+            <span
+              className="recordBadges"
+              aria-hidden={!recordBadge}
+              aria-label={recordBadge ? "Records" : undefined}
+            >
+              {recordBadge && (
+                <span
+                  className={`recordBadge recordBadge--${recordBadge}`}
+                  role="img"
+                  aria-label={RECORD_BADGE_LABELS[recordBadge]}
+                  title={RECORD_BADGE_LABELS[recordBadge]}
+                >
+                  {recordBadge}
+                </span>
+              )}
+            </span>
           </span>
           {entry?.competitionName && (
             <span className="competitionName" title={entry.competitionName}>

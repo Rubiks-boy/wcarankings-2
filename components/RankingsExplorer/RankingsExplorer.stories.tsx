@@ -1,7 +1,9 @@
 import { useLayoutEffect, type ReactNode } from "react";
 import type { Decorator, Meta, StoryObj } from "@storybook/react";
 import { FALLBACK_CONTINENTS, FALLBACK_COUNTRIES } from "@/lib/wca";
+import type { RecordBadgeCode } from "@/lib/wca";
 import { RankingsExplorer } from "./RankingsExplorer";
+import type { RankingEntry } from "./types";
 
 const MOCK_RANKING_SIZE = 10_000;
 const MOCK_FETCHED_AT = "2026-07-27T00:00:00.000Z";
@@ -34,7 +36,7 @@ function seededRandom(seed: number) {
   };
 }
 
-function makeMockRankings() {
+function makeMockRankings(): RankingEntry[] {
   const random = seededRandom(0xc0be4a11);
   let previousBest: number | undefined;
   let previousRank = 0;
@@ -64,6 +66,9 @@ function makeMockRankings() {
         rank,
         subRank: index + 1,
         competitionId: `storybook-${index % 7}`,
+        countryName: ["United States", "Canada", "Japan", "Germany"][index % 4],
+        countryIso2: ["US", "CA", "JP", "DE"][index % 4],
+        recordBadges: (index === 0 ? ["WR", "NR"] : index % 31 === 0 ? ["NR"] : []) as RecordBadgeCode[],
       };
     });
 }

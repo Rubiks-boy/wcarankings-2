@@ -479,9 +479,27 @@ select {
   text-align: left;
 }
 
+.personName {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.35em;
+}
+
+.countryFlag {
+  flex: 0 0 auto;
+  font-size: 1.05em;
+  line-height: 1;
+}
+
 .name {
   overflow: auto;
   white-space: nowrap;
+}
+
+.personName .name {
+  min-width: 0;
+  flex: 1;
 }
 
 .identity .name,
@@ -492,22 +510,67 @@ select {
 }
 
 .result {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  align-items: flex-end;
-  min-width: 8ch;
+  display: grid;
+  grid-template-columns: 8ch 5.5ch;
+  align-items: center;
+  column-gap: 0.5em;
+  min-width: calc(8ch + 5.5ch + 0.5em);
   margin-left: auto;
   text-align: right;
 }
 
+.resultValue {
+  display: contents;
+}
+
+.recordBadges {
+  display: flex;
+  grid-column: 2;
+  width: 5.5ch;
+  min-height: 1.5em;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.recordBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5em;
+  padding: 0.35em 0.6em;
+  border: 1px solid #b18e2f;
+  border-radius: 0.3em;
+  background: #fff4bf;
+  color: #594600;
+  font-size: 0.68em;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.recordBadge--WR {
+  border-color: #9c6b16;
+  background: #ffe6a3;
+  color: #4d3100;
+}
+
+.recordBadge--NR {
+  border-color: #8298a5;
+  background: #edf3f6;
+  color: #344851;
+}
+
 .best {
-  width: auto;
+  grid-column: 1;
+  width: 8ch;
+  text-align: right;
 }
 
 .competitionName {
+  grid-column: 1;
+  width: max-content;
   max-width: none;
   overflow: visible;
+  justify-self: end;
   margin-top: 0.1em;
   color: #6b7880;
   font-size: 0.75em;

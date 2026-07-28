@@ -508,21 +508,17 @@ select {
 }
 
 .result {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: 8ch 5.5ch;
+  align-items: center;
+  column-gap: 0.5em;
   min-width: calc(8ch + 5.5ch + 0.5em);
   margin-left: auto;
   text-align: right;
 }
 
 .resultValue {
-  display: grid;
-  grid-template-columns: 8ch 5.5ch;
-  align-items: center;
-  column-gap: 0.5em;
-  width: calc(8ch + 5.5ch + 0.5em);
+  display: contents;
 }
 
 .recordBadges {
@@ -568,10 +564,11 @@ select {
 }
 
 .competitionName {
+  grid-column: 1;
   width: 8ch;
-  margin-right: calc(5.5ch + 0.5em);
   max-width: none;
   overflow: visible;
+  justify-self: end;
   margin-top: 0.1em;
   color: #6b7880;
   font-size: 0.75em;

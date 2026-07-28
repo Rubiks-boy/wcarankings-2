@@ -1,6 +1,6 @@
 "use client";
 
-import type { FocusEvent, KeyboardEvent, Ref } from "react";
+import type { KeyboardEvent, Ref } from "react";
 import { Icon } from "../Icon/Icon";
 import {
   formatRankingNumber,
@@ -56,11 +56,6 @@ export function SearchInputs({
     );
   }
 
-  const handleBlur = (event: FocusEvent<HTMLDivElement>) => {
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-      onClose();
-    }
-  };
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -84,7 +79,6 @@ export function SearchInputs({
       ref={barRef}
       className={`findBar${findFloating ? " findBar--floating" : ""}`}
       role="search"
-      onBlur={handleBlur}
     >
       <span className="findIcon" aria-hidden="true">
         <Icon name="search" />

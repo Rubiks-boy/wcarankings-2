@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "../Icon/Icon";
 import type { RegionOption, RegionSelection } from "../RankingsExplorer/types";
 
 export function RegionPicker({
@@ -88,7 +89,9 @@ export function RegionPicker({
         }}
         aria-label="Region"
         aria-haspopup="listbox"
+        aria-expanded={open}
       />
+      <Icon name="select" />
       {open && (
         <div className="regionPickerMenu" role="listbox" aria-label="Region">
           {filteredOptions.length === 0 ? (

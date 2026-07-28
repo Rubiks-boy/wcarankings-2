@@ -35,7 +35,7 @@ test("renders rows and highlights tied results", () => {
   const markup = renderToStaticMarkup(
     <ResultsTable
       entries={entries}
-      renderedRows={entries.map((_, index) => ({ index, key: index, start: index * 61.6 }))}
+      renderedRows={entries.map((_, index) => ({ index, key: index, start: index * 65.45 }))}
       renderedListHeight={123.2}
       listOffset={0}
       eventId="333"

@@ -199,10 +199,14 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(page, /startPosition: firstPage\.startPosition/);
   assert.match(page, /lastRank: lastPage\.lastRank/);
   assert.match(page, /initialRegions=\{\{ continents, countries \}\}/);
-  assert.match(page, /getRegions\("continent"\)/);
-  assert.match(page, /getRegions\("country"\)/);
+  assert.match(page, /fetchRegions\(origin, "continent"\)/);
+  assert.match(page, /fetchRegions\(origin, "country"\)/);
   assert.match(page, /redirect/);
-  assert.match(page, /queryMysql/);
+  assert.doesNotMatch(page, /queryMysql|@\/app\/api\/rankings\/route|@\/lib\/regions/);
+  assert.match(page, /fetchRankings/);
+  assert.match(page, /fetchRegions/);
+  assert.match(page, /\/api\/rankings\?\$\{params\}/);
+  assert.match(page, /\/api\/regions\?kind=\$\{kind\}/);
   assert.match(page, /getSearchParam\(searchParams, "region"\)/);
   assert.match(page, /getSearchParamWithLegacyKey\(searchParams, "eventId", "event"\)/);
   assert.match(page, /getSearchParamWithLegacyKey\(searchParams, "result", "type"\)/);
@@ -241,8 +245,8 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(css, /\.loaderBlob/);
   assert.match(css, /\.Jump/);
   assert.match(css, /\.row--alternate/);
-  assert.match(css, /\.virtualRow:not\(:last-child\) \.row/);
-  assert.match(css, /border-bottom: 1px solid #e5eaed/);
+  assert.doesNotMatch(css, /\.virtualRow:not\(:last-child\) \.row/);
+  assert.doesNotMatch(css, /border-bottom: 1px solid #e5eaed/);
   assert.match(css, /\.listItem:hover \.row/);
   assert.match(css, /background-color 40ms ease/);
   assert.match(css, /\.competitionName \{[\s\S]*max-width: none;[\s\S]*overflow: visible;/);

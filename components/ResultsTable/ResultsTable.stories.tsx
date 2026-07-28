@@ -47,8 +47,8 @@ const meta = {
   parameters: { layout: "fullscreen" },
   args: {
     entries,
-    renderedRows: entries.map((_, index) => ({ index, key: index, start: index * 61.6 })),
-    renderedListHeight: entries.length * 61.6,
+    renderedRows: entries.map((_, index) => ({ index, key: index, start: index * 65.45 })),
+    renderedListHeight: entries.length * 65.45,
     listOffset: 0,
     eventId: "333",
     rankingType: "single",

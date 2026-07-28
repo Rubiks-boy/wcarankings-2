@@ -22,7 +22,7 @@ export function RankingRow({
 }) {
   const style = {
     "--t-animation-delay": `${animationIndex * 10}ms`,
-    minHeight: "61.6px",
+    minHeight: "65.45px",
   } as React.CSSProperties;
   const rank = entry?.rank ?? 0;
   const name = entry?.personName ?? "";
@@ -30,18 +30,21 @@ export function RankingRow({
   const countryName = entry?.countryName || "Country unavailable";
   const countryFlag = flagEmoji(entry?.countryIso2 ?? "");
   const recordBadge = entry?.recordBadges[0];
+  const isLoading = loading || !entry;
 
   return (
     <li
-      className={`listItem${loading || !entry ? " isLoading" : ""}`}
+      className={`listItem${isLoading ? " isLoading" : ""}`}
       data-person-id={entry?.personId}
       style={style}
     >
-      <div className="loader" aria-hidden="true">
-        <div className="rank loaderBlob" />
-        <div className="name loaderBlob" />
-        <div className="best loaderBlob" />
-      </div>
+      {isLoading && (
+        <div className="loader" aria-hidden="true">
+          <div className="rank loaderBlob" />
+          <div className="name loaderBlob" />
+          <div className="best loaderBlob" />
+        </div>
+      )}
       <div
         className={`row${animationIndex % 2 === 1 ? " row--alternate" : ""}${
           searchMatched ? " row--searchResult" : ""
@@ -53,18 +56,18 @@ export function RankingRow({
           {formatRankingNumber(rank)}
         </span>
         <span className="identity">
-          <span className="personName">
-            <span
-              className="countryFlag"
-              role="img"
-              aria-label={countryName}
-              title={countryName}
-            >
-              {countryFlag}
-            </span>
-            <span className="name">{name}</span>
+          <span
+            className="countryFlag"
+            role="img"
+            aria-label={countryName}
+            title={countryName}
+          >
+            {countryFlag}
           </span>
-          <span className="wcaId">{id}</span>
+          <span className="personName">
+            <span className="name">{name}</span>
+            <span className="wcaId">{id}</span>
+          </span>
         </span>
         <span className="result">
           <span className="resultValue">

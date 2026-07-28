@@ -1,5 +1,5 @@
 export const SCROLL_SETTLE_DELAY_MS = 100;
-export const DEFAULT_ROW_HEIGHT = 61.6;
+export const DEFAULT_ROW_HEIGHT = 65.45;
 export const MIN_LOCAL_SCROLL_DURATION_MS = 320;
 export const MAX_LOCAL_SCROLL_DURATION_MS = 640;
 export const MAX_LOCAL_SCROLL_DISTANCE = 100;
@@ -182,13 +182,15 @@ export function scrollToEntry({
       alignment === "center"
         ? Math.max(0, (window.innerHeight - rowHeight) / 2)
         : 0;
-    const fallbackTargetTop =
+    const fallbackRowTop =
       listTop +
       window.scrollY +
-      Math.max(0, index) * rowHeight -
-      viewportOffset;
+      Math.max(0, index) * rowHeight;
     const measuredTargetTop = targetOffset?.();
-    const targetTop = Math.max(0, measuredTargetTop ?? fallbackTargetTop);
+    const targetTop = Math.max(
+      0,
+      (measuredTargetTop ?? fallbackRowTop) - viewportOffset
+    );
     animateScrollTo(state, targetTop, requestedBehavior, requestedDuration);
   };
   if (schedule) {

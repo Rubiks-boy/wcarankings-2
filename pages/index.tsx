@@ -1,8 +1,10 @@
 import type { GetServerSideProps } from "next";
-import { queryMysql } from "@/app/api/rankings/route";
 import { RankingsExplorer } from "@/components/RankingsExplorer/RankingsExplorer";
+import type {
+  RankingEntry,
+  RankingPage,
+} from "@/components/RankingsExplorer/types";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
-import { getRegions } from "@/lib/regions";
 import { isEventId, isRankingType, isValidRegexPattern, parseRegionQuery, WCA_EVENTS } from "@/lib/wca";
 
 const PAGE_SIZE = RESULTS_PAGE_SIZE;
@@ -54,7 +56,46 @@ function getCanonicalSearchParams(
   return params;
 }
 
-async function getInitialRankings(searchParams: Record<string, string | string[] | undefined>) {
+type RankingsResponse = Partial<RankingPage> & {
+  entries: RankingEntry[];
+};
+
+type RegionRecord = {
+  id: string;
+  name: string;
+  iso2?: string;
+};
+
+async function fetchRankings(
+  origin: string,
+  params: URLSearchParams,
+): Promise<RankingsResponse> {
+  const response = await fetch(`${origin}/api/rankings?${params}`);
+  if (!response.ok) {
+    throw new Error("Initial ranking page was unavailable.");
+  }
+  return response.json() as Promise<RankingsResponse>;
+}
+
+async function fetchRegions(
+  origin: string,
+  kind: "continent" | "country",
+): Promise<RegionRecord[]> {
+  const response = await fetch(`${origin}/api/regions?kind=${kind}`);
+  if (!response.ok) {
+    throw new Error("Regions were unavailable.");
+  }
+  const data = await response.json() as { regions?: unknown };
+  if (!Array.isArray(data.regions)) {
+    throw new Error("Regions were unavailable.");
+  }
+  return data.regions as RegionRecord[];
+}
+
+async function getInitialRankings(
+  searchParams: Record<string, string | string[] | undefined>,
+  origin: string,
+) {
   const rawEventId = getSearchParamWithLegacyKey(searchParams, "eventId", "event");
   const rawRankingType = getSearchParamWithLegacyKey(searchParams, "result", "type");
   const eventId = isEventId(rawEventId) ? rawEventId : "333";
@@ -62,20 +103,20 @@ async function getInitialRankings(searchParams: Record<string, string | string[]
   const { scope, regionId } = parseRegionQuery(getSearchParam(searchParams, "region"));
   const search = getSearchParam(searchParams, "search").trim().slice(0, 80);
   const regexSearch = getSearchParam(searchParams, "mode") === "vim" && isValidRegexPattern(search);
-  const queryOptions = {
-    eventId,
-    type: rankingType,
-    scope,
-    regionId,
-    cursorRank: null,
-    cursorId: "",
-    locate: "",
-  } as const;
-
   const searchResult = search
-    ? await queryMysql({ ...queryOptions, startRank: 1, limit: PAGE_SIZE, search, regexSearch, searchLimit: 500, paged: false })
+    ? await fetchRankings(
+        origin,
+        new URLSearchParams({
+          eventId,
+          result: rankingType,
+          search,
+          searchLimit: "500",
+          ...(regexSearch ? { mode: "vim" } : {}),
+          ...(scope === "world" ? {} : { region: regionId }),
+        }),
+      )
     : null;
-  const searchMatches = searchResult && "entries" in searchResult && Array.isArray(searchResult.entries)
+  const searchMatches = searchResult && Array.isArray(searchResult.entries)
     ? searchResult.entries
     : [];
   const firstMatch = searchMatches[0];
@@ -86,36 +127,28 @@ async function getInitialRankings(searchParams: Record<string, string | string[]
     : [1];
   const pages = await Promise.all(
     pageStarts.map((startRank) =>
-      queryMysql({
-        ...queryOptions,
-        startRank,
-        limit: PAGE_SIZE,
-        search: "",
-        searchLimit: 500,
-        paged: true,
-      }),
+      fetchRankings(
+        origin,
+        new URLSearchParams({
+          eventId,
+          result: rankingType,
+          start: String(startRank - 1),
+          limit: String(PAGE_SIZE),
+          paged: "1",
+          ...(scope === "world" ? {} : { region: regionId }),
+        }),
+      ),
     ),
   );
-  if (
-    pages.some(
-      (page) => !("entries" in page) || !Array.isArray(page.entries),
-    )
-  ) {
+  if (pages.some((page) => !Array.isArray(page.entries))) {
     throw new Error("Initial ranking page was unavailable.");
   }
   const firstPage = pages[0];
   const lastPage = pages.at(-1) ?? firstPage;
-  if (
-    !("entries" in firstPage) ||
-    !Array.isArray(firstPage.entries) ||
-    !("entries" in lastPage) ||
-    !Array.isArray(lastPage.entries)
-  ) {
+  if (!Array.isArray(firstPage.entries) || !Array.isArray(lastPage.entries)) {
     throw new Error("Initial ranking page was unavailable.");
   }
-  const entries = pages.flatMap((page) =>
-    "entries" in page && Array.isArray(page.entries) ? page.entries : [],
-  );
+  const entries = pages.flatMap((page) => page.entries);
   const startRank = pageStarts[0];
   return {
     entries,
@@ -147,7 +180,10 @@ type PageProps = {
   countries: Array<{ id: string; name: string; iso2?: string }>;
 };
 
-export const getServerSideProps: GetServerSideProps<PageProps> = async ({ query }) => {
+export const getServerSideProps: GetServerSideProps<PageProps> = async ({
+  query,
+  req,
+}) => {
   const searchParams = query as QueryParams;
   const rawEventId = getSearchParamWithLegacyKey(searchParams, "eventId", "event");
   const rawRankingType = getSearchParamWithLegacyKey(searchParams, "result", "type");
@@ -164,10 +200,21 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({ query 
     const query = canonicalParams.toString();
     return { redirect: { destination: query ? `/?${query}` : "/", permanent: false } };
   }
+  const forwardedProtocol = req.headers["x-forwarded-proto"];
+  const protocol = (
+    Array.isArray(forwardedProtocol)
+      ? forwardedProtocol[0]
+      : forwardedProtocol
+  )?.split(",")[0] ?? "http";
+  const forwardedHost = req.headers["x-forwarded-host"];
+  const host = (
+    Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost
+  )?.split(",")[0] ?? req.headers.host ?? "localhost:3000";
+  const origin = `${protocol}://${host}`;
   const [initialRankings, continents, countries] = await Promise.all([
-    getInitialRankings(searchParams),
-    getRegions("continent"),
-    getRegions("country"),
+    getInitialRankings(searchParams, origin),
+    fetchRegions(origin, "continent"),
+    fetchRegions(origin, "country"),
   ]);
   const initialSearch = getSearchParam(searchParams, "search").trim().slice(0, 80);
   const initialRegexSearch = getSearchParam(searchParams, "mode") === "vim" && isValidRegexPattern(initialSearch);

@@ -34,9 +34,26 @@ test("renders a result row without exposing internal ordering", () => {
   assert.match(markup, /World Record/);
   assert.doesNotMatch(markup, /National Record/);
   assert.match(markup, /United States/);
+  assert.ok(markup.indexOf('class="countryFlag"') < markup.indexOf('class="name">Cailyn Sinclair'));
+  assert.ok(markup.indexOf('class="countryFlag"') < markup.indexOf('class="wcaId">2024WALK01'));
   assert.equal((markup.match(/class="recordBadge /g) ?? []).length, 1);
   assert.match(markup, /rank--duplicate/);
+  assert.doesNotMatch(markup, /loaderBlob/);
   assert.doesNotMatch(markup, /sub-rank/);
+});
+
+test("renders skeleton markup only while loading", () => {
+  const markup = renderToStaticMarkup(
+    <RankingRow
+      entry={null}
+      eventId="333"
+      rankingType="single"
+      loading
+      animationIndex={0}
+    />,
+  );
+  assert.match(markup, /isLoading/);
+  assert.equal((markup.match(/loaderBlob/g) ?? []).length, 3);
 });
 
 test("prioritizes the strongest available record badge", () => {

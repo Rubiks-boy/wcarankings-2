@@ -53,7 +53,28 @@ const SEARCH_PREFETCH_RADIUS = 3;
 const SEARCH_ANIMATION_ROWS = 3;
 const VIM_JUMP_PAGE_COUNT = 2;
 const VIM_JUMP_SIZE = PAGE_SIZE * VIM_JUMP_PAGE_COUNT;
-const ROW_HEIGHT = 61.6;
+const ROW_HEIGHT = 65.45;
+
+export function centeredRowScrollTop(
+  rowTop: number,
+  viewportHeight: number,
+  rowHeight = ROW_HEIGHT
+) {
+  return Math.max(
+    0,
+    rowTop - Math.max(0, (viewportHeight - rowHeight) / 2)
+  );
+}
+
+export function getSearchScrollDirection(
+  currentMatch: Pick<RankingEntry, "subRank"> | null,
+  targetMatch: Pick<RankingEntry, "subRank">,
+  fallbackDirection: -1 | 1
+): -1 | 1 {
+  if (!currentMatch || currentMatch.subRank === targetMatch.subRank)
+    return fallbackDirection;
+  return targetMatch.subRank > currentMatch.subRank ? 1 : -1;
+}
 
 function updateQueryParams(updates: Record<string, string | null>) {
   const url = new URL(window.location.href);
@@ -100,8 +121,10 @@ function pageStartForSubRank(subRank: number) {
   return Math.floor((Math.max(1, subRank) - 1) / PAGE_SIZE) * PAGE_SIZE;
 }
 
-function orderSearchMatches(matches: RankingEntry[]) {
-  return [...matches].sort(
+export function orderSearchMatches(
+  matches: Array<RankingEntry | null | undefined>
+) {
+  return matches.filter((match): match is RankingEntry => Boolean(match)).sort(
     (left, right) =>
       left.subRank - right.subRank ||
       left.rank - right.rank ||
@@ -236,7 +259,7 @@ function prefetchSearchResultPages(
   eventId: string,
   rankingType: "single" | "average",
   selection: RegionSelection,
-  matches: RankingEntry[],
+  matches: Array<RankingEntry | null | undefined>,
   currentMatchIndex: number
 ) {
   if (matches.length < 2 || currentMatchIndex < 0) return;
@@ -248,6 +271,7 @@ function prefetchSearchResultPages(
         (currentMatchIndex + direction * distance + matches.length) %
         matches.length;
       const match = matches[matchIndex];
+      if (!match) continue;
       const requestKey = pageStartForSubRank(match.subRank);
       if (requested.has(requestKey)) continue;
       requested.add(requestKey);
@@ -360,6 +384,7 @@ export function RankingsExplorer({
   const [loadingPrevious, setLoadingPrevious] = useState(false);
   const [error, setError] = useState("");
   const [listOffset, setListOffset] = useState(0);
+  const [pageReloadNonce, setPageReloadNonce] = useState(0);
   const [findOpen, setFindOpen] = useState(Boolean(normalizedInitialSearch && !initialRegexSearch));
   const [findQuery, setFindQuery] = useState(initialSearch);
   const [regexSearch, setRegexSearch] = useState(initialRegexSearch);
@@ -421,6 +446,8 @@ export function RankingsExplorer({
         ].join(":")
       : ""
   );
+  const forcePageLoadRef = useRef(false);
+  const skipNextFindResetRef = useRef(false);
   const skipPageLoadStartRef = useRef<number | null>(null);
   const initialScrollRef = useRef(
     Boolean(
@@ -587,7 +614,7 @@ export function RankingsExplorer({
           state: scrollAnimationStateRef.current,
           list: listRef.current,
           index: targetIndex,
-          alignment: "top",
+          alignment: "center",
           requestedDuration: getScrollAnimationDuration(targetIndex),
           schedule: false,
           targetOffset: () =>
@@ -668,9 +695,10 @@ export function RankingsExplorer({
       regionSelection.regionId,
       startRank,
     ].join(":");
-    if (initialPageKeyRef.current === pageKey) {
+    if (initialPageKeyRef.current === pageKey && !forcePageLoadRef.current) {
       return;
     }
+    forcePageLoadRef.current = false;
     initialPageKeyRef.current = "";
     if (skipPageLoadStartRef.current === startRank) {
       skipPageLoadStartRef.current = null;
@@ -853,15 +881,17 @@ export function RankingsExplorer({
     eventId,
     rankingType,
     regionSelection,
+    pageReloadNonce,
     startRank,
   ]);
 
   const jumpToMatch = useCallback(
     (
-      match: RankingEntry,
+      match: RankingEntry | undefined,
       direction: -1 | 1 = 1,
       currentMatch: RankingEntry | null = null
     ) => {
+      if (!match) return;
       const requestEpoch = navigationEpochRef.current + 1;
       navigationEpochRef.current = requestEpoch;
       cancelScrollAnimation(scrollAnimationStateRef.current);
@@ -903,7 +933,6 @@ export function RankingsExplorer({
       pendingNavigationAppendRef.current = false;
       pendingRankRef.current = match.subRank;
       navigationTargetRankRef.current = match.subRank;
-      pendingScrollDirectionRef.current = direction;
       prefetchSearchResultPages(
         eventId,
         rankingType,
@@ -930,6 +959,12 @@ export function RankingsExplorer({
           entriesRef.current,
           startRankRef.current
         );
+      const scrollDirection = getSearchScrollDirection(
+        currentMatch,
+        match,
+        direction
+      );
+      pendingScrollDirectionRef.current = scrollDirection;
       const searchPeopleDistance = Math.abs(
         match.subRank - currentSearchSubRank
       );
@@ -942,7 +977,7 @@ export function RankingsExplorer({
           : getSearchJumpMode(
               currentPageStart,
               targetPageStart,
-              direction,
+              scrollDirection,
               PAGE_SIZE
             );
       const pageRequest =
@@ -953,7 +988,7 @@ export function RankingsExplorer({
               regionSelection,
               currentPageStart,
               match,
-              direction
+              scrollDirection
             )
           : getSearchWindow(eventId, rankingType, regionSelection, match);
 
@@ -971,14 +1006,10 @@ export function RankingsExplorer({
                 (entry) => entry.personId === currentMatch.personId
               )
             : -1;
-          const followsRequestedDirection =
-            currentMatch !== null &&
-            Math.sign(match.subRank - currentMatch.subRank) === direction;
           if (
             currentMatch &&
             currentMatchViewportTop !== null &&
-            currentIndex >= 0 &&
-            followsRequestedDirection
+            currentIndex >= 0
           ) {
             pendingSearchLayoutAnchorRef.current = {
               requestEpoch,
@@ -1022,30 +1053,57 @@ export function RankingsExplorer({
                   0,
                   measuredTargetTop ??
                     listTop + targetIndex * ROW_HEIGHT
+                );
+              const centeredTargetTop = centeredRowScrollTop(
+                naturalTargetTop,
+                window.innerHeight
               );
-              if (currentIndex >= 0 && followsRequestedDirection) {
+              const centerRenderedMatch = () => {
+                const targetRow = Array.from(
+                  document.querySelectorAll<HTMLElement>(
+                    ".listItem[data-person-id]"
+                  )
+                ).find((row) => row.dataset.personId === match.personId);
+                if (!targetRow) return false;
+                const targetRect = targetRow.getBoundingClientRect();
+                window.scrollTo({
+                  top: centeredRowScrollTop(
+                    targetRect.top + window.scrollY,
+                    window.innerHeight,
+                    targetRect.height
+                  ),
+                  behavior: "auto",
+                });
+                return true;
+              };
+              if (currentIndex >= 0) {
                 const duration = getSearchAnimationDuration(
                   jumpMode,
                   searchPeopleDistance
                 );
                 animateScrollTo(
                   scrollAnimationStateRef.current,
-                  naturalTargetTop,
+                  centeredTargetTop,
                   "smooth",
                   duration
                 );
                 searchAnimationTimerRef.current = window.setTimeout(() => {
                   if (navigationEpochRef.current !== requestEpoch) return;
-                  const settledTargetTop =
-                    rowVirtualizerRef.current.getOffsetForIndex(
-                      targetIndex,
-                      "start"
-                    )?.[0];
-                  if (settledTargetTop !== undefined)
-                    window.scrollTo({
-                      top: settledTargetTop,
-                      behavior: "auto",
-                    });
+                  if (!centerRenderedMatch()) {
+                    const settledTargetTop =
+                      rowVirtualizerRef.current.getOffsetForIndex(
+                        targetIndex,
+                        "start"
+                      )?.[0];
+                    if (settledTargetTop !== undefined)
+                      window.scrollTo({
+                        top: centeredRowScrollTop(
+                          settledTargetTop,
+                          window.innerHeight
+                        ),
+                        behavior: "auto",
+                      });
+                  }
                   searchAnimationTimerRef.current = null;
                   finishSearchNavigation();
                 }, duration + SCROLL_SETTLE_DELAY_MS);
@@ -1053,16 +1111,16 @@ export function RankingsExplorer({
               }
 
               const transformOffset =
-                direction * SEARCH_ANIMATION_ROWS * ROW_HEIGHT;
+                scrollDirection * SEARCH_ANIMATION_ROWS * ROW_HEIGHT;
               const animatedTargetTop = Math.max(
                 0,
-                naturalTargetTop + transformOffset
+                centeredTargetTop + transformOffset
               );
               const duration = getSearchAnimationDuration(
                 "local",
                 searchPeopleDistance
               );
-              window.scrollTo({ top: naturalTargetTop, behavior: "auto" });
+              window.scrollTo({ top: centeredTargetTop, behavior: "auto" });
               list.style.transform = `translateY(${transformOffset}px)`;
               searchTransformOffsetRef.current = transformOffset;
               window.requestAnimationFrame(() => {
@@ -1078,6 +1136,7 @@ export function RankingsExplorer({
                   list.style.transform = "";
                   searchTransformOffsetRef.current = 0;
                   window.scrollBy({ top: -transformOffset, behavior: "auto" });
+                  centerRenderedMatch();
                   searchAnimationTimerRef.current = null;
                   finishSearchNavigation();
                 }, duration + SCROLL_SETTLE_DELAY_MS);
@@ -1111,9 +1170,15 @@ export function RankingsExplorer({
             ? 0
             : matches.length - 1
           : (currentIndex + direction + matches.length) % matches.length;
+      const nextMatch = matches[nextIndex];
+      if (!nextMatch) {
+        findIndexRef.current = -1;
+        setFindIndex(-1);
+        return;
+      }
       findIndexRef.current = nextIndex;
       setFindIndex(nextIndex);
-      jumpToMatch(matches[nextIndex], direction, currentMatch);
+      jumpToMatch(nextMatch, direction, currentMatch);
     },
     [jumpToMatch]
   );
@@ -1146,6 +1211,27 @@ export function RankingsExplorer({
 
   useEffect(() => {
     const normalizedQuery = findQuery.trim();
+    const isInitialSearch =
+      initialSearchRef.current && normalizedQuery === normalizedInitialSearch;
+    const skipNavigationReset = skipNextFindResetRef.current;
+    skipNextFindResetRef.current = false;
+    if (!isInitialSearch && !skipNavigationReset) {
+      navigationEpochRef.current += 1;
+      pendingSearchLayoutAnchorRef.current = null;
+      cancelScrollAnimation(scrollAnimationStateRef.current);
+      if (searchAnimationTimerRef.current !== null) {
+        window.clearTimeout(searchAnimationTimerRef.current);
+        searchAnimationTimerRef.current = null;
+      }
+      const activeList = rankingListRef.current;
+      const activeTransform = searchTransformOffsetRef.current;
+      if (activeList && activeTransform !== 0) {
+        activeList.style.transform = "";
+        window.scrollBy({ top: -activeTransform, behavior: "auto" });
+        searchTransformOffsetRef.current = 0;
+      }
+      setHighlightedPersonId("");
+    }
     const controller = new AbortController();
     const timeout = window.setTimeout(
       () => {
@@ -1186,10 +1272,11 @@ export function RankingsExplorer({
             const orderedMatches = orderSearchMatches(data.entries);
             findMatchesRef.current = orderedMatches;
             setFindMatches(orderedMatches);
-            if (orderedMatches.length > 0) {
+            const firstMatch = orderedMatches[0];
+            if (firstMatch) {
               findIndexRef.current = 0;
               setFindIndex(0);
-              jumpToMatch(data.entries[0]);
+              jumpToMatch(firstMatch);
             }
           })
           .catch((requestError: unknown) => {
@@ -1284,17 +1371,6 @@ export function RankingsExplorer({
     vimMode,
     vimSearchActive,
   ]);
-
-  useEffect(() => {
-    if (!findOpen) return;
-    const closeOnOutsideClick = (event: PointerEvent) => {
-      if (!findBarRef.current?.contains(event.target as Node))
-        setFindOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOnOutsideClick);
-    return () =>
-      document.removeEventListener("pointerdown", closeOnOutsideClick);
-  }, [findOpen]);
 
   const loadMore = useCallback(async () => {
     if (
@@ -1499,6 +1575,17 @@ export function RankingsExplorer({
       // Vim and jump controls pass the internal sub_rank, never the displayed rank.
       navigationEpochRef.current += 1;
       cancelScrollAnimation(scrollAnimationStateRef.current);
+      if (searchAnimationTimerRef.current !== null) {
+        window.clearTimeout(searchAnimationTimerRef.current);
+        searchAnimationTimerRef.current = null;
+      }
+      const activeList = rankingListRef.current;
+      const activeTransform = searchTransformOffsetRef.current;
+      if (activeList && activeTransform !== 0) {
+        activeList.style.transform = "";
+        window.scrollBy({ top: -activeTransform, behavior: "auto" });
+        searchTransformOffsetRef.current = 0;
+      }
       pendingNavigationAppendRef.current = false;
       setLoading(false);
       const maximumRank = lastRank ?? (Number.isFinite(total) ? total : rank);
@@ -1508,34 +1595,21 @@ export function RankingsExplorer({
         entriesRef.current,
         startRankRef.current
       );
-      const currentPosition = getCurrentViewportPosition(
-        listRef.current,
-        entriesRef.current,
-        startPositionRef.current,
-        startPositionRef.current,
-        rowVirtualizer.getVirtualItems()[0]?.index
-      );
       navigationTargetRankRef.current = normalizedRank;
       pendingRankRef.current = normalizedRank;
       if (normalizedRank === 1) {
+        if (findQuery.trim()) skipNextFindResetRef.current = true;
         resetFind();
+        setFindOpen(false);
         pendingFocusLastRef.current = false;
         pendingScrollDirectionRef.current = null;
         pendingScrollToTopRef.current = true;
         cancelScrollAnimation(scrollAnimationStateRef.current);
-        if (startRank === 1) {
-          pendingScrollToTopRef.current = false;
-          animateScrollTo(
-            scrollAnimationStateRef.current,
-            0,
-            "smooth",
-            getScrollAnimationDuration(currentPosition)
-          );
-        } else {
-          preserveListDuringLoadRef.current = true;
-          setPreserveListDuringLoad(true);
-          setStartRank(1);
-        }
+        preserveListDuringLoadRef.current = true;
+        setPreserveListDuringLoad(true);
+        forcePageLoadRef.current = true;
+        setPageReloadNonce((nonce) => nonce + 1);
+        setStartRank(1);
         return;
       }
       pendingScrollToTopRef.current = false;
@@ -1588,6 +1662,7 @@ export function RankingsExplorer({
     },
     [
       entries,
+      findQuery,
       lastRank,
       resetFind,
       rowVirtualizer,
@@ -1937,6 +2012,7 @@ export function RankingsExplorer({
     pendingRankRef.current = 1;
     pendingScrollToTopRef.current = true;
     pendingScrollDirectionRef.current = null;
+    skipNextFindResetRef.current = true;
     preserveListDuringLoadRef.current = false;
     setPreserveListDuringLoad(false);
     setRankingType(nextRankingType);
@@ -1950,6 +2026,7 @@ export function RankingsExplorer({
   const changeEvent = (nextEventId: (typeof WCA_EVENTS)[number]["id"]) => {
     pendingRankRef.current = 1;
     pendingScrollToTopRef.current = true;
+    skipNextFindResetRef.current = true;
     preserveListDuringLoadRef.current = false;
     setPreserveListDuringLoad(false);
     setStartRank(1);
@@ -1967,6 +2044,7 @@ export function RankingsExplorer({
   const changeRegion = (option: RegionOption) => {
     pendingRankRef.current = 1;
     pendingScrollToTopRef.current = true;
+    skipNextFindResetRef.current = true;
     preserveListDuringLoadRef.current = false;
     setPreserveListDuringLoad(false);
     setStartRank(1);
@@ -2011,33 +2089,6 @@ export function RankingsExplorer({
           <h1 className="title">
             <Link href="/">WCA Rankings</Link>
           </h1>
-          <SearchInputs
-            barRef={findBarRef}
-            inputRef={findInputRef}
-            findOpen={findOpen}
-            findFloating={findFloating}
-            findQuery={findQuery}
-            findError={findError}
-            findLoading={findLoading}
-            findPending={findPending}
-            findMatches={findMatches}
-            findIndex={findIndex}
-            activeFindMatch={activeFindMatch}
-            onOpen={openFind}
-            onClose={() => setFindOpen(false)}
-            onQueryChange={(value) => {
-              setVimSearchActive(false);
-              setVimSearchQuery("");
-              setRegexSearch(false);
-              setFindResolvedQuery("");
-              updateQueryParams({
-                search: value.trim() ? value : null,
-                mode: null,
-              });
-              setFindQuery(value);
-            }}
-            onCycle={cycleFind}
-          />
         </div>
         <RankingControls
           eventId={eventId}
@@ -2047,6 +2098,33 @@ export function RankingsExplorer({
           onEventChange={changeEvent}
           onRankingTypeChange={changeRankingType}
           onRegionChange={changeRegion}
+        />
+        <SearchInputs
+          barRef={findBarRef}
+          inputRef={findInputRef}
+          findOpen={findOpen}
+          findFloating={findFloating}
+          findQuery={findQuery}
+          findError={findError}
+          findLoading={findLoading}
+          findPending={findPending}
+          findMatches={findMatches}
+          findIndex={findIndex}
+          activeFindMatch={activeFindMatch}
+          onOpen={openFind}
+          onClose={() => setFindOpen(false)}
+          onQueryChange={(value) => {
+            setVimSearchActive(false);
+            setVimSearchQuery("");
+            setRegexSearch(false);
+            setFindResolvedQuery("");
+            updateQueryParams({
+              search: value.trim() ? value : null,
+              mode: null,
+            });
+            setFindQuery(value);
+          }}
+          onCycle={cycleFind}
         />
       </header>
 

@@ -96,7 +96,8 @@ export function JumpUpControls({
 
   const openSearch = () => {
     onSearchOpen();
-    setTimeout(() => inputRef.current?.focus());
+    inputRef.current?.focus();
+    setTimeout(() => inputRef.current?.focus(), 25);
   };
 
   return (

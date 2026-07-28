@@ -189,9 +189,9 @@ select {
 
 .headerTitle {
   display: flex;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   align-items: center;
-  min-width: 0;
+  min-width: max-content;
   gap: 0.75em;
 }
 
@@ -379,6 +379,7 @@ select {
   margin-block: 0.5em;
   font-weight: 200;
   font-size: 1.7em;
+  white-space: nowrap;
 }
 
 .header h1 a {
@@ -662,6 +663,8 @@ select {
 .outerListWrapper {
   display: flex;
   justify-content: center;
+  margin-right: -0.5em;
+  margin-left: -1em;
 }
 
 .listContainer {
@@ -712,7 +715,8 @@ select {
   align-items: center;
   gap: 0.5em;
   width: 100%;
-  padding: 0.75em;
+  padding-block: 0.75em;
+  padding-inline: 1rem 0.5rem;
 }
 
 .isLoading .row {
@@ -724,7 +728,8 @@ select {
   align-items: center;
   gap: 0.5em;
   height: 100%;
-  padding: 0.75em;
+  padding-block: 0.75em;
+  padding-inline: 1rem 0.5rem;
   margin-bottom: 0;
   border: 0;
   border-radius: 0;
@@ -807,10 +812,11 @@ select {
 
 .result {
   display: grid;
-  grid-template-columns: 8ch 5.5ch;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 0.5em;
-  min-width: calc(8ch + 5.5ch + 0.5em);
+  column-gap: 6px;
+  min-width: 8ch;
+  max-width: 50%;
   margin-left: auto;
   text-align: right;
 }
@@ -821,26 +827,22 @@ select {
 
 .recordBadges {
   display: flex;
-  grid-column: 2;
-  width: 5.5ch;
-  min-height: 1.25em;
+  grid-column: 1;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: flex-end;
 }
 
 .recordBadge {
   display: inline-flex;
   align-items: center;
-  min-height: 1.25em;
-  padding: 0.2em 0.45em;
+  padding: 0.12em 0.3em;
   border-radius: 0.3em;
   background: #a16207;
   color: #fff;
-  font-size: 0.68em;
+  font-size: 0.64em;
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
-  transform: translate(-0.24em, -0.58em);
 }
 
 .recordBadge--WR {
@@ -852,18 +854,19 @@ select {
 }
 
 .best {
-  grid-column: 1;
-  width: 8ch;
+  grid-column: 2;
   font-size: 1.08em;
   font-weight: 500;
   text-align: right;
 }
 
 .competitionName {
-  grid-column: 1;
-  width: max-content;
-  max-width: none;
-  overflow: visible;
+  grid-column: 1 / -1;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   justify-self: end;
   margin-top: 0.1em;
   color: var(--text-muted);
@@ -1083,6 +1086,12 @@ select {
   }
 }
 
+@media only screen and (max-width: 600px) {
+  .competitionName {
+    display: none;
+  }
+}
+
 @media only screen and (max-width: 759px) {
   .headerTitle {
     gap: 0.5em;
@@ -1160,6 +1169,31 @@ select {
     min-height: 2.75em;
   }
 
+}
+
+@media only screen and (max-width: 399px) {
+  .headerTopRow {
+    position: relative;
+  }
+
+  .headerActions .findBar.findBar--header {
+    position: absolute;
+    top: 50%;
+    right: calc(40px + 0.5em);
+    transform: translateY(-50%);
+  }
+
+  .headerTopRow:has(
+      .findBar--header:is([data-has-text="true"], :focus-within)
+    ) .headerActions .findBar.findBar--header {
+    right: 0;
+    width: 100%;
+    max-width: none;
+    height: 48px;
+    min-height: 48px;
+    border-color: var(--border-strong);
+    background-color: var(--surface);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

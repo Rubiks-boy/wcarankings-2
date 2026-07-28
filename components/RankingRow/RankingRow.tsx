@@ -71,9 +71,6 @@ export function RankingRow({
         </span>
         <span className="result">
           <span className="resultValue">
-            <span className="best">
-              {entry ? formatWcaResult(eventId, entry.best, rankingType) : ""}
-            </span>
             <span
               className="recordBadges"
               aria-hidden={!recordBadge}
@@ -89,6 +86,9 @@ export function RankingRow({
                   {recordBadge}
                 </span>
               )}
+            </span>
+            <span className="best">
+              {entry ? formatWcaResult(eventId, entry.best, rankingType) : ""}
             </span>
           </span>
           {entry?.competitionName && (

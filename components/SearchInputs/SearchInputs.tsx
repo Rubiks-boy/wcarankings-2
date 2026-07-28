@@ -49,7 +49,8 @@ export function SearchInputs({
 
   const openSearch = () => {
     onOpen();
-    setTimeout(() => localInputRef.current?.focus());
+    localInputRef.current?.focus();
+    setTimeout(() => localInputRef.current?.focus(), 25);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {

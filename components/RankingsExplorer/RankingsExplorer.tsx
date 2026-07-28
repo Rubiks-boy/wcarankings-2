@@ -35,6 +35,10 @@ import {
 } from "@/lib/wca";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
 import {
+  notifyAnalyticsNavigation,
+  trackGoogleAnalyticsEvent,
+} from "@/lib/google-analytics";
+import {
   JumpDownControls,
   JumpUpControls,
 } from "../JumpControls/JumpControls";
@@ -101,6 +105,7 @@ function updateQueryParams(updates: Record<string, string | null>) {
     "",
     `${url.pathname}${url.search}`
   );
+  notifyAnalyticsNavigation();
 }
 
 function setSearchQueryParam(value: string) {
@@ -2423,6 +2428,9 @@ export function RankingsExplorer({
         if (event.key === "Enter") {
           const regexQuery = vimCommand.slice(1).trim();
           if (regexQuery) {
+            trackGoogleAnalyticsEvent("ranking_search_used", {
+              search_mode: "vim",
+            });
             setRegexSearch(true);
             updateQueryParams({ search: regexQuery, mode: "vim" });
             setFindResolvedQuery("");
@@ -2527,6 +2535,9 @@ export function RankingsExplorer({
     preserveListDuringLoadRef.current = true;
     setPreserveListDuringLoad(true);
     setRankingType(nextRankingType);
+    trackGoogleAnalyticsEvent("ranking_result_type_changed", {
+      result_type: nextRankingType,
+    });
     updateQueryParams({
       result: nextRankingType === "single" ? null : nextRankingType,
       type: null,
@@ -2551,6 +2562,9 @@ export function RankingsExplorer({
     setEventId(nextEventId);
     const nextRankingType = nextEventId === "333mbf" ? "single" : rankingType;
     setRankingType(nextRankingType);
+    trackGoogleAnalyticsEvent("ranking_event_changed", {
+      event_id: nextEventId,
+    });
     updateQueryParams({
       eventId: nextEventId === "333" ? null : nextEventId,
       result: nextRankingType === "single" ? null : nextRankingType,
@@ -2583,6 +2597,9 @@ export function RankingsExplorer({
     setPreserveListDuringLoad(true);
     setStartRank(nextStartRank);
     setRegionSelection(nextSelection);
+    trackGoogleAnalyticsEvent("ranking_scope_changed", {
+      scope_type: option.scope,
+    });
     updateQueryParams({
       region: option.scope === "world" ? null : option.regionId,
       scope: null,
@@ -2609,6 +2626,11 @@ export function RankingsExplorer({
   };
 
   const changeFindQuery = (value: string) => {
+    if (!findQuery.trim() && value.trim()) {
+      trackGoogleAnalyticsEvent("ranking_search_used", {
+        search_mode: "standard",
+      });
+    }
     setVimSearchActive(false);
     setVimSearchQuery("");
     setRegexSearch(false);

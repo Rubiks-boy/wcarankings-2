@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
+import { GoogleAnalytics } from "@/components/GoogleAnalytics/GoogleAnalytics";
 import { PwaRegistration } from "@/components/PwaRegistration/PwaRegistration";
 import "./globals.css";
 
@@ -65,6 +66,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body>
+        <GoogleAnalytics />
         <PwaRegistration />
         {children}
       </body>

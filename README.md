@@ -26,6 +26,9 @@ Open `http://localhost:3000`. Ranking data is available after the first WCA impo
 npm run sync:wca:local
 ```
 
+Google Analytics uses measurement ID `G-83F787NWS9` in production builds. It is
+disabled automatically in local development and tests.
+
 The importer compares export dates before downloading, so repeated runs are safe. Use `--force` when an explicit re-import is needed.
 
 App-owned MariaDB schema is managed by Flyway. Run `npm run db:migrate` to apply

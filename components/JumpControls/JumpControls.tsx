@@ -1,5 +1,6 @@
 "use client";
 
+import "./JumpControls.css";
 import { useState, type ReactNode } from "react";
 import { Icon } from "../Icon/Icon";
 import { formatRankingNumber } from "../RankingsExplorer/types";

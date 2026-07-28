@@ -356,12 +356,12 @@ select {
   margin-right: 40px;
 }
 
-.findBar--header:is([data-has-text="true"], :focus-within) .findClose {
+.findBar--header[data-has-text="true"] .findClose {
   visibility: visible;
   opacity: 1;
   pointer-events: auto;
   transition: color 150ms var(--cubic-move),
-    opacity 150ms var(--cubic-enter) 100ms, visibility 0s linear 100ms;
+    opacity 150ms var(--cubic-enter), visibility 0s;
 }
 
 .findBar--header .findClose svg {

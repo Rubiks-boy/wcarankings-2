@@ -62,7 +62,7 @@ jobs:
       - name: Verify production image contents
         run: |
           docker run --rm --entrypoint sh "wcarankings-app:${GITHUB_SHA}" -c \
-            'test -f /app/scripts/sync-wca-export.mjs && test -f /app/scripts/refresh-rankings.mjs'
+            'test -f /app/scripts/sync-wca-export.mjs && test -f /app/scripts/refresh-rankings.mjs && css=$(find /app/dist/standalone/dist/client/assets -maxdepth 1 -name "*.css" -type f -print -quit) && test -n "$css" && test -s "$css" && grep -Fq "$(basename "$css")" /app/dist/standalone/dist/client/.vite/ssr-manifest.json'
 
       - name: Build Flyway image in GitHub Actions
         uses: docker/build-push-action@v6

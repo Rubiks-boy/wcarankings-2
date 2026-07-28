@@ -6,6 +6,9 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const isStorybook = process.env.STORYBOOK === "true";
 
 export default defineConfig({
+  build: {
+    ssrManifest: true,
+  },
   server: isCodexSeatbeltSandbox
     ? { watch: { useFsEvents: false, usePolling: true } }
     : undefined,

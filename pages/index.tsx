@@ -1,10 +1,12 @@
 import type { GetServerSideProps } from "next";
 import { RankingsExplorer } from "@/components/RankingsExplorer/RankingsExplorer";
+import { loadRankings } from "@/app/api/rankings/route";
 import type {
   RankingEntry,
   RankingPage,
 } from "@/components/RankingsExplorer/types";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
+import { getRegions, type RegionKind } from "@/lib/regions";
 import { isEventId, isRankingType, isValidRegexPattern, parseRegionQuery, WCA_EVENTS } from "@/lib/wca";
 
 const PAGE_SIZE = RESULTS_PAGE_SIZE;
@@ -67,34 +69,17 @@ type RegionRecord = {
 };
 
 async function fetchRankings(
-  origin: string,
   params: URLSearchParams,
 ): Promise<RankingsResponse> {
-  const response = await fetch(`${origin}/api/rankings?${params}`);
-  if (!response.ok) {
-    throw new Error("Initial ranking page was unavailable.");
-  }
-  return response.json() as Promise<RankingsResponse>;
+  return loadRankings(params) as Promise<RankingsResponse>;
 }
 
-async function fetchRegions(
-  origin: string,
-  kind: "continent" | "country",
-): Promise<RegionRecord[]> {
-  const response = await fetch(`${origin}/api/regions?kind=${kind}`);
-  if (!response.ok) {
-    throw new Error("Regions were unavailable.");
-  }
-  const data = await response.json() as { regions?: unknown };
-  if (!Array.isArray(data.regions)) {
-    throw new Error("Regions were unavailable.");
-  }
-  return data.regions as RegionRecord[];
+async function fetchRegions(kind: RegionKind): Promise<RegionRecord[]> {
+  return getRegions(kind);
 }
 
 async function getInitialRankings(
   searchParams: Record<string, string | string[] | undefined>,
-  origin: string,
 ) {
   const rawEventId = getSearchParamWithLegacyKey(searchParams, "eventId", "event");
   const rawRankingType = getSearchParamWithLegacyKey(searchParams, "result", "type");
@@ -105,7 +90,6 @@ async function getInitialRankings(
   const regexSearch = getSearchParam(searchParams, "mode") === "vim" && isValidRegexPattern(search);
   const searchResult = search
     ? await fetchRankings(
-        origin,
         new URLSearchParams({
           eventId,
           result: rankingType,
@@ -128,7 +112,6 @@ async function getInitialRankings(
   const pages = await Promise.all(
     pageStarts.map((startRank) =>
       fetchRankings(
-        origin,
         new URLSearchParams({
           eventId,
           result: rankingType,
@@ -180,10 +163,7 @@ type PageProps = {
   countries: Array<{ id: string; name: string; iso2?: string }>;
 };
 
-export const getServerSideProps: GetServerSideProps<PageProps> = async ({
-  query,
-  req,
-}) => {
+export const getServerSideProps: GetServerSideProps<PageProps> = async ({ query }) => {
   const searchParams = query as QueryParams;
   const rawEventId = getSearchParamWithLegacyKey(searchParams, "eventId", "event");
   const rawRankingType = getSearchParamWithLegacyKey(searchParams, "result", "type");
@@ -200,21 +180,10 @@ export const getServerSideProps: GetServerSideProps<PageProps> = async ({
     const query = canonicalParams.toString();
     return { redirect: { destination: query ? `/?${query}` : "/", permanent: false } };
   }
-  const forwardedProtocol = req.headers["x-forwarded-proto"];
-  const protocol = (
-    Array.isArray(forwardedProtocol)
-      ? forwardedProtocol[0]
-      : forwardedProtocol
-  )?.split(",")[0] ?? "http";
-  const forwardedHost = req.headers["x-forwarded-host"];
-  const host = (
-    Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost
-  )?.split(",")[0] ?? req.headers.host ?? "localhost:3000";
-  const origin = `${protocol}://${host}`;
   const [initialRankings, continents, countries] = await Promise.all([
-    getInitialRankings(searchParams, origin),
-    fetchRegions(origin, "continent"),
-    fetchRegions(origin, "country"),
+    getInitialRankings(searchParams),
+    fetchRegions("continent"),
+    fetchRegions("country"),
   ]);
   const initialSearch = getSearchParam(searchParams, "search").trim().slice(0, 80);
   const initialRegexSearch = getSearchParam(searchParams, "mode") === "vim" && isValidRegexPattern(initialSearch);

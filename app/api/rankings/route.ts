@@ -387,67 +387,76 @@ setRankingsCachePrewarmer(prewarmFirstPages);
 // Deliberately detached: importing the route must not wait for warming every event.
 void prewarmFirstPages().catch(() => undefined);
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const rawEventId = url.searchParams.get("eventId") ?? url.searchParams.get("event");
-  const rawType = url.searchParams.get("result") ?? url.searchParams.get("type");
+export async function loadRankings(searchParams: URLSearchParams) {
+  const rawEventId = searchParams.get("eventId") ?? searchParams.get("event");
+  const rawType = searchParams.get("result") ?? searchParams.get("type");
   const eventId = isEventId(rawEventId) ? rawEventId : "333";
   const type = eventId === "333mbf" ? "single" : isRankingType(rawType) ? rawType : "single";
-  const { scope, regionId } = parseRegionQuery(url.searchParams.get("region"));
-  const paged = url.searchParams.get("paged") === "1";
+  const { scope, regionId } = parseRegionQuery(searchParams.get("region"));
+  const paged = searchParams.get("paged") === "1";
   const requestedLimit =
-    Number(url.searchParams.get("limit")) || (paged ? PAGE_SIZE : 80);
+    Number(searchParams.get("limit")) || (paged ? PAGE_SIZE : 80);
   const limit = paged
     ? PAGE_SIZE
     : Math.min(MAX_PAGE_SIZE, Math.max(20, requestedLimit));
-  const rawStart = Number(url.searchParams.get("start"));
+  const rawStart = Number(searchParams.get("start"));
   const requestedStart = Number.isFinite(rawStart) ? rawStart : 0;
   const startRank = paged
     ? Math.floor(Math.max(0, requestedStart) / PAGE_SIZE) * PAGE_SIZE + 1
     : Math.max(1, requestedStart || 1);
-  const cursorRank = Number(url.searchParams.get("cursorRank")) || null;
-  const cursorId = url.searchParams.get("cursorId") ?? "";
-  const locate = (url.searchParams.get("locate") ?? "").trim().toUpperCase();
-  const search = (url.searchParams.get("search") ?? "").trim().slice(0, 80);
-  const regexSearch = url.searchParams.get("mode") === "vim";
-  const requestedSearchLimit = Number(url.searchParams.get("searchLimit")) || MAX_SEARCH_RESULTS;
+  const cursorRank = Number(searchParams.get("cursorRank")) || null;
+  const cursorId = searchParams.get("cursorId") ?? "";
+  const locate = (searchParams.get("locate") ?? "").trim().toUpperCase();
+  const search = (searchParams.get("search") ?? "").trim().slice(0, 80);
+  const regexSearch = searchParams.get("mode") === "vim";
+  const requestedSearchLimit = Number(searchParams.get("searchLimit")) || MAX_SEARCH_RESULTS;
   const searchLimit = Math.min(MAX_SEARCH_RESULTS, Math.max(1, requestedSearchLimit));
 
   if (scope !== "world" && !regionId) {
-    return Response.json({ error: "Choose a region before loading rankings." }, { status: 400 });
+    throw new Error("Choose a region before loading rankings.");
   }
 
   if (regexSearch && search && !isValidRegexPattern(search)) {
-    return Response.json({ error: "Invalid regular expression." }, { status: 400 });
+    throw new Error("Invalid regular expression.");
   }
 
+  const input = {
+    eventId,
+    type,
+    scope,
+    regionId,
+    startRank,
+    cursorRank,
+    cursorId,
+    limit,
+    locate,
+    search,
+    regexSearch,
+    searchLimit,
+    paged,
+  };
+  const isCacheablePage = paged && !search && !locate && !cursorRank && !cursorId;
+  return isCacheablePage ? getCachedNormalPage(input) : queryMysql(input);
+}
+
+export async function GET(request: Request) {
+  const searchParams = new URL(request.url).searchParams;
   try {
-    const input = {
-      eventId,
-      type,
-      scope,
-      regionId,
-      startRank,
-      cursorRank,
-      cursorId,
-      limit,
-      locate,
-      search,
-      regexSearch,
-      searchLimit,
-      paged,
-    };
-    const isCacheablePage = paged && !search && !locate && !cursorRank && !cursorId;
-    const data = await (isCacheablePage ? getCachedNormalPage(input) : queryMysql(input));
+    const data = await loadRankings(searchParams);
     return Response.json(data, { headers: { "Cache-Control": "public, max-age=60, s-maxage=3600" } });
   } catch (error) {
+    const rawEventId = searchParams.get("eventId") ?? searchParams.get("event");
+    const rawType = searchParams.get("result") ?? searchParams.get("type");
+    const eventId = isEventId(rawEventId) ? rawEventId : "333";
+    const type = eventId === "333mbf" ? "single" : isRankingType(rawType) ? rawType : "single";
+    const { scope } = parseRegionQuery(searchParams.get("region"));
     console.error("Rankings query failed", {
       eventId,
       type,
       scope,
-      paged,
-      search: Boolean(search),
-      locate: Boolean(locate),
+      paged: searchParams.get("paged") === "1",
+      search: Boolean(searchParams.get("search")),
+      locate: Boolean(searchParams.get("locate")),
       error,
     });
     return Response.json(

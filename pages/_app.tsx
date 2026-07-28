@@ -25,6 +25,7 @@ export default function App({ Component, pageProps }: AppProps) {
         />
         <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="icon" href="/favicon.svg" />
+        <link rel="stylesheet" href="/styles.css" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
       <div className={`${geistSans.variable} ${geistMono.variable}`}>

@@ -111,7 +111,7 @@ jobs:
             'cd /srv/wcarankings && docker compose ps && for attempt in $(seq 1 30); do curl --fail --silent http://127.0.0.1:3000/ >/dev/null && exit 0; sleep 2; done; docker compose logs --tail=80 app; exit 1'
 
           ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
-            'set -eu; html=$(curl --fail --silent http://127.0.0.1:3000/); css=$(printf "%s" "$html" | sed -n "s/.*href=\"\([^\"]*\.css\)\".*/\1/p" | head -n 1); test -n "$css"; curl --fail --silent "http://127.0.0.1:3000$css" >/dev/null'
+            'set -eu; html=$(curl --fail --silent http://127.0.0.1:3000/); css=$(printf "%s" "$html" | sed -n "s/.*href=\"\([^\"]*\.css\)\".*/\1/p" | head -n 1); if [ -z "$css" ]; then echo "SSR response did not include a stylesheet link." >&2; exit 1; fi; echo "SSR stylesheet: $css"; curl --fail --silent --show-error --dump-header - "http://127.0.0.1:3000$css" >/dev/null'
 
           PUBLIC_HOST="${SERVER_HOST#https://}"
           PUBLIC_HOST="${PUBLIC_HOST#http://}"

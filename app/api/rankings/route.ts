@@ -360,8 +360,10 @@ setRankingsCacheInvalidator(() => {
 });
 
 async function prewarmFirstPages() {
-  await Promise.all(prewarmPageKeys().map((key) =>
-    rankingsPageCache.get(key, () => queryMysql({
+  // Each page query fans out to several DB reads; warm sequentially so startup
+  // never starves the request pool.
+  for (const key of prewarmPageKeys()) {
+    await rankingsPageCache.get(key, () => queryMysql({
       ...key,
       cursorRank: null,
       cursorId: "",
@@ -370,8 +372,8 @@ async function prewarmFirstPages() {
       search: "",
       searchLimit: MAX_SEARCH_RESULTS,
       paged: true,
-    })),
-  ));
+    }));
+  }
 }
 
 setRankingsCachePrewarmer(prewarmFirstPages);

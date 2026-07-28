@@ -4,7 +4,7 @@ import { WCA_EVENTS } from "@/lib/wca";
 import { ALL_EVENT_RANKING_OPTIONS } from "../EventPicker/allEventRankingOptions";
 import type { EventPickerOption } from "../EventPicker/EventPicker";
 import type { RankingEntry, RegionOption } from "../RankingsExplorer/types";
-import { RankingsControlsRail, RankingsPagerRail } from "./JumpControls";
+import { RankingsControlsRail, RankingsPagerRail } from "./RankingsRail";
 import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVisibility";
 
 const eventOptions = WCA_EVENTS satisfies readonly EventPickerOption[];
@@ -60,7 +60,7 @@ function InteractiveTopRail() {
 }
 
 const meta = {
-  title: "Components/JumpControls",
+  title: "Components/RankingsRail",
   component: RankingsControlsRail,
   parameters: { layout: "fullscreen" },
 } satisfies Meta<typeof RankingsControlsRail>;

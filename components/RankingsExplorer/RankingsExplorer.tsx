@@ -39,7 +39,7 @@ import {
   notifyAnalyticsNavigation,
   trackGoogleAnalyticsEvent,
 } from "@/lib/google-analytics";
-import { RankingsControlsRail, RankingsPagerRail } from "../JumpControls/JumpControls";
+import { RankingsControlsRail, RankingsPagerRail } from "../RankingsRail/RankingsRail";
 import {
   ALL_EVENT_RANKING_OPTIONS,
   isAllEventRankingOption,

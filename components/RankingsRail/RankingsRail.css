@@ -9,7 +9,7 @@
   box-shadow: 0 4px 16px var(--shadow);
 }
 
-.JumpRail { isolation: isolate; }
+.RankingsRail { isolation: isolate; }
 .Jump svg { width: 22px; height: 22px; }
 
 .Jump--rankings {

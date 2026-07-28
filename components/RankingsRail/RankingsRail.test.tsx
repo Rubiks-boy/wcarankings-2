@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { WCA_EVENTS } from "@/lib/wca";
-import { RankingsControlsRail, RankingsPagerRail } from "./JumpControls";
+import { RankingsControlsRail, RankingsPagerRail } from "./RankingsRail";
 import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVisibility";
 
 const regions = [{ key: "world", scope: "world" as const, regionId: "", label: "World" }];
@@ -16,7 +16,7 @@ test("renders paired pager actions with useful labels", () => {
 
 test("renders the ranking settings and search in one rail", () => {
   const markup = renderToStaticMarkup(<RankingsControlsRail event={WCA_EVENTS[0]} onEventChange={() => undefined} rankingType="single" onRankingTypeChange={() => undefined} regions={regions} regionSelection={{ scope: "world", regionId: "" }} onRegionChange={() => undefined} compactResultType={false} findOpen={false} findQuery="" findError="" findLoading={false} findPending={false} findMatches={[]} findIndex={0} onSearchOpen={() => undefined} onSearchClose={() => undefined} onSearchQueryChange={() => undefined} onSearchCycle={() => undefined} />);
-  assert.match(markup, /class="Jump JumpRail Jump--rankings"/);
+  assert.match(markup, /class="Jump RankingsRail Jump--rankings"/);
   assert.match(markup, /cubing-icon event-333/);
   assert.match(markup, /aria-label="3x3x3 Cube"/);
   assert.match(markup, /Single/);

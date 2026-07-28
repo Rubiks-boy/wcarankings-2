@@ -508,25 +508,26 @@ select {
 }
 
 .result {
-  display: grid;
+  display: flex;
   flex: 0 0 auto;
-  grid-template-columns: 8ch 5.5ch;
-  align-items: center;
-  column-gap: 0.5em;
-  row-gap: 0.1em;
-  min-width: 8ch;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: calc(8ch + 5.5ch + 0.5em);
   margin-left: auto;
   text-align: right;
 }
 
 .resultValue {
-  display: contents;
+  display: grid;
+  grid-template-columns: 8ch 5.5ch;
+  align-items: center;
+  column-gap: 0.5em;
+  width: calc(8ch + 5.5ch + 0.5em);
 }
 
 .recordBadges {
   display: flex;
   grid-column: 2;
-  grid-row: 1;
   width: 5.5ch;
   min-height: 1.5em;
   align-items: center;
@@ -562,15 +563,13 @@ select {
 
 .best {
   grid-column: 1;
-  grid-row: 1;
   width: 8ch;
   text-align: right;
 }
 
 .competitionName {
-  grid-column: 1;
-  grid-row: 2;
   width: 8ch;
+  margin-right: calc(5.5ch + 0.5em);
   max-width: none;
   overflow: visible;
   margin-top: 0.1em;

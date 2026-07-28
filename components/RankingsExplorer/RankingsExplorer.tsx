@@ -228,7 +228,7 @@ function getPage(
       startPosition: data.startPosition,
       lastRank: data.lastRank,
       total: data.total,
-      fetchedAt: data.fetchedAt ?? data.exportDate ?? null,
+      fetchedAt: data.fetchedAt ?? null,
       offlineStale: response.headers.get("X-Rankings-Offline-Stale") === "1",
     };
   });

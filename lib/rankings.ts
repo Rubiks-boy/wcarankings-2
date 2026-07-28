@@ -38,7 +38,7 @@ function normalPageResponse(rows: RankingRow[], input: QueryInput, metadata: Ran
   const entries = rows.map(toRankingEntry);
   const startPosition = Math.min(Math.max(0, input.startRank - 1), total);
   const hasMore = input.startRank + entries.length <= total;
-  return { entries, hasMore, nextPageStart: hasMore ? input.startRank + PAGE_SIZE : null, previousPageStart: input.startRank > 1 && total > 0 ? Math.max(1, input.startRank - PAGE_SIZE) : null, startPosition, lastRank: entries.at(-1)?.subRank ?? null, nextCursor: entries.at(-1) ? { rank: entries.at(-1)!.subRank, personId: entries.at(-1)!.personId } : null, total, exportDate: metadata.exportDate, fetchedAt: metadata.fetchedAt, source: "wca" as const };
+  return { entries, hasMore, nextPageStart: hasMore ? input.startRank + PAGE_SIZE : null, previousPageStart: input.startRank > 1 && total > 0 ? Math.max(1, input.startRank - PAGE_SIZE) : null, startPosition, lastRank: entries.at(-1)?.subRank ?? null, total, fetchedAt: metadata.fetchedAt };
 }
 
 async function queryNormalPage(input: QueryInput, metadata: RankingsMetadata) {
@@ -53,7 +53,7 @@ export async function queryMysql(input: QueryInput) {
   const source = table(input.type);
   if (input.locate) {
     const result = await query<RankingRow>(`SELECT ${columns(rank, subRank)} FROM ${source} WHERE ${conditions.join(" AND ")} AND person_id = ? LIMIT 1`, [...values, input.locate]);
-    return { data: { located: result.rows[0] ? toRankingEntry(result.rows[0]) : null, source: "wca" as const }, timings: result.timings, queryCount: 1, returnedRows: result.rows.length };
+    return { data: { located: result.rows[0] ? toRankingEntry(result.rows[0]) : null }, timings: result.timings, queryCount: 1, returnedRows: result.rows.length };
   }
   if (input.search) {
     if (input.regexSearch && !isValidRegexPattern(input.search)) throw new Error("Invalid regular expression.");
@@ -61,7 +61,7 @@ export async function queryMysql(input: QueryInput) {
     const pattern = input.regexSearch ? input.search : `%${input.search}%`;
     const result = await query<RankingRow>(`SELECT ${columns(rank, subRank)} FROM ${source} WHERE ${conditions.join(" AND ")} AND (person_name ${operator} ? OR person_id ${operator} ?) ORDER BY ${subRank} LIMIT ?`, [...values, pattern, pattern, input.searchLimit]);
     const entries = result.rows.map(toRankingEntry);
-    return { data: { entries, hasMore: false, nextPageStart: null, previousPageStart: null, nextCursor: null, total: entries.length, exportDate: null, fetchedAt: null, source: "wca" as const }, timings: result.timings, queryCount: 1, returnedRows: result.rows.length };
+    return { data: { entries, hasMore: false, nextPageStart: null, previousPageStart: null, total: entries.length, fetchedAt: null }, timings: result.timings, queryCount: 1, returnedRows: result.rows.length };
   }
   const cursor = input.cursorRank
     ? ` AND (${subRank} > ? OR (${subRank} = ? AND person_id > ?))`
@@ -69,8 +69,7 @@ export async function queryMysql(input: QueryInput) {
   const pageValues = input.cursorRank ? [...values, input.cursorRank, input.cursorRank, input.cursorId, input.limit + 1] : [...values, input.startRank, input.limit + 1];
   const result = await query<RankingRow>(`SELECT ${columns(rank, subRank)} FROM ${source} WHERE ${conditions.join(" AND ")}${cursor} ORDER BY ${subRank} LIMIT ?`, pageValues);
   const entries = result.rows.slice(0, input.limit).map(toRankingEntry);
-  const last = entries.at(-1);
-  return { data: { entries, hasMore: result.rows.length > input.limit, nextPageStart: null, previousPageStart: null, nextCursor: last ? { rank: last.subRank, personId: last.personId } : null, total: entries.length, exportDate: null, fetchedAt: null, source: "wca" as const }, timings: result.timings, queryCount: 1, returnedRows: result.rows.length };
+  return { data: { entries, hasMore: result.rows.length > input.limit, nextPageStart: null, previousPageStart: null, total: entries.length, fetchedAt: null }, timings: result.timings, queryCount: 1, returnedRows: result.rows.length };
 }
 
 function parseInput(searchParams: URLSearchParams): QueryInput {

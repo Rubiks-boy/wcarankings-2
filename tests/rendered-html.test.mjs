@@ -181,7 +181,7 @@ test("does not replace SQL failures with synthetic ranking data", async () => {
   ]);
 
   assert.doesNotMatch(page, /demo-data|makeDemoRankings/);
-  assert.doesNotMatch(rankingsService, /demo-data|makeDemoRankings|source: "demo"/);
+  assert.doesNotMatch(rankingsService, /demo-data|makeDemoRankings/);
   assert.match(rankingsRoute, /status: 503/);
   assert.doesNotMatch(readme, /preview rows/);
   await assert.rejects(access(new URL("../lib/demo-data.ts", import.meta.url)));

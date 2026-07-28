@@ -22,7 +22,6 @@ export type RankingPage = {
   lastRank: number | null;
   total: number;
   fetchedAt: string | null;
-  exportDate?: string | null;
   offlineStale?: boolean;
 };
 

@@ -7,24 +7,32 @@
   opacity: 0;
   pointer-events: none;
   will-change: opacity, transform;
-  transition: opacity 100ms var(--cubic-exit) 100ms,
-    transform 150ms var(--cubic-exit) 100ms;
+  transition: opacity 100ms var(--cubic-exit),
+    transform 150ms var(--cubic-exit);
 }
 
 .JumpControlsVisibility:has(.Jump[data-direction="up"]) {
   top: 1em;
-  transform: translate3d(0, -6px, 0);
+  opacity: var(--jump-controls-progress);
+  transform: translate3d(
+    0,
+    calc((var(--jump-controls-progress) - 1) * 96px),
+    0
+  );
+  transition: none;
 }
 
 .JumpControlsVisibility:has(.Jump[data-direction="down"]) {
   bottom: 4em;
-  transform: translate3d(0, 6px, 0);
+  opacity: var(--jump-controls-progress);
+  transform: translate3d(
+    0,
+    calc((1 - var(--jump-controls-progress)) * 96px),
+    0
+  );
+  transition: none;
 }
 
-.JumpControlsVisibility[data-visible="true"]:has(.Jump[data-direction]) {
-  opacity: 1;
+.JumpControlsVisibility[data-interactive="true"]:has(.Jump[data-direction]) {
   pointer-events: auto;
-  transform: translate3d(0, 0, 0);
-  transition: opacity 150ms var(--cubic-enter) 100ms,
-    transform 150ms var(--cubic-enter) 100ms;
 }

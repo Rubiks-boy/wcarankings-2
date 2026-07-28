@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, type KeyboardEvent } from "react";
 import { EventPicker } from "../EventPicker/EventPicker";
+import { RegionPicker } from "../RegionPicker/RegionPicker";
 import ArrowDownIcon from "../Icon/arrow-down.svg?react";
 import ArrowUpIcon from "../Icon/arrow-up.svg?react";
 import CloseIcon from "../Icon/close.svg?react";
@@ -9,6 +10,8 @@ import SearchIcon from "../Icon/search.svg?react";
 import {
   formatRankingNumber,
   type RankingEntry,
+  type RegionOption,
+  type RegionSelection,
 } from "../RankingsExplorer/types";
 import { WCA_EVENTS } from "@/lib/wca";
 
@@ -18,6 +21,11 @@ export function JumpUpControls({
   onJump,
   event,
   onEventChange,
+  rankingType,
+  onRankingTypeChange,
+  regions,
+  regionSelection,
+  onRegionChange,
   onEventPickerTrigger,
   searchInputRef,
   findQuery,
@@ -36,6 +44,11 @@ export function JumpUpControls({
   onJump: () => void;
   event: (typeof WCA_EVENTS)[number];
   onEventChange: (eventId: (typeof WCA_EVENTS)[number]["id"]) => void;
+  rankingType: "single" | "average";
+  onRankingTypeChange: (rankingType: "single" | "average") => void;
+  regions: RegionOption[];
+  regionSelection: RegionSelection;
+  onRegionChange: (region: RegionOption) => void;
   onEventPickerTrigger?: (trigger: HTMLButtonElement | null) => void;
   searchInputRef?: (input: HTMLInputElement | null) => void;
   findQuery: string;
@@ -165,6 +178,30 @@ export function JumpUpControls({
           >
             <CloseIcon />
           </button>
+      </div>
+      <div className="Jump-secondaryControls">
+        <button
+          className="Jump-resultTypeToggle"
+          type="button"
+          disabled={event.id === "333mbf"}
+          aria-label={`Switch to ${rankingType === "single" ? "average" : "single"} rankings`}
+          title={
+            event.id === "333mbf"
+              ? "Multi-Blind has no average"
+              : `Switch to ${rankingType === "single" ? "average" : "single"} rankings`
+          }
+          onClick={() =>
+            onRankingTypeChange(rankingType === "single" ? "average" : "single")
+          }
+        >
+          {rankingType === "single" ? "Single" : "Average"}
+        </button>
+        <RegionPicker
+          className="Jump-regionPicker"
+          options={regions}
+          selected={regionSelection}
+          onChange={onRegionChange}
+        />
       </div>
     </div>
   );

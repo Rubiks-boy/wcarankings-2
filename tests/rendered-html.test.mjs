@@ -13,6 +13,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
       "../components/RankingsExplorer/types.ts",
       "../components/RankingControls/RankingControls.tsx",
       "../components/RegionPicker/RegionPicker.tsx",
+      "../components/Dropdown/Dropdown.tsx",
       "../components/RankingRow/RankingRow.tsx",
       "../components/ResultsTable/ResultsTable.tsx",
       "../components/SearchInputs/SearchInputs.tsx",
@@ -68,7 +69,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /className="selectInput(?: eventInput)?"/);
   assert.match(component, /findBar/);
   assert.match(component, /Search names or WCA IDs/);
-  assert.match(component, /openFind/);
+  assert.match(component, /activateFind/);
   assert.match(component, /RegionPicker/);
   assert.match(component, /className="regionPickerTrigger"/);
   assert.match(component, /initialRegions/);
@@ -82,7 +83,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /Jump to end/);
   assert.match(component, /className="siteFooter"/);
   assert.match(component, /WCA export date unavailable/);
-  assert.match(component, /closeOnOutsideClick/);
+  assert.match(component, /closeOnOutsidePress/);
   assert.match(component, /document\.addEventListener\("pointerdown"/);
   assert.match(component, /loadPrevious/);
   assert.match(component, /window\.scrollBy/);

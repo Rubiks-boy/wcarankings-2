@@ -476,6 +476,8 @@ select {
   font: inherit;
   appearance: none;
   text-align: left;
+  transition: border-color 150ms var(--cubic-move),
+    box-shadow 150ms var(--cubic-move);
 }
 
 .regionPicker > svg {
@@ -486,10 +488,41 @@ select {
   transform: translateY(-50%);
 }
 
-.regionPickerTrigger:hover,
+.regionPickerClear {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-strong);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: color 150ms var(--cubic-move);
+}
+
+.regionPickerClear svg {
+  width: 20px;
+  height: 20px;
+}
+
+.regionPickerClear:hover,
+.regionPickerClear:focus-visible {
+  color: var(--focus);
+  outline: none;
+}
+
+.regionPickerTrigger:focus-visible,
 .regionPickerTrigger[aria-expanded="true"] {
-  border-color: var(--accent);
+  border-color: var(--focus);
   box-shadow: 0 0 5px var(--focus-ring);
+  outline: none;
 }
 
 .regionPickerValue,
@@ -501,14 +534,31 @@ select {
 .regionPickerMenu {
   position: absolute;
   z-index: 20;
-  top: calc(100% + 0.35em);
+  top: calc(100% + 0.5em);
   right: 0;
   left: 0;
   overflow: hidden;
-  border: 1px solid var(--border-accent);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.5em;
   background: var(--surface);
-  box-shadow: 0 8px 24px var(--shadow);
+  box-shadow: 0 4px 16px var(--shadow);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.97);
+  transform-origin: top left;
+  transition: opacity 150ms var(--cubic-exit),
+    transform 150ms var(--cubic-exit),
+    visibility 0s linear 150ms;
+}
+
+.regionPickerMenu[data-open="true"] {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+  transition: opacity 150ms var(--cubic-enter),
+    transform 150ms var(--cubic-enter), visibility 0s;
 }
 
 .regionOptions {
@@ -538,8 +588,12 @@ select {
 }
 
 .regionOption:hover,
-.regionOption.isSelected {
+.regionOption.isActive {
   background: var(--surface-hover);
+}
+
+.regionOption.isSelected {
+  color: var(--focus);
 }
 
 .regionEmpty {
@@ -595,6 +649,7 @@ select {
 
 .rankingTypeToggle {
   box-sizing: border-box;
+  position: relative;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: stretch;
@@ -607,6 +662,25 @@ select {
   background: var(--surface);
   flex: 0.8 1 0;
   overflow: hidden;
+}
+
+.rankingTypeToggle::before {
+  position: absolute;
+  z-index: 0;
+  top: 1px;
+  bottom: 1px;
+  left: 1px;
+  width: calc((100% - 2px) / 2);
+  border-radius: 0.35em;
+  background: var(--surface-selected);
+  content: "";
+  pointer-events: none;
+  transform: translateX(0);
+  transition: transform 250ms var(--cubic-move);
+}
+
+.rankingTypeToggle[data-ranking-type="average"]::before {
+  transform: translateX(100%);
 }
 
 .selectInput select,
@@ -624,6 +698,7 @@ select {
 .rankingTypeOption {
   box-sizing: border-box;
   position: relative;
+  z-index: 1;
   display: grid;
   width: 100%;
   min-width: 0;
@@ -634,7 +709,7 @@ select {
   color: var(--text-muted);
   cursor: pointer;
   font-size: 0.85em;
-  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+  transition: color 150ms ease;
 }
 
 .rankingTypeOption input {
@@ -645,7 +720,6 @@ select {
 }
 
 .rankingTypeOption.isSelected {
-  background: var(--surface-selected);
   color: var(--text-strong);
 }
 
@@ -658,9 +732,8 @@ select {
   opacity: 0.45;
 }
 
-.rankingTypeOption:focus-within {
-  box-shadow: 0 0 0 2px var(--focus-ring);
-  outline: none;
+.rankingTypeOption:has(input:focus-visible) {
+  color: var(--focus);
 }
 
 .selectInput select:focus-visible {
@@ -1192,6 +1265,7 @@ select {
   .regionPickerTrigger {
     min-height: 40px;
     padding: 0.75em;
+    padding-right: 44px;
     font-size: 16px;
   }
 

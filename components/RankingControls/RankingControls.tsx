@@ -46,7 +46,11 @@ export function RankingControls({
         </select>
         <SelectChevronIcon />
       </div>
-      <fieldset className="rankingTypeToggle" aria-label="Ranking type">
+      <fieldset
+        className="rankingTypeToggle"
+        data-ranking-type={rankingType}
+        aria-label="Ranking type"
+      >
         <legend className="visuallyHidden">Ranking type</legend>
         {(["single", "average"] as const).map((option) => (
           <label

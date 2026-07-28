@@ -12,5 +12,29 @@ test("renders the selected region input", () => {
     />,
   );
   assert.match(markup, /aria-label="Region"/);
+  assert.match(markup, /role="combobox"/);
+  assert.match(markup, /aria-autocomplete="list"/);
   assert.match(markup, /value="World"/);
+  assert.doesNotMatch(markup, /aria-label="Clear region"/);
+});
+
+test("renders a clear button in place of the chevron for a specific region", () => {
+  const markup = renderToStaticMarkup(
+    <RegionPicker
+      options={[
+        { key: "world", scope: "world", regionId: "", label: "World" },
+        {
+          key: "continent:_Europe",
+          scope: "continent",
+          regionId: "_Europe",
+          label: "Europe",
+        },
+      ]}
+      selected={{ scope: "continent", regionId: "_Europe" }}
+      onChange={() => undefined}
+    />,
+  );
+
+  assert.match(markup, /aria-label="Clear region"/);
+  assert.match(markup, /value="Europe"/);
 });

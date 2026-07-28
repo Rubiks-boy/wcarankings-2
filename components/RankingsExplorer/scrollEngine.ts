@@ -13,6 +13,23 @@ export function getPrefetchRowCount(downwardPixelsPerMs: number) {
   return NORMAL_PREFETCH_ROWS;
 }
 
+export function shouldPrefetchExtraPage({
+  downwardPixelsPerMs,
+  saveData = false,
+  effectiveType = "",
+}: {
+  downwardPixelsPerMs: number;
+  saveData?: boolean;
+  effectiveType?: string;
+}) {
+  return (
+    downwardPixelsPerMs >= 2 &&
+    !saveData &&
+    effectiveType !== "slow-2g" &&
+    effectiveType !== "2g"
+  );
+}
+
 export type SearchJumpMode = "local" | "multi-page";
 
 export function getSearchJumpMode(

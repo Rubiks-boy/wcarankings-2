@@ -16,6 +16,7 @@ import {
   getCurrentViewportPosition,
   getCurrentViewportSubRank,
   getPrefetchRowCount,
+  shouldPrefetchExtraPage,
   getScrollAnimationDuration,
   getSearchAnimationDuration,
   getSearchBridgePageStarts,
@@ -62,6 +63,11 @@ const VIM_JUMP_SIZE = PAGE_SIZE * VIM_JUMP_PAGE_COUNT;
 const ROW_HEIGHT = 65.45;
 const RAIL_REVEAL_DISTANCE = ROW_HEIGHT * 1.5;
 const END_MARKER_PEEK = ROW_HEIGHT + 40;
+
+type NetworkInformationLike = {
+  saveData?: boolean;
+  effectiveType?: string;
+};
 
 export function centeredRowScrollTop(
   rowTop: number,
@@ -1727,6 +1733,25 @@ export function RankingsExplorer({
     moreRequestRef.current = true;
     setLoadingMore(true);
     try {
+      const connection = (navigator as Navigator & {
+        connection?: NetworkInformationLike;
+      }).connection;
+      const followingPageStart = nextPageStart + PAGE_SIZE;
+      if (
+        followingPageStart <= total &&
+        shouldPrefetchExtraPage({
+          downwardPixelsPerMs: scrollVelocityRef.current.downwardPixelsPerMs,
+          saveData: connection?.saveData,
+          effectiveType: connection?.effectiveType,
+        })
+      ) {
+        void getPage(
+          eventId,
+          rankingType,
+          followingPageStart,
+          regionSelection
+        ).catch(() => undefined);
+      }
       const data = await getPage(
         eventId,
         rankingType,
@@ -1761,7 +1786,7 @@ export function RankingsExplorer({
       moreRequestRef.current = false;
       setLoadingMore(false);
     }
-  }, [eventId, hasMore, loading, nextPageStart, rankingType, regionSelection]);
+  }, [eventId, hasMore, loading, nextPageStart, rankingType, regionSelection, total]);
 
   const loadPrevious = useCallback(async () => {
     if (

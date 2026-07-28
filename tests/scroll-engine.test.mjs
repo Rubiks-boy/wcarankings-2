@@ -6,6 +6,7 @@ import {
   getSearchBridgePageStarts,
   getSearchJumpMode,
   getPrefetchRowCount,
+  shouldPrefetchExtraPage,
   isDuplicateRank,
   DISTANT_SCROLL_DURATION_MS,
   MAX_LOCAL_SCROLL_DURATION_MS,
@@ -56,6 +57,19 @@ test("extends the page prefetch buffer for fast downward scrolling", () => {
   assert.equal(getPrefetchRowCount(0.99), 12);
   assert.equal(getPrefetchRowCount(1), 32);
   assert.equal(getPrefetchRowCount(2), 48);
+});
+
+test("only looks ahead an extra page during a fast scroll on suitable connections", () => {
+  assert.equal(shouldPrefetchExtraPage({ downwardPixelsPerMs: 1.99 }), false);
+  assert.equal(shouldPrefetchExtraPage({ downwardPixelsPerMs: 2 }), true);
+  assert.equal(
+    shouldPrefetchExtraPage({ downwardPixelsPerMs: 2, saveData: true }),
+    false
+  );
+  assert.equal(
+    shouldPrefetchExtraPage({ downwardPixelsPerMs: 2, effectiveType: "2g" }),
+    false
+  );
 });
 
 test("keeps same-page, adjacent-page, and wrapped search jumps local", () => {

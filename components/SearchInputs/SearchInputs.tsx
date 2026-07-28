@@ -9,6 +9,7 @@ import {
 
 export function SearchInputs({
   barRef,
+  inputRef,
   findOpen,
   findFloating,
   findQuery,
@@ -24,6 +25,7 @@ export function SearchInputs({
   onCycle,
 }: {
   barRef?: Ref<HTMLDivElement>;
+  inputRef?: Ref<HTMLInputElement>;
   findOpen: boolean;
   findFloating: boolean;
   findQuery: string;
@@ -88,6 +90,7 @@ export function SearchInputs({
         <Icon name="search" />
       </span>
       <input
+        ref={inputRef}
         className="findInput"
         type="search"
         value={findQuery}

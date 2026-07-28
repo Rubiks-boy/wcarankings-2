@@ -7,6 +7,7 @@ export function RankingRow({
   rankingType,
   loading,
   animationIndex,
+  searchMatched = false,
   highlighted = false,
   rankIsDuplicate = false,
 }: {
@@ -15,11 +16,13 @@ export function RankingRow({
   rankingType: "single" | "average";
   loading: boolean;
   animationIndex: number;
+  searchMatched?: boolean;
   highlighted?: boolean;
   rankIsDuplicate?: boolean;
 }) {
   const style = {
     "--t-animation-delay": `${animationIndex * 10}ms`,
+    minHeight: "61.6px",
   } as React.CSSProperties;
   const rank = entry?.rank ?? 0;
   const name = entry?.personName ?? "";
@@ -28,6 +31,7 @@ export function RankingRow({
   return (
     <li
       className={`listItem${loading || !entry ? " isLoading" : ""}`}
+      data-person-id={entry?.personId}
       style={style}
     >
       <div className="loader" aria-hidden="true">
@@ -37,6 +41,8 @@ export function RankingRow({
       </div>
       <div
         className={`row${animationIndex % 2 === 1 ? " row--alternate" : ""}${
+          searchMatched ? " row--searchResult" : ""
+        }${
           highlighted ? " row--searchMatch" : ""
         }`}
       >

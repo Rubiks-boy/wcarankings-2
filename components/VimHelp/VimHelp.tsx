@@ -10,8 +10,8 @@ export function VimHelp({ onClose }: { onClose: () => void }) {
         </button>
       </div>
       <dl>
-        <dt>j / d</dt><dd>Scroll up 100 people</dd>
-        <dt>k / u</dt><dd>Scroll down 100 people</dd>
+        <dt>j / d</dt><dd>Scroll down 100 people</dd>
+        <dt>k / u</dt><dd>Scroll up 100 people</dd>
         <dt>gg</dt><dd>Jump to the top</dd>
         <dt>G</dt><dd>Jump to the end</dd>
         <dt>:5000</dt><dd>Jump to a specific rank</dd>

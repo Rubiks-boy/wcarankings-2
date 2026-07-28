@@ -2,7 +2,27 @@
 
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  animateScrollTo,
+  cancelScrollAnimation,
+  getCurrentViewportPosition,
+  getCurrentViewportSubRank,
+  getScrollAnimationDuration,
+  getSearchAnimationDuration,
+  getSearchBridgePageStarts,
+  getSearchJumpMode,
+  scrollToEntry,
+  type ScrollAnimationState,
+  SCROLL_SETTLE_DELAY_MS,
+} from "./scrollEngine";
 import {
   FALLBACK_CONTINENTS,
   FALLBACK_COUNTRIES,
@@ -11,19 +31,30 @@ import {
   parseRegionQuery,
   WCA_EVENTS,
 } from "@/lib/wca";
-import { VimHelp } from "../VimHelp/VimHelp";
-import { VimSearchInput } from "../VimSearchInput/VimSearchInput";
+import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
 import { JumpControls } from "../JumpControls/JumpControls";
 import { RankingControls } from "../RankingControls/RankingControls";
 import { ResultsTable } from "../ResultsTable/ResultsTable";
 import { SearchInputs } from "../SearchInputs/SearchInputs";
-import { formatFetchedAgo, type InitialRankingData, type RankingEntry, type RankingPage, type RegionOption, type RegionSelection } from "./types";
+import { VimHelp } from "../VimHelp/VimHelp";
+import { VimSearchInput } from "../VimSearchInput/VimSearchInput";
+import {
+  formatFetchedAgo,
+  type InitialRankingData,
+  type RankingEntry,
+  type RankingPage,
+  type RegionOption,
+  type RegionSelection,
+} from "./types";
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = RESULTS_PAGE_SIZE;
+const SEARCH_PAGE_RADIUS = 1;
+const SEARCH_PREFETCH_RADIUS = 3;
+const SEARCH_ANIMATION_ROWS = 3;
+const VIM_JUMP_PAGE_COUNT = 2;
+const VIM_JUMP_SIZE = PAGE_SIZE * VIM_JUMP_PAGE_COUNT;
 const ROW_HEIGHT = 61.6;
-const MIN_SCROLL_ANIMATION_DURATION_MS = 1000;
-const MAX_SCROLL_ANIMATION_DURATION_MS = 1800;
-const LOG_SCROLL_DURATION_PER_DECADE_MS = 150;
+
 function updateQueryParams(updates: Record<string, string | null>) {
   const url = new URL(window.location.href);
   Object.entries(updates).forEach(([key, value]) => {
@@ -37,10 +68,36 @@ function updateQueryParams(updates: Record<string, string | null>) {
   );
 }
 
+function setSearchQueryParam(value: string) {
+  updateQueryParams({ search: value.trim() ? value : null });
+}
+
+type SearchLayoutAnchor = {
+  requestEpoch: number;
+  personId: string;
+  viewportTop: number;
+};
+
 const pageCache = new Map<string, Promise<RankingPage>>();
 
-function searchPageStartForRank(rank: number) {
-  return Math.max(1, Math.max(1, rank) - Math.floor(PAGE_SIZE / 2));
+async function fetchRankingPage(input: RequestInfo | URL) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await fetch(input);
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0)
+        await new Promise((resolve) => window.setTimeout(resolve, 150));
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Rankings are unavailable.");
+}
+
+function pageStartForSubRank(subRank: number) {
+  return Math.floor((Math.max(1, subRank) - 1) / PAGE_SIZE) * PAGE_SIZE;
 }
 
 function orderSearchMatches(matches: RankingEntry[]) {
@@ -57,11 +114,9 @@ function getPage(
   eventId: string,
   rankingType: "single" | "average",
   start: number,
-  selection: RegionSelection,
-  focusPersonId = "",
-  focusBefore = 50
+  selection: RegionSelection
 ) {
-  const pageStart = Math.max(1, Math.floor(start));
+  const pageStart = pageStartForSubRank(start);
   const params = new URLSearchParams({
     eventId,
     result: rankingType,
@@ -70,15 +125,11 @@ function getPage(
     paged: "1",
   });
   if (selection.scope !== "world") params.set("region", selection.regionId);
-  if (focusPersonId) {
-    params.set("focus", focusPersonId);
-    params.set("focusBefore", String(focusBefore));
-  }
   const cacheKey = params.toString();
   const cached = pageCache.get(cacheKey);
   if (cached) return cached;
 
-  const request = fetch(`/api/rankings?${params}`).then(async (response) => {
+  const request = fetchRankingPage(`/api/rankings?${params}`).then(async (response) => {
     if (!response.ok) {
       const body = (await response.json()) as { error?: string };
       throw new Error(body.error ?? "Rankings are unavailable.");
@@ -99,6 +150,112 @@ function getPage(
   pageCache.set(cacheKey, request);
   request.catch(() => pageCache.delete(cacheKey));
   return request;
+}
+
+async function getSearchWindow(
+  eventId: string,
+  rankingType: "single" | "average",
+  selection: RegionSelection,
+  match: RankingEntry
+) {
+  const targetPageStart = pageStartForSubRank(match.subRank);
+  const pageFirstSubRanks = Array.from(
+    { length: SEARCH_PAGE_RADIUS * 2 + 1 },
+    (_, index) =>
+      targetPageStart + 1 + (index - SEARCH_PAGE_RADIUS) * PAGE_SIZE
+  )
+    .filter((start) => start > 0)
+    .filter((start, index, starts) => starts.indexOf(start) === index);
+  const pages = await Promise.all(
+    pageFirstSubRanks.map((start) =>
+      getPage(eventId, rankingType, start, selection)
+    )
+  );
+  const entries = pages.flatMap((page) => page.entries);
+  if (!entries.some((entry) => entry.personId === match.personId))
+    throw new Error("Could not locate the selected ranking result.");
+
+  const firstPage = pages[0];
+  const lastPage = pages.at(-1) ?? firstPage;
+  return {
+    ...lastPage,
+    entries,
+    startPosition: firstPage.startPosition,
+    previousPageStart: firstPage.previousPageStart,
+    nextPageStart: lastPage.nextPageStart,
+  };
+}
+
+async function getDistantSearchWindow(
+  eventId: string,
+  rankingType: "single" | "average",
+  selection: RegionSelection,
+  currentPageStart: number,
+  match: RankingEntry,
+  direction: -1 | 1
+) {
+  const targetPageStart = pageStartForSubRank(match.subRank);
+  const pageStarts = [
+    currentPageStart,
+    ...getSearchBridgePageStarts(
+      currentPageStart,
+      targetPageStart,
+      direction,
+      PAGE_SIZE
+    ),
+    targetPageStart - PAGE_SIZE,
+    targetPageStart,
+    targetPageStart + PAGE_SIZE,
+  ]
+    .filter((start) => start >= 0)
+    .filter((start, index, starts) => starts.indexOf(start) === index)
+    .sort((left, right) => left - right);
+  const pages = (
+    await Promise.all(
+      pageStarts.map((start) =>
+        getPage(eventId, rankingType, start + 1, selection)
+      )
+    )
+  ).filter((page) => page.entries.length > 0);
+  const entries = pages.flatMap((page) => page.entries);
+  if (!entries.some((entry) => entry.personId === match.personId))
+    throw new Error("Could not locate the selected ranking result.");
+
+  const firstPage = pages[0];
+  const lastPage = pages.at(-1) ?? firstPage;
+  return {
+    ...lastPage,
+    entries,
+    startPosition: firstPage.startPosition,
+    previousPageStart: firstPage.previousPageStart,
+    nextPageStart: lastPage.nextPageStart,
+  };
+}
+
+function prefetchSearchResultPages(
+  eventId: string,
+  rankingType: "single" | "average",
+  selection: RegionSelection,
+  matches: RankingEntry[],
+  currentMatchIndex: number
+) {
+  if (matches.length < 2 || currentMatchIndex < 0) return;
+  const requested = new Set<number>();
+
+  for (const direction of [-1, 1] as const) {
+    for (let distance = 1; distance <= SEARCH_PREFETCH_RADIUS; distance += 1) {
+      const matchIndex =
+        (currentMatchIndex + direction * distance + matches.length) %
+        matches.length;
+      const match = matches[matchIndex];
+      const requestKey = pageStartForSubRank(match.subRank);
+      if (requested.has(requestKey)) continue;
+      requested.add(requestKey);
+      void getSearchWindow(eventId, rankingType, selection, match).catch(
+        () => undefined
+      );
+    }
+  }
 }
 
 function searchRankings(
@@ -125,159 +282,6 @@ function searchRankings(
     }
     return response.json() as Promise<{ entries: RankingEntry[] }>;
   });
-}
-
-type ScrollAnimationState = {
-  frame: number | null;
-  active: boolean;
-  programmatic: boolean;
-  clearProgrammaticTimer: number | null;
-};
-
-function cancelScrollAnimation(state: ScrollAnimationState) {
-  if (state.frame !== null) window.cancelAnimationFrame(state.frame);
-  if (state.clearProgrammaticTimer !== null)
-    window.clearTimeout(state.clearProgrammaticTimer);
-  state.frame = null;
-  state.active = false;
-  state.programmatic = false;
-  state.clearProgrammaticTimer = null;
-}
-
-function finishProgrammaticScroll(state: ScrollAnimationState) {
-  state.active = false;
-  state.frame = null;
-  state.clearProgrammaticTimer = window.setTimeout(() => {
-    state.programmatic = false;
-    state.clearProgrammaticTimer = null;
-  }, 0);
-}
-
-function getScrollAnimationDuration(peopleDistance: number) {
-  return Math.min(
-    MAX_SCROLL_ANIMATION_DURATION_MS,
-    MIN_SCROLL_ANIMATION_DURATION_MS +
-      LOG_SCROLL_DURATION_PER_DECADE_MS *
-        Math.log10(Math.max(0, peopleDistance) + 1)
-  );
-}
-
-function easeInOutCubic(progress: number) {
-  return progress < 0.5 ? 4 * progress ** 3 : 1 - (-2 * progress + 2) ** 3 / 2;
-}
-
-function animateScrollTo(
-  state: ScrollAnimationState,
-  targetTop: number,
-  requestedBehavior: ScrollBehavior,
-  durationMs = MIN_SCROLL_ANIMATION_DURATION_MS
-) {
-  cancelScrollAnimation(state);
-  state.programmatic = true;
-  const reducedMotion = window.matchMedia(
-    "(prefers-reduced-motion: reduce)"
-  ).matches;
-  if (requestedBehavior !== "smooth" || reducedMotion) {
-    window.scrollTo({ top: targetTop, behavior: "auto" });
-    finishProgrammaticScroll(state);
-    return;
-  }
-
-  const startTop = window.scrollY;
-  const distance = targetTop - startTop;
-  if (Math.abs(distance) < 1) {
-    finishProgrammaticScroll(state);
-    return;
-  }
-  const startedAt = performance.now();
-  state.active = true;
-  const animate = (now: number) => {
-    const progress = Math.min(1, (now - startedAt) / durationMs);
-    const easedProgress = easeInOutCubic(progress);
-    window.scrollTo({
-      top: startTop + distance * easedProgress,
-      behavior: "auto",
-    });
-    if (progress < 1) state.frame = window.requestAnimationFrame(animate);
-    else finishProgrammaticScroll(state);
-  };
-  state.frame = window.requestAnimationFrame(animate);
-}
-
-function scrollToEntry({
-  state,
-  list,
-  index,
-  alignment = "top",
-  requestedBehavior = "smooth",
-  schedule = true,
-  requestedDuration = MIN_SCROLL_ANIMATION_DURATION_MS,
-  targetOffset,
-}: {
-  state: ScrollAnimationState;
-  list: HTMLDivElement | null;
-  index: number;
-  alignment?: "top" | "center";
-  requestedBehavior?: ScrollBehavior;
-  requestedDirection?: -1 | 1 | null;
-  schedule?: boolean;
-  requestedDuration?: number;
-  targetOffset?: () => number | undefined;
-}) {
-  const scroll = () => {
-    const listTop = list?.getBoundingClientRect().top ?? 0;
-    const viewportOffset =
-      alignment === "center"
-        ? Math.max(0, (window.innerHeight - ROW_HEIGHT) / 2)
-        : 0;
-    const fallbackTargetTop =
-      listTop +
-      window.scrollY +
-      Math.max(0, index) * ROW_HEIGHT -
-      viewportOffset;
-    const targetTop = Math.max(0, targetOffset?.() ?? fallbackTargetTop);
-    animateScrollTo(state, targetTop, requestedBehavior, requestedDuration);
-  };
-  if (schedule) {
-    cancelScrollAnimation(state);
-    state.programmatic = true;
-    state.frame = window.requestAnimationFrame(() => {
-      state.frame = null;
-      scroll();
-    });
-  } else scroll();
-}
-
-function getCurrentViewportPosition(
-  list: HTMLDivElement | null,
-  entries: RankingEntry[],
-  startPosition: number,
-  fallbackPosition: number,
-  visibleIndex?: number
-) {
-  if (!list || entries.length === 0) return fallbackPosition;
-  const listTop = list.getBoundingClientRect().top;
-  const index =
-    visibleIndex ??
-    Math.max(
-      0,
-      Math.min(entries.length - 1, Math.floor(-listTop / ROW_HEIGHT))
-    );
-  return startPosition + index;
-}
-
-function getCurrentViewportSubRank(
-  list: HTMLDivElement | null,
-  entries: RankingEntry[],
-  fallbackSubRank: number
-) {
-  if (!list || entries.length === 0) return fallbackSubRank;
-  const listTop = list.getBoundingClientRect().top;
-  const index = Math.max(
-    0,
-    Math.min(entries.length - 1, Math.floor(-listTop / ROW_HEIGHT))
-  );
-  return entries[index]?.subRank ?? fallbackSubRank;
 }
 
 export function RankingsExplorer({
@@ -394,8 +398,6 @@ export function RankingsExplorer({
   const previousRequestRef = useRef(false);
   const navigationEpochRef = useRef(0);
   const pendingRankRef = useRef(1);
-  const pendingPersonIdRef = useRef("");
-  const pendingFocusPersonIdRef = useRef("");
   const pendingFocusLastRef = useRef(false);
   const pendingScrollToTopRef = useRef(false);
   const pendingScrollDirectionRef = useRef<-1 | 1 | null>(null);
@@ -406,7 +408,20 @@ export function RankingsExplorer({
   const jumpUpArmedRef = useRef(false);
   const jumpDownArmedRef = useRef(false);
   const preserveListDuringLoadRef = useRef(false);
-  const initialPageRef = useRef(Boolean(initialData));
+  const scrollRestoreAttemptedRef = useRef(false);
+  const scrollPersistenceReadyRef = useRef(false);
+  const initialPageKeyRef = useRef(
+    initialData
+      ? [
+          initialEventId,
+          initialRankingType,
+          initialRegionSelection.scope,
+          initialRegionSelection.regionId,
+          initialData.startRank,
+        ].join(":")
+      : ""
+  );
+  const skipPageLoadStartRef = useRef<number | null>(null);
   const initialScrollRef = useRef(
     Boolean(
       initialData && normalizedInitialSearch && initialData.initialMatchPersonId
@@ -419,6 +434,10 @@ export function RankingsExplorer({
     orderSearchMatches(initialData?.searchMatches ?? [])
   );
   const findIndexRef = useRef(initialData?.searchMatches.length ? 0 : -1);
+  const rankingListRef = useRef<HTMLOListElement>(null);
+  const searchAnimationTimerRef = useRef<number | null>(null);
+  const searchTransformOffsetRef = useRef(0);
+  const pendingSearchLayoutAnchorRef = useRef<SearchLayoutAnchor | null>(null);
   const entriesRef = useRef(entries);
   const startRankRef = useRef(startRank);
   const startPositionRef = useRef(startPosition);
@@ -427,6 +446,7 @@ export function RankingsExplorer({
     active: false,
     programmatic: false,
     clearProgrammaticTimer: null,
+    settleTimer: null,
   });
 
   const rowVirtualizer = useWindowVirtualizer({
@@ -435,13 +455,110 @@ export function RankingsExplorer({
     overscan: 12,
     scrollMargin: listOffset,
   });
+  const rowVirtualizerRef = useRef(rowVirtualizer);
   const virtualRows = rowVirtualizer.getVirtualItems();
+
+  useLayoutEffect(() => {
+    const anchor = pendingSearchLayoutAnchorRef.current;
+    if (!anchor) return;
+    pendingSearchLayoutAnchorRef.current = null;
+    if (anchor.requestEpoch !== navigationEpochRef.current) return;
+    const anchoredIndex = entries.findIndex(
+      (entry) => entry.personId === anchor.personId
+    );
+    if (anchoredIndex < 0) return;
+    const list = rankingListRef.current;
+    const measuredTop = rowVirtualizer.getOffsetForIndex(
+      anchoredIndex,
+      "start"
+    )?.[0];
+    const absoluteTop =
+      measuredTop ??
+      (list?.getBoundingClientRect().top ?? 0) +
+        window.scrollY +
+        anchoredIndex * ROW_HEIGHT;
+    scrollAnimationStateRef.current.programmatic = true;
+    window.scrollTo({
+      top: Math.max(0, absoluteTop - anchor.viewportTop),
+      behavior: "auto",
+    });
+  }, [entries, rowVirtualizer]);
+
+  useEffect(() => {
+    rowVirtualizerRef.current = rowVirtualizer;
+  }, [rowVirtualizer]);
 
   useEffect(() => {
     // This state keeps the server-rendered list in the DOM for the hydration pass.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setHydrated(true);
   }, []);
+
+  const scrollStorageKey = [
+    "wca-rankings-scroll-v1",
+    eventId,
+    rankingType,
+    regionSelection.scope,
+    regionSelection.regionId || "world",
+    findQuery.trim(),
+  ].join(":");
+
+  useEffect(() => {
+    if (!hydrated || scrollRestoreAttemptedRef.current) return;
+    scrollRestoreAttemptedRef.current = true;
+    let savedScrollY = 0;
+    try {
+      const saved = window.localStorage.getItem(scrollStorageKey);
+      const parsed = saved ? (JSON.parse(saved) as { scrollY?: number }) : null;
+      if (parsed && Number.isFinite(parsed.scrollY))
+        savedScrollY = Math.max(0, parsed.scrollY ?? 0);
+    } catch {
+      savedScrollY = 0;
+    }
+
+    let secondFrame: number | null = null;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        if (!normalizedInitialSearch && !initialScrollRef.current && savedScrollY > 0)
+          window.scrollTo({ top: savedScrollY, behavior: "auto" });
+        scrollPersistenceReadyRef.current = true;
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame !== null) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [hydrated, normalizedInitialSearch, scrollStorageKey]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    let saveTimer: number | null = null;
+    const saveScrollPosition = () => {
+      if (!scrollPersistenceReadyRef.current) return;
+      try {
+        window.localStorage.setItem(
+          scrollStorageKey,
+          JSON.stringify({ scrollY: Math.max(0, Math.round(window.scrollY)) })
+        );
+      } catch {
+        // Storage can be unavailable in private browsing or restricted embeds.
+      }
+    };
+    const onScroll = () => {
+      if (saveTimer !== null) window.clearTimeout(saveTimer);
+      saveTimer = window.setTimeout(() => {
+        saveTimer = null;
+        saveScrollPosition();
+      }, 100);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("beforeunload", saveScrollPosition);
+    return () => {
+      if (saveTimer !== null) window.clearTimeout(saveTimer);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("beforeunload", saveScrollPosition);
+    };
+  }, [hydrated, scrollStorageKey]);
 
   useEffect(() => {
     const measure = () => setListOffset(listRef.current?.offsetTop ?? 0);
@@ -470,11 +587,14 @@ export function RankingsExplorer({
           state: scrollAnimationStateRef.current,
           list: listRef.current,
           index: targetIndex,
-          alignment: "center",
+          alignment: "top",
           requestedDuration: getScrollAnimationDuration(targetIndex),
-          targetOffset: () =>
-            rowVirtualizer.getOffsetForIndex(targetIndex, "center")?.[0],
           schedule: false,
+          targetOffset: () =>
+            rowVirtualizerRef.current.getOffsetForIndex(
+              targetIndex,
+              "start"
+            )?.[0],
         });
       });
     });
@@ -482,7 +602,7 @@ export function RankingsExplorer({
       window.cancelAnimationFrame(firstFrame);
       if (secondFrame !== null) window.cancelAnimationFrame(secondFrame);
     };
-  }, [entries, hydrated, initialData, rowVirtualizer]);
+  }, [entries, hydrated, initialData]);
 
   useEffect(() => {
     entriesRef.current = entries;
@@ -541,10 +661,22 @@ export function RankingsExplorer({
   }, []);
 
   useEffect(() => {
-    if (initialPageRef.current) {
-      initialPageRef.current = false;
+    const pageKey = [
+      eventId,
+      rankingType,
+      regionSelection.scope,
+      regionSelection.regionId,
+      startRank,
+    ].join(":");
+    if (initialPageKeyRef.current === pageKey) {
       return;
     }
+    initialPageKeyRef.current = "";
+    if (skipPageLoadStartRef.current === startRank) {
+      skipPageLoadStartRef.current = null;
+      return;
+    }
+    skipPageLoadStartRef.current = null;
     let active = true;
     const requestNavigationEpoch = navigationEpochRef.current;
     const preserveList = preserveListDuringLoadRef.current;
@@ -560,27 +692,9 @@ export function RankingsExplorer({
     setError("");
     moreRequestRef.current = false;
     previousRequestRef.current = false;
-    const focusPersonId = pendingFocusPersonIdRef.current;
-    pendingFocusPersonIdRef.current = "";
     const focusLast = pendingFocusLastRef.current;
     pendingFocusLastRef.current = false;
-    const focusDirection = pendingScrollDirectionRef.current;
-    const focusBefore = focusPersonId
-      ? focusDirection === 1
-        ? Math.floor(PAGE_SIZE * 0.75)
-        : focusDirection === -1
-        ? Math.floor(PAGE_SIZE * 0.25)
-        : Math.floor(PAGE_SIZE / 2)
-      : Math.floor(PAGE_SIZE / 2);
-
-    getPage(
-      eventId,
-      rankingType,
-      startRank,
-      regionSelection,
-      focusPersonId,
-      focusBefore
-    )
+    getPage(eventId, rankingType, startRank, regionSelection)
       .then((data) => {
         if (
           !active ||
@@ -592,22 +706,25 @@ export function RankingsExplorer({
           entriesRef.current,
           startPositionRef.current,
           startPositionRef.current,
-          rowVirtualizer.getVirtualItems()[0]?.index
+          rowVirtualizerRef.current.getVirtualItems()[0]?.index
+        );
+        const currentSubRank = getCurrentViewportSubRank(
+          listRef.current,
+          entriesRef.current,
+          startRankRef.current
         );
         const scrollToTop = pendingScrollToTopRef.current;
-        const pendingPersonId = pendingPersonIdRef.current;
         const pendingDirection = pendingScrollDirectionRef.current;
+        const rankForStep = pendingRankRef.current;
         const appendNavigation =
           pendingNavigationAppendRef.current &&
           !scrollToTop &&
-          !focusPersonId &&
-          !pendingPersonId &&
           !focusLast &&
           Boolean(pendingDirection);
         const previousEntries = entriesRef.current;
         const previousStartPosition = startPositionRef.current;
         const previousListHeight = appendNavigation && pendingDirection === -1
-          ? rowVirtualizer.getTotalSize()
+          ? rowVirtualizerRef.current.getTotalSize()
           : null;
         const loadedEntries = appendNavigation
           ? pendingDirection === 1
@@ -650,14 +767,10 @@ export function RankingsExplorer({
         setHasMore(data.hasMore);
         setTotal(data.total);
         setFetchedAt(data.fetchedAt);
-        const requestedTargetIndex = pendingPersonId
-          ? loadedEntries.findIndex(
-              (entry) => entry.personId === pendingPersonId
-            )
-          : focusLast
+        const requestedTargetIndex = focusLast
           ? Math.max(0, loadedEntries.length - 1)
           : loadedEntries.findIndex(
-              (entry) => entry.subRank >= pendingRankRef.current
+              (entry) => entry.subRank >= rankForStep
             );
         const targetIndex =
           requestedTargetIndex >= 0
@@ -665,18 +778,12 @@ export function RankingsExplorer({
             : pendingDirection === -1
             ? Math.max(0, loadedEntries.length - 1)
             : 0;
-        const targetPosition =
-          (appendNavigation ? loadedStartPosition : data.startPosition) +
-          targetIndex;
         const shouldScrollToTarget = Boolean(
           scrollToTop ||
-            focusPersonId ||
-            pendingPersonId ||
             focusLast ||
             pendingDirection ||
             appendNavigation
         );
-        pendingPersonIdRef.current = "";
         pendingScrollDirectionRef.current = null;
         if (scrollToTop) {
           animateScrollTo(
@@ -690,40 +797,49 @@ export function RankingsExplorer({
             window.requestAnimationFrame(() => {
               const addedHeight = Math.max(
                 0,
-                rowVirtualizer.getTotalSize() - previousListHeight
+                rowVirtualizerRef.current.getTotalSize() - previousListHeight
               );
               if (addedHeight > 0)
                 window.scrollBy({ top: addedHeight, behavior: "auto" });
             });
           }
-          scrollToEntry({
-            state: scrollAnimationStateRef.current,
-            list: listRef.current,
-            index: targetIndex,
-            alignment: pendingPersonId ? "center" : "top",
-            requestedBehavior: "smooth",
-            requestedDirection: pendingDirection,
-            requestedDuration: getScrollAnimationDuration(
-              Math.abs(targetPosition - currentPosition)
-            ),
-            targetOffset: () =>
-              rowVirtualizer.getOffsetForIndex(
-                targetIndex,
-                pendingPersonId ? "center" : "start"
-              )?.[0],
+          window.requestAnimationFrame(() => {
+            scrollToEntry({
+              state: scrollAnimationStateRef.current,
+              list: listRef.current,
+              index: targetIndex,
+              alignment: "top",
+              requestedBehavior: "smooth",
+              requestedDuration: getScrollAnimationDuration(
+                Math.abs(rankForStep - currentSubRank)
+              ),
+              targetOffset: () =>
+                rowVirtualizerRef.current.getOffsetForIndex(
+                  targetIndex,
+                  "start"
+                )?.[0],
+            });
           });
+
         }
       })
       .catch((requestError: unknown) => {
-        if (active)
+        if (
+          active &&
+          requestNavigationEpoch === navigationEpochRef.current
+        ) {
           setError(
             requestError instanceof Error
               ? requestError.message
               : "Rankings are unavailable."
           );
+        }
       })
       .finally(() => {
-        if (active) {
+        if (
+          active &&
+          requestNavigationEpoch === navigationEpochRef.current
+        ) {
           setLoading(false);
           preserveListDuringLoadRef.current = false;
           setPreserveListDuringLoad(false);
@@ -733,61 +849,253 @@ export function RankingsExplorer({
     return () => {
       active = false;
     };
-  }, [eventId, rankingType, regionSelection, rowVirtualizer, startRank]);
+  }, [
+    eventId,
+    rankingType,
+    regionSelection,
+    startRank,
+  ]);
 
   const jumpToMatch = useCallback(
-    (match: RankingEntry) => {
-      navigationEpochRef.current += 1;
+    (
+      match: RankingEntry,
+      direction: -1 | 1 = 1,
+      currentMatch: RankingEntry | null = null
+    ) => {
+      const requestEpoch = navigationEpochRef.current + 1;
+      navigationEpochRef.current = requestEpoch;
       cancelScrollAnimation(scrollAnimationStateRef.current);
+      pendingSearchLayoutAnchorRef.current = null;
+      if (searchAnimationTimerRef.current !== null) {
+        window.clearTimeout(searchAnimationTimerRef.current);
+        searchAnimationTimerRef.current = null;
+      }
+      const activeList = rankingListRef.current;
+      const activeTransform = searchTransformOffsetRef.current;
+      if (activeList && activeTransform !== 0) {
+        activeList.style.transform = "";
+        window.scrollBy({ top: -activeTransform, behavior: "auto" });
+        searchTransformOffsetRef.current = 0;
+      }
+      const currentMatchViewportTop = (() => {
+        if (!currentMatch) return null;
+        const mountedRow = Array.from(
+          document.querySelectorAll<HTMLElement>(
+            ".listItem[data-person-id]"
+          )
+        ).find(
+          (row) => row.dataset.personId === currentMatch.personId
+        );
+        if (mountedRow) return mountedRow.getBoundingClientRect().top;
+        const currentEntryIndex = entriesRef.current.findIndex(
+          (entry) => entry.personId === currentMatch.personId
+        );
+        if (currentEntryIndex < 0) return null;
+        const measuredTop =
+          rowVirtualizerRef.current.getOffsetForIndex(
+            currentEntryIndex,
+            "start"
+          )?.[0];
+        return measuredTop === undefined
+          ? null
+          : measuredTop - window.scrollY;
+      })();
       pendingNavigationAppendRef.current = false;
       pendingRankRef.current = match.subRank;
       navigationTargetRankRef.current = match.subRank;
-      pendingPersonIdRef.current = match.personId;
-      pendingFocusPersonIdRef.current = match.personId;
-      const currentPosition = getCurrentViewportPosition(
-        listRef.current,
-        entriesRef.current,
-        startPositionRef.current,
-        startPositionRef.current,
-        rowVirtualizer.getVirtualItems()[0]?.index
+      pendingScrollDirectionRef.current = direction;
+      prefetchSearchResultPages(
+        eventId,
+        rankingType,
+        regionSelection,
+        findMatchesRef.current,
+        findIndexRef.current
       );
-      const currentRank = getCurrentViewportSubRank(
-        listRef.current,
-        entriesRef.current,
-        startRankRef.current
-      );
-      pendingScrollDirectionRef.current =
-        match.subRank < currentRank ? -1 : match.subRank > currentRank ? 1 : null;
-      setHighlightedPersonId(match.personId);
-      const targetIndex = entriesRef.current.findIndex(
-        (entry) => entry.personId === match.personId
-      );
-      if (targetIndex >= 0) {
-        pendingFocusPersonIdRef.current = "";
-        pendingPersonIdRef.current = "";
-        const requestedDuration = getScrollAnimationDuration(
-          Math.abs(startPositionRef.current + targetIndex - currentPosition)
-        );
-        scrollToEntry({
-          state: scrollAnimationStateRef.current,
-          list: listRef.current,
-          index: targetIndex,
-          alignment: "center",
-          requestedBehavior: "smooth",
-          requestedDirection: pendingScrollDirectionRef.current,
-          requestedDuration,
-          targetOffset: () =>
-            rowVirtualizer.getOffsetForIndex(targetIndex, "center")?.[0],
-        });
-        pendingScrollDirectionRef.current = null;
-        return;
-      }
-      const nextStart = searchPageStartForRank(match.subRank);
+      setError("");
+      setLoading(true);
       preserveListDuringLoadRef.current = true;
       setPreserveListDuringLoad(true);
-      setStartRank(nextStart);
+      const finishSearchNavigation = () => {
+        if (navigationEpochRef.current !== requestEpoch) return;
+        setLoading(false);
+        preserveListDuringLoadRef.current = false;
+        setPreserveListDuringLoad(false);
+      };
+
+      const targetPageStart = pageStartForSubRank(match.subRank);
+      const currentSearchSubRank =
+        currentMatch?.subRank ??
+        getCurrentViewportSubRank(
+          listRef.current,
+          entriesRef.current,
+          startRankRef.current
+        );
+      const searchPeopleDistance = Math.abs(
+        match.subRank - currentSearchSubRank
+      );
+      const currentPageStart = currentMatch
+        ? pageStartForSubRank(currentMatch.subRank)
+        : null;
+      const jumpMode =
+        currentPageStart === null
+          ? "local"
+          : getSearchJumpMode(
+              currentPageStart,
+              targetPageStart,
+              direction,
+              PAGE_SIZE
+            );
+      const pageRequest =
+        jumpMode === "multi-page" && currentPageStart !== null
+          ? getDistantSearchWindow(
+              eventId,
+              rankingType,
+              regionSelection,
+              currentPageStart,
+              match,
+              direction
+            )
+          : getSearchWindow(eventId, rankingType, regionSelection, match);
+
+      void pageRequest
+        .then((data) => {
+          if (navigationEpochRef.current !== requestEpoch) return;
+          const targetIndex = data.entries.findIndex(
+            (entry) => entry.personId === match.personId
+          );
+          if (targetIndex < 0)
+            throw new Error("Could not locate the selected ranking result.");
+
+          const currentIndex = currentMatch
+            ? data.entries.findIndex(
+                (entry) => entry.personId === currentMatch.personId
+              )
+            : -1;
+          const followsRequestedDirection =
+            currentMatch !== null &&
+            Math.sign(match.subRank - currentMatch.subRank) === direction;
+          if (
+            currentMatch &&
+            currentMatchViewportTop !== null &&
+            currentIndex >= 0 &&
+            followsRequestedDirection
+          ) {
+            pendingSearchLayoutAnchorRef.current = {
+              requestEpoch,
+              personId: currentMatch.personId,
+              viewportTop: currentMatchViewportTop,
+            };
+          }
+
+          const nextSearchStart = data.entries[0]?.subRank ?? 1;
+          setHighlightedPersonId(match.personId);
+          setEntries(data.entries);
+          if (nextSearchStart !== startRankRef.current) {
+            skipPageLoadStartRef.current = nextSearchStart;
+            setStartRank(nextSearchStart);
+          }
+          setStartPosition(data.startPosition);
+          setNextPageStart(data.nextPageStart);
+          setPreviousPageStart(data.previousPageStart);
+          setLastRank(data.lastRank);
+          setHasMore(data.hasMore);
+          setTotal(data.total);
+          setFetchedAt(data.fetchedAt);
+          pendingScrollDirectionRef.current = null;
+
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+              if (navigationEpochRef.current !== requestEpoch) return;
+              const list = rankingListRef.current;
+              if (!list) {
+                finishSearchNavigation();
+                return;
+              }
+              const listTop = list.getBoundingClientRect().top + window.scrollY;
+              const measuredTargetTop =
+                rowVirtualizerRef.current.getOffsetForIndex(
+                  targetIndex,
+                  "start"
+                )?.[0];
+              const naturalTargetTop =
+                Math.max(
+                  0,
+                  measuredTargetTop ??
+                    listTop + targetIndex * ROW_HEIGHT
+              );
+              if (currentIndex >= 0 && followsRequestedDirection) {
+                const duration = getSearchAnimationDuration(
+                  jumpMode,
+                  searchPeopleDistance
+                );
+                animateScrollTo(
+                  scrollAnimationStateRef.current,
+                  naturalTargetTop,
+                  "smooth",
+                  duration
+                );
+                searchAnimationTimerRef.current = window.setTimeout(() => {
+                  if (navigationEpochRef.current !== requestEpoch) return;
+                  const settledTargetTop =
+                    rowVirtualizerRef.current.getOffsetForIndex(
+                      targetIndex,
+                      "start"
+                    )?.[0];
+                  if (settledTargetTop !== undefined)
+                    window.scrollTo({
+                      top: settledTargetTop,
+                      behavior: "auto",
+                    });
+                  searchAnimationTimerRef.current = null;
+                  finishSearchNavigation();
+                }, duration + SCROLL_SETTLE_DELAY_MS);
+                return;
+              }
+
+              const transformOffset =
+                direction * SEARCH_ANIMATION_ROWS * ROW_HEIGHT;
+              const animatedTargetTop = Math.max(
+                0,
+                naturalTargetTop + transformOffset
+              );
+              const duration = getSearchAnimationDuration(
+                "local",
+                searchPeopleDistance
+              );
+              window.scrollTo({ top: naturalTargetTop, behavior: "auto" });
+              list.style.transform = `translateY(${transformOffset}px)`;
+              searchTransformOffsetRef.current = transformOffset;
+              window.requestAnimationFrame(() => {
+                if (navigationEpochRef.current !== requestEpoch) return;
+                animateScrollTo(
+                  scrollAnimationStateRef.current,
+                  animatedTargetTop,
+                  "smooth",
+                  duration
+                );
+                searchAnimationTimerRef.current = window.setTimeout(() => {
+                  if (navigationEpochRef.current !== requestEpoch) return;
+                  list.style.transform = "";
+                  searchTransformOffsetRef.current = 0;
+                  window.scrollBy({ top: -transformOffset, behavior: "auto" });
+                  searchAnimationTimerRef.current = null;
+                  finishSearchNavigation();
+                }, duration + SCROLL_SETTLE_DELAY_MS);
+              });
+            });
+          });
+        })
+        .catch((requestError: unknown) => {
+          if (navigationEpochRef.current !== requestEpoch) return;
+          setError(
+            requestError instanceof Error
+              ? requestError.message
+              : "Rankings are unavailable."
+          );
+          finishSearchNavigation();
+        });
     },
-    [rowVirtualizer]
+    [eventId, rankingType, regionSelection]
   );
 
   const cycleFind = useCallback(
@@ -795,6 +1103,8 @@ export function RankingsExplorer({
       const matches = findMatchesRef.current;
       if (matches.length === 0) return;
       const currentIndex = findIndexRef.current;
+      const currentMatch =
+        currentIndex >= 0 ? matches[currentIndex] : null;
       const nextIndex =
         currentIndex < 0
           ? direction > 0
@@ -803,7 +1113,7 @@ export function RankingsExplorer({
           : (currentIndex + direction + matches.length) % matches.length;
       findIndexRef.current = nextIndex;
       setFindIndex(nextIndex);
-      jumpToMatch(matches[nextIndex]);
+      jumpToMatch(matches[nextIndex], direction, currentMatch);
     },
     [jumpToMatch]
   );
@@ -811,7 +1121,7 @@ export function RankingsExplorer({
   const resetFind = useCallback(() => {
     findMatchesRef.current = [];
     findIndexRef.current = -1;
-    updateQueryParams({ search: null });
+    setSearchQueryParam("");
     updateQueryParams({ mode: null });
     setFindQuery("");
     setRegexSearch(false);
@@ -916,10 +1226,10 @@ export function RankingsExplorer({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLocaleLowerCase();
-      const target = event.target as HTMLElement | null;
-      const isEditable = target?.matches(
-        "input, textarea, select, [contenteditable='true']"
-      );
+      const target = event.target;
+      const isEditable =
+        target instanceof Element &&
+        target.matches("input, textarea, select, [contenteditable='true']");
       if ((event.ctrlKey || event.metaKey) && key === "f") {
         event.preventDefault();
         if (vimMode) {
@@ -1132,8 +1442,21 @@ export function RankingsExplorer({
         return;
       navigationEpochRef.current += 1;
       cancelScrollAnimation(scrollAnimationStateRef.current);
+      pendingSearchLayoutAnchorRef.current = null;
       navigationTargetRankRef.current = null;
       pendingNavigationAppendRef.current = false;
+      if (searchAnimationTimerRef.current !== null) {
+        window.clearTimeout(searchAnimationTimerRef.current);
+        searchAnimationTimerRef.current = null;
+      }
+      const list = rankingListRef.current;
+      const transformOffset = searchTransformOffsetRef.current;
+      if (list && transformOffset !== 0) {
+        list.style.transform = "";
+        window.scrollBy({ top: -transformOffset, behavior: "auto" });
+        searchTransformOffsetRef.current = 0;
+      }
+      setLoading(false);
       preserveListDuringLoadRef.current = false;
       setPreserveListDuringLoad(false);
     };
@@ -1149,10 +1472,14 @@ export function RankingsExplorer({
     };
   }, []);
 
-  useEffect(
-    () => () => cancelScrollAnimation(scrollAnimationStateRef.current),
-    []
-  );
+  useEffect(() => {
+    const animationState = scrollAnimationStateRef.current;
+    return () => {
+      cancelScrollAnimation(animationState);
+      if (searchAnimationTimerRef.current !== null)
+        window.clearTimeout(searchAnimationTimerRef.current);
+    };
+  }, []);
 
   const visibleSubRank =
     entries[virtualRows[0]?.index ?? 0]?.subRank ?? startRank;
@@ -1173,6 +1500,7 @@ export function RankingsExplorer({
       navigationEpochRef.current += 1;
       cancelScrollAnimation(scrollAnimationStateRef.current);
       pendingNavigationAppendRef.current = false;
+      setLoading(false);
       const maximumRank = lastRank ?? (Number.isFinite(total) ? total : rank);
       const normalizedRank = Math.max(1, Math.min(rank, maximumRank));
       const currentRank = getCurrentViewportSubRank(
@@ -1191,8 +1519,6 @@ export function RankingsExplorer({
       pendingRankRef.current = normalizedRank;
       if (normalizedRank === 1) {
         resetFind();
-        pendingPersonIdRef.current = "";
-        pendingFocusPersonIdRef.current = "";
         pendingFocusLastRef.current = false;
         pendingScrollDirectionRef.current = null;
         pendingScrollToTopRef.current = true;
@@ -1213,7 +1539,6 @@ export function RankingsExplorer({
         return;
       }
       pendingScrollToTopRef.current = false;
-      pendingPersonIdRef.current = "";
       pendingFocusLastRef.current = false;
       pendingScrollDirectionRef.current =
         normalizedRank < currentRank
@@ -1226,10 +1551,7 @@ export function RankingsExplorer({
       pendingNavigationAppendRef.current = Boolean(
         pendingScrollDirectionRef.current
       );
-      const nextStart =
-        pendingScrollDirectionRef.current === 1
-          ? Math.max(1, normalizedRank - PAGE_SIZE + 1)
-          : normalizedRank;
+      const nextStart = pageStartForSubRank(normalizedRank) + 1;
       const firstLoadedRank = entries[0]?.subRank ?? Number.POSITIVE_INFINITY;
       const lastLoadedRank = entries.at(-1)?.subRank ?? 0;
       if (
@@ -1245,16 +1567,14 @@ export function RankingsExplorer({
             : pendingScrollDirectionRef.current === -1
             ? 0
             : Math.max(0, entries.length - 1);
-        const targetPosition = startPosition + targetIndex;
         scrollToEntry({
           state: scrollAnimationStateRef.current,
           list: listRef.current,
           index: targetIndex,
           alignment: "top",
           requestedBehavior: "smooth",
-          requestedDirection: pendingScrollDirectionRef.current,
           requestedDuration: getScrollAnimationDuration(
-            Math.abs(targetPosition - currentPosition)
+            Math.abs(normalizedRank - currentRank)
           ),
           targetOffset: () =>
             rowVirtualizer.getOffsetForIndex(targetIndex, "start")?.[0],
@@ -1271,7 +1591,6 @@ export function RankingsExplorer({
       lastRank,
       resetFind,
       rowVirtualizer,
-      startPosition,
       startRank,
       total,
     ]
@@ -1281,25 +1600,17 @@ export function RankingsExplorer({
     navigationEpochRef.current += 1;
     cancelScrollAnimation(scrollAnimationStateRef.current);
     pendingNavigationAppendRef.current = false;
+    setLoading(false);
     const endRank = lastRank ?? (Number.isFinite(total) ? total : visibleSubRank);
-    const nextStart = Math.max(1, endRank - PAGE_SIZE + 1);
+    const nextStart = pageStartForSubRank(endRank) + 1;
     const currentRank = getCurrentViewportSubRank(
       listRef.current,
       entriesRef.current,
       startRankRef.current
     );
-    const currentPosition = getCurrentViewportPosition(
-      listRef.current,
-      entriesRef.current,
-      startPositionRef.current,
-      startPositionRef.current,
-      rowVirtualizer.getVirtualItems()[0]?.index
-    );
     navigationTargetRankRef.current = endRank;
     pendingRankRef.current = endRank;
     pendingScrollToTopRef.current = false;
-    pendingPersonIdRef.current = "";
-    pendingFocusPersonIdRef.current = "";
     pendingFocusLastRef.current = true;
     pendingScrollDirectionRef.current =
       endRank < currentRank ? -1 : endRank > currentRank ? 1 : null;
@@ -1311,9 +1622,8 @@ export function RankingsExplorer({
         index: targetIndex,
         alignment: "top",
         requestedBehavior: "smooth",
-        requestedDirection: pendingScrollDirectionRef.current,
         requestedDuration: getScrollAnimationDuration(
-          Math.abs(startPosition + targetIndex - currentPosition)
+          Math.abs(endRank - currentRank)
         ),
         targetOffset: () =>
           rowVirtualizer.getOffsetForIndex(targetIndex, "start")?.[0],
@@ -1330,10 +1640,23 @@ export function RankingsExplorer({
     hasMore,
     lastRank,
     rowVirtualizer,
-    startPosition,
     total,
     visibleSubRank,
   ]);
+
+  const getNavigationBaseSubRank = useCallback(() => {
+    const navigationInProgress =
+      scrollAnimationStateRef.current.active ||
+      scrollAnimationStateRef.current.programmatic ||
+      preserveListDuringLoadRef.current;
+    if (navigationInProgress && navigationTargetRankRef.current !== null)
+      return navigationTargetRankRef.current;
+    return getCurrentViewportSubRank(
+      listRef.current,
+      entriesRef.current,
+      startRankRef.current
+    );
+  }, []);
 
   const handleJumpUp = () => {
     if (visibleSubRank <= 5000) {
@@ -1366,7 +1689,7 @@ export function RankingsExplorer({
       setJumpUpArmed(false);
     }, 500);
     setJumpUpArmed(true);
-    resetToRank((navigationTargetRankRef.current ?? visibleSubRank) - 5000);
+    resetToRank(getNavigationBaseSubRank() - 5000);
   };
 
   const handleJumpDown = () => {
@@ -1400,7 +1723,7 @@ export function RankingsExplorer({
       setJumpDownArmed(false);
     }, 500);
     setJumpDownArmed(true);
-    resetToRank((navigationTargetRankRef.current ?? visibleSubRank) + 5000);
+    resetToRank(getNavigationBaseSubRank() + 5000);
   };
 
   useEffect(
@@ -1426,7 +1749,7 @@ export function RankingsExplorer({
     (rawCommand: string) => {
       const command = rawCommand.trim();
       const lowerCommand = command.toLocaleLowerCase();
-      const currentRank = navigationTargetRankRef.current ?? visibleSubRank;
+      const currentRank = getNavigationBaseSubRank();
 
       if (command === "G" || command === "$" || lowerCommand === "end") {
         jumpToEndRef.current();
@@ -1438,29 +1761,29 @@ export function RankingsExplorer({
         lowerCommand === "down" ||
         lowerCommand === "pagedown"
       ) {
-        resetToRankRef.current(currentRank - PAGE_SIZE);
+        resetToRankRef.current(currentRank + VIM_JUMP_SIZE);
       } else if (
         command === "k" ||
         command === "u" ||
         lowerCommand === "up" ||
         lowerCommand === "pageup"
       ) {
-        resetToRankRef.current(currentRank + PAGE_SIZE);
+        resetToRankRef.current(currentRank - VIM_JUMP_SIZE);
       } else if (/^[+-]\d+$/.test(command)) {
         resetToRankRef.current(currentRank + Number(command));
       } else if (/^\d[\d,]*$/.test(command)) {
         resetToRankRef.current(Number(command.replaceAll(",", "")));
       }
     },
-    [visibleSubRank]
+    [getNavigationBaseSubRank]
   );
 
   useEffect(() => {
     const onVimKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const isEditable = target?.matches(
-        "input, textarea, select, [contenteditable='true']"
-      );
+      const target = event.target;
+      const isEditable =
+        target instanceof Element &&
+        target.matches("input, textarea, select, [contenteditable='true']");
 
       if (event.key === "Escape" && (vimMode || vimSearchActive)) {
         event.preventDefault();
@@ -1469,6 +1792,18 @@ export function RankingsExplorer({
       }
 
       if (!vimMode) {
+        const directVimCommand = event.key.toLocaleLowerCase();
+        if (
+          !isEditable &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey &&
+          ["j", "k", "d", "u"].includes(directVimCommand)
+        ) {
+          event.preventDefault();
+          executeVimCommand(directVimCommand);
+          return;
+        }
         if (
           (event.key === ":" || event.key === "/") &&
           !isEditable &&
@@ -1600,7 +1935,6 @@ export function RankingsExplorer({
     )
       return;
     pendingRankRef.current = 1;
-    pendingPersonIdRef.current = "";
     pendingScrollToTopRef.current = true;
     pendingScrollDirectionRef.current = null;
     preserveListDuringLoadRef.current = false;
@@ -1655,10 +1989,23 @@ export function RankingsExplorer({
 
   const findPending =
     Boolean(findQuery.trim()) && findQuery.trim() !== findResolvedQuery;
+  const searchMatchPersonIds = useMemo(
+    () =>
+      new Set(
+        findResolvedQuery
+          ? findMatches.map((match) => match.personId)
+          : []
+      ),
+    [findMatches, findResolvedQuery]
+  );
   const activeFindMatch = findMatches[findIndex] ?? null;
 
   return (
-    <div className={`app${vimMode || vimSearchActive ? " app--vimMode" : ""}`}>
+    <div
+      className={`app${vimMode || vimSearchActive ? " app--vimMode" : ""}${
+        findQuery.trim() ? " app--searching" : ""
+      }`}
+    >
       <header className="header" ref={headerRef}>
         <div className="headerTitle">
           <h1 className="title">
@@ -1666,6 +2013,7 @@ export function RankingsExplorer({
           </h1>
           <SearchInputs
             barRef={findBarRef}
+            inputRef={findInputRef}
             findOpen={findOpen}
             findFloating={findFloating}
             findQuery={findQuery}
@@ -1682,7 +2030,10 @@ export function RankingsExplorer({
               setVimSearchQuery("");
               setRegexSearch(false);
               setFindResolvedQuery("");
-              updateQueryParams({ search: value.trim() ? value : null, mode: null });
+              updateQueryParams({
+                search: value.trim() ? value : null,
+                mode: null,
+              });
               setFindQuery(value);
             }}
             onCycle={cycleFind}
@@ -1718,6 +2069,7 @@ export function RankingsExplorer({
               <div className="listMessage">{error}</div>
             ) : (
               <ResultsTable
+                listRef={rankingListRef}
                 entries={entries}
                 renderedRows={renderedRows}
                 renderedListHeight={renderedListHeight}
@@ -1727,6 +2079,7 @@ export function RankingsExplorer({
                 loading={loading}
                 preserveListDuringLoad={preserveListDuringLoad}
                 loadingMore={loadingMore}
+                searchMatchPersonIds={searchMatchPersonIds}
                 highlightedPersonId={highlightedPersonId}
                 measureElement={rowVirtualizer.measureElement}
               />
@@ -1736,7 +2089,10 @@ export function RankingsExplorer({
 
         <JumpControls
           direction="down"
-          visible={jumpDownArmed || (Number.isFinite(total) && visibleSubRank < total)}
+          visible={
+            jumpDownArmed ||
+            (Number.isFinite(total) && visibleSubRank < total)
+          }
           armed={jumpDownArmed}
           currentPosition={visibleSubRank}
           total={total}
@@ -1754,6 +2110,7 @@ export function RankingsExplorer({
           findQuery={findQuery}
           activeFindMatch={activeFindMatch}
           findMatches={findMatches}
+          findIndex={findIndex}
           vimHelpOpen={vimHelpOpen}
           onChange={setVimCommand}
           onCycle={(direction) => {

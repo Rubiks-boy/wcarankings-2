@@ -1,6 +1,6 @@
 import { RankingRow } from "../RankingRow/RankingRow";
 import type { RankingEntry } from "../RankingsExplorer/types";
-import type { Key } from "react";
+import type { Key, Ref } from "react";
 
 export type RenderedTableRow = {
   index: number;
@@ -10,6 +10,7 @@ export type RenderedTableRow = {
 
 export function ResultsTable({
   entries,
+  listRef,
   renderedRows,
   renderedListHeight,
   listOffset,
@@ -19,9 +20,11 @@ export function ResultsTable({
   preserveListDuringLoad,
   loadingMore,
   highlightedPersonId,
+  searchMatchPersonIds,
   measureElement,
 }: {
   entries: RankingEntry[];
+  listRef?: Ref<HTMLOListElement>;
   renderedRows: RenderedTableRow[];
   renderedListHeight: number;
   listOffset: number;
@@ -31,6 +34,7 @@ export function ResultsTable({
   preserveListDuringLoad: boolean;
   loadingMore: boolean;
   highlightedPersonId: string;
+  searchMatchPersonIds?: ReadonlySet<string>;
   measureElement: (element: Element | null) => void;
 }) {
   if (loading && !preserveListDuringLoad) {
@@ -51,7 +55,11 @@ export function ResultsTable({
   }
 
   return (
-    <ol className="list" style={{ height: `${renderedListHeight}px` }}>
+    <ol
+      ref={listRef}
+      className="list"
+      style={{ height: `${renderedListHeight}px` }}
+    >
       {renderedRows.map((virtualRow) => {
         const entry = entries[virtualRow.index] ?? null;
         return (
@@ -71,6 +79,7 @@ export function ResultsTable({
                 rankingType={rankingType}
                 loading={false}
                 animationIndex={virtualRow.index}
+                searchMatched={searchMatchPersonIds?.has(entry.personId)}
                 highlighted={entry.personId === highlightedPersonId}
                 rankIsDuplicate={
                   virtualRow.index > 0 &&

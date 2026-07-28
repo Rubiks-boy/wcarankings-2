@@ -1,0 +1,239 @@
+export const SCROLL_SETTLE_DELAY_MS = 100;
+export const DEFAULT_ROW_HEIGHT = 61.6;
+export const MIN_LOCAL_SCROLL_DURATION_MS = 320;
+export const MAX_LOCAL_SCROLL_DURATION_MS = 640;
+export const MAX_LOCAL_SCROLL_DISTANCE = 100;
+export const DISTANT_SCROLL_DURATION_MS = 640;
+export const MULTI_PAGE_SCROLL_DURATION_MS = 1200;
+
+export type SearchJumpMode = "local" | "multi-page";
+
+export function getSearchJumpMode(
+  currentPageStart: number,
+  targetPageStart: number,
+  direction: -1 | 1,
+  pageSize: number
+): SearchJumpMode {
+  const pageDelta = (targetPageStart - currentPageStart) / pageSize;
+  if (Math.abs(pageDelta) <= 1 || Math.sign(pageDelta) !== direction)
+    return "local";
+  return "multi-page";
+}
+
+export function getSearchBridgePageStarts(
+  currentPageStart: number,
+  targetPageStart: number,
+  direction: -1 | 1,
+  pageSize: number
+) {
+  if (
+    getSearchJumpMode(
+      currentPageStart,
+      targetPageStart,
+      direction,
+      pageSize
+    ) === "local"
+  )
+    return [];
+  const nextPageStart = currentPageStart + direction * pageSize;
+  const pageBeforeTarget = targetPageStart - direction * pageSize;
+  return nextPageStart === pageBeforeTarget
+    ? [nextPageStart]
+    : [nextPageStart, pageBeforeTarget];
+}
+
+export function getSearchAnimationDuration(
+  mode: SearchJumpMode,
+  peopleDistance: number
+) {
+  return mode === "multi-page"
+    ? MULTI_PAGE_SCROLL_DURATION_MS
+    : getScrollAnimationDuration(peopleDistance);
+}
+
+export function getScrollAnimationDuration(peopleDistance: number) {
+  const distance = Math.abs(peopleDistance);
+  if (distance > MAX_LOCAL_SCROLL_DISTANCE) return DISTANT_SCROLL_DURATION_MS;
+  const localDistance = Math.max(1, distance);
+  const localRange = MAX_LOCAL_SCROLL_DISTANCE - 1;
+  const durationRange =
+    MAX_LOCAL_SCROLL_DURATION_MS - MIN_LOCAL_SCROLL_DURATION_MS;
+  const distanceProgress = (localDistance - 1) / localRange;
+  return (
+    MIN_LOCAL_SCROLL_DURATION_MS +
+    Math.round(Math.sqrt(distanceProgress) * durationRange)
+  );
+}
+
+export function isDuplicateRank(
+  previousRank: number | null | undefined,
+  rank: number
+) {
+  return (
+    previousRank !== null && previousRank !== undefined && previousRank === rank
+  );
+}
+
+export type ScrollAnimationState = {
+  frame: number | null;
+  active: boolean;
+  programmatic: boolean;
+  clearProgrammaticTimer: number | null;
+  settleTimer: number | null;
+};
+
+export function cancelScrollAnimation(state: ScrollAnimationState) {
+  if (state.frame !== null) window.cancelAnimationFrame(state.frame);
+  if (state.clearProgrammaticTimer !== null)
+    window.clearTimeout(state.clearProgrammaticTimer);
+  if (state.settleTimer !== null) window.clearTimeout(state.settleTimer);
+  state.frame = null;
+  state.active = false;
+  state.programmatic = false;
+  state.clearProgrammaticTimer = null;
+  state.settleTimer = null;
+}
+
+function finishProgrammaticScroll(state: ScrollAnimationState) {
+  state.active = false;
+  state.frame = null;
+  state.clearProgrammaticTimer = window.setTimeout(() => {
+    state.programmatic = false;
+    state.clearProgrammaticTimer = null;
+  }, 0);
+}
+
+function easeInOutCubic(progress: number) {
+  return progress < 0.5 ? 4 * progress ** 3 : 1 - (-2 * progress + 2) ** 3 / 2;
+}
+
+export function animateScrollTo(
+  state: ScrollAnimationState,
+  targetTop: number,
+  requestedBehavior: ScrollBehavior,
+  durationMs = DISTANT_SCROLL_DURATION_MS
+) {
+  cancelScrollAnimation(state);
+  state.programmatic = true;
+  const reducedMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)"
+  ).matches;
+  if (requestedBehavior !== "smooth" || reducedMotion) {
+    window.scrollTo({ top: targetTop, behavior: "auto" });
+    finishProgrammaticScroll(state);
+    return;
+  }
+
+  const distance = Math.abs(targetTop - window.scrollY);
+  if (distance < 1) {
+    finishProgrammaticScroll(state);
+    return;
+  }
+
+  const runSmoothScroll = () => {
+    const startTop = window.scrollY;
+    const signedDistance = targetTop - startTop;
+    if (Math.abs(signedDistance) < 1) {
+      finishProgrammaticScroll(state);
+      return;
+    }
+    const startedAt = performance.now();
+    state.active = true;
+    const animate = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / durationMs);
+      const easedProgress = easeInOutCubic(progress);
+      window.scrollTo({
+        top: startTop + signedDistance * easedProgress,
+        behavior: "auto",
+      });
+      if (progress < 1) state.frame = window.requestAnimationFrame(animate);
+      else finishProgrammaticScroll(state);
+    };
+    state.frame = window.requestAnimationFrame(animate);
+  };
+
+  runSmoothScroll();
+}
+
+export function scrollToEntry({
+  state,
+  list,
+  index,
+  alignment = "top",
+  requestedBehavior = "smooth",
+  schedule = true,
+  requestedDuration = DISTANT_SCROLL_DURATION_MS,
+  targetOffset,
+  rowHeight = DEFAULT_ROW_HEIGHT,
+}: {
+  state: ScrollAnimationState;
+  list: HTMLDivElement | null;
+  index: number;
+  alignment?: "top" | "center";
+  requestedBehavior?: ScrollBehavior;
+  schedule?: boolean;
+  requestedDuration?: number;
+  targetOffset?: () => number | undefined;
+  rowHeight?: number;
+}) {
+  const scroll = () => {
+    const listTop = list?.getBoundingClientRect().top ?? 0;
+    const viewportOffset =
+      alignment === "center"
+        ? Math.max(0, (window.innerHeight - rowHeight) / 2)
+        : 0;
+    const fallbackTargetTop =
+      listTop +
+      window.scrollY +
+      Math.max(0, index) * rowHeight -
+      viewportOffset;
+    const measuredTargetTop = targetOffset?.();
+    const targetTop = Math.max(0, measuredTargetTop ?? fallbackTargetTop);
+    animateScrollTo(state, targetTop, requestedBehavior, requestedDuration);
+  };
+  if (schedule) {
+    cancelScrollAnimation(state);
+    state.programmatic = true;
+    state.frame = window.requestAnimationFrame(() => {
+      // Let a newly fetched page commit and update virtualizer measurements
+      // before calculating the target offset. Without this second frame, the
+      // first jump can use the previous page's layout; repeating the same
+      // search then appears to fix it because the measurements are cached.
+      state.frame = window.requestAnimationFrame(() => {
+        state.frame = null;
+        scroll();
+      });
+    });
+  } else scroll();
+}
+
+export function getCurrentViewportPosition(
+  list: HTMLDivElement | null,
+  entries: Array<unknown>,
+  startPosition: number,
+  fallbackPosition: number,
+  visibleIndex?: number,
+  rowHeight = DEFAULT_ROW_HEIGHT
+) {
+  if (!list || entries.length === 0) return fallbackPosition;
+  const listTop = list.getBoundingClientRect().top;
+  const index =
+    visibleIndex ??
+    Math.max(0, Math.min(entries.length - 1, Math.floor(-listTop / rowHeight)));
+  return startPosition + index;
+}
+
+export function getCurrentViewportSubRank(
+  list: HTMLDivElement | null,
+  entries: Array<{ subRank: number }>,
+  fallbackSubRank: number,
+  rowHeight = DEFAULT_ROW_HEIGHT
+) {
+  if (!list || entries.length === 0) return fallbackSubRank;
+  const listTop = list.getBoundingClientRect().top;
+  const index = Math.max(
+    0,
+    Math.min(entries.length - 1, Math.floor(-listTop / rowHeight))
+  );
+  return entries[index]?.subRank ?? fallbackSubRank;
+}

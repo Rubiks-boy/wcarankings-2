@@ -13,6 +13,7 @@ export function VimSearchInput({
   findQuery,
   activeFindMatch,
   findMatches,
+  findIndex,
   vimHelpOpen,
   onChange,
   onCycle,
@@ -27,6 +28,7 @@ export function VimSearchInput({
   findQuery: string;
   activeFindMatch: RankingEntry | null;
   findMatches: RankingEntry[];
+  findIndex?: number;
   vimHelpOpen: boolean;
   onChange: (value: string) => void;
   onCycle: (direction: -1 | 1) => void;
@@ -56,7 +58,10 @@ export function VimSearchInput({
   let matchStatus = "";
   if (findLoading || findPending) matchStatus = "Searching…";
   else if (findQuery.trim() && activeFindMatch) {
-    matchStatus = `${activeFindMatch.personName} · rank ${formatRankingNumber(activeFindMatch.rank)}`;
+    matchStatus =
+      typeof findIndex === "number"
+        ? `${findIndex + 1} of ${findMatches.length}`
+        : `${activeFindMatch.personName} · rank ${formatRankingNumber(activeFindMatch.rank)}`;
   } else if (findQuery.trim()) {
     matchStatus = `${findMatches.length} ${findMatches.length === 1 ? "match" : "matches"}`;
   }

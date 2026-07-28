@@ -9,6 +9,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   const [component, layout, rankingsRoute, wca] = await Promise.all([
     Promise.all([
       "../components/RankingsExplorer/RankingsExplorer.tsx",
+      "../components/RankingsExplorer/scrollEngine.ts",
       "../components/RankingsExplorer/types.ts",
       "../components/RankingControls/RankingControls.tsx",
       "../components/RegionPicker/RegionPicker.tsx",
@@ -19,6 +20,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
       "../components/VimHelp/VimHelp.tsx",
       "../components/JumpControls/JumpControls.tsx",
       "../components/Icon/Icon.tsx",
+      "../lib/rankings-config.ts",
     ].map((path) => readFile(new URL(path, import.meta.url), "utf8"))).then((files) => files.join("\n")),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/rankings/route.ts", import.meta.url), "utf8"),
@@ -27,7 +29,10 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(layout, /title:\s*"WCA Rankings"/);
   assert.doesNotMatch(layout, /og\.png|summary_large_image/);
   assert.match(component, /useWindowVirtualizer/);
-  assert.match(component, /const PAGE_SIZE = 100/);
+  assert.match(component, /const PAGE_SIZE = RESULTS_PAGE_SIZE/);
+  assert.match(component, /export const RESULTS_PAGE_SIZE = 50/);
+  assert.match(component, /const SEARCH_PAGE_RADIUS = 1/);
+  assert.match(component, /const VIM_JUMP_PAGE_COUNT = 2/);
   assert.match(component, /paged: "1"/);
   assert.match(component, /WCA Rankings/);
   assert.match(component, /href="\/"/);
@@ -96,20 +101,21 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /initialSearchRef/);
   assert.match(component, /scrollToEntry\(\{[\s\S]*targetIndex/);
   assert.match(component, /requestedBehavior\?: ScrollBehavior/);
-  assert.match(component, /MIN_SCROLL_ANIMATION_DURATION_MS = 1000/);
-  assert.match(component, /MAX_SCROLL_ANIMATION_DURATION_MS = 1800/);
-  assert.match(component, /LOG_SCROLL_DURATION_PER_DECADE_MS = 150/);
+  assert.match(component, /MIN_LOCAL_SCROLL_DURATION_MS = \d+/);
+  assert.match(component, /MAX_LOCAL_SCROLL_DURATION_MS = \d+/);
+  assert.match(component, /DISTANT_SCROLL_DURATION_MS = \d+/);
   assert.match(component, /getScrollAnimationDuration/);
   assert.match(component, /peopleDistance/);
   assert.doesNotMatch(component, /getScrollAnimationDuration\(currentRank,/);
-  assert.match(component, /Math\.abs\(targetPosition - currentPosition\)/);
-  assert.match(component, /Math\.log10/);
+  assert.doesNotMatch(component, /Math\.log10|BIG_JUMP|MEDIUM_JUMP/);
+  assert.match(component, /getSearchJumpMode/);
+  assert.match(component, /getSearchBridgePageStarts/);
   assert.match(component, /easeInOutCubic/);
   assert.match(component, /startPosition/);
   assert.match(component, /lastRank/);
   assert.match(component, /pendingScrollToTopRef/);
   assert.match(component, /shouldScrollToTarget/);
-  assert.match(component, /shouldScrollToTarget = Boolean\([\s\S]*scrollToTop[\s\S]*focusPersonId[\s\S]*pendingDirection/);
+  assert.match(component, /shouldScrollToTarget = Boolean\([\s\S]*scrollToTop[\s\S]*pendingDirection[\s\S]*appendNavigation/);
   assert.match(component, /animateScrollTo\([\s\S]*?0,[\s\S]*?getScrollAnimationDuration\(currentPosition\)/);
   assert.match(component, /cancelOnUserInput/);
   assert.match(component, /navigationEpochRef/);
@@ -117,7 +123,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /pendingNavigationAppendRef/);
   assert.match(component, /const loadedEntries/);
   assert.match(component, /if \(event\.ctrlKey \|\| event\.metaKey \|\| event\.altKey\) return/);
-  assert.doesNotMatch(component, /regexSearch && key === "n"/);
+  assert.match(component, /vimSearchActive && key === "n"/);
   assert.match(component, /addEventListener\("wheel"/);
   assert.match(component, /getOffsetForIndex/);
   assert.match(component, /measureElement/);
@@ -131,11 +137,11 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /rankingNumberFormatter/);
   assert.match(component, /formatRankingNumber\(rank\)/);
   assert.match(component, /formatWcaResult\(eventId, entry\.best, rankingType\)/);
-  assert.match(component, /command === "j"[\s\S]*currentRank - PAGE_SIZE/);
-  assert.match(component, /command === "k"[\s\S]*currentRank \+ PAGE_SIZE/);
+  assert.match(component, /command === "j"[\s\S]*currentRank \+ VIM_JUMP_SIZE/);
+  assert.match(component, /command === "k"[\s\S]*currentRank - VIM_JUMP_SIZE/);
   assert.match(component, /const directVimCommand/);
   assert.match(wca, /rankingType === "average" \? \(value \/ 100\)\.toFixed\(2\)/);
-  assert.match(component, /const nextStart = [\s\S]*normalizedRank/);
+  assert.match(component, /const nextStart = pageStartForSubRank\(normalizedRank\) \+ 1/);
   assert.doesNotMatch(component, /header-controls|collapsed-filter-summary|table-quick-jump/);
   assert.match(rankingsRoute, /SELECT MIN\(\$\{subRankColumn\}\) AS rank/);
   assert.match(rankingsRoute, /SELECT MAX\(\$\{subRankColumn\}\) AS rank/);
@@ -182,8 +188,8 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(page, /initialEventId=\{eventId\}/);
   assert.match(page, /initialRankingType=\{rankingType\}/);
   assert.match(page, /initialRegionSelection=\{\{ scope, regionId \}\}/);
-  assert.match(page, /startPosition: page\.startPosition/);
-  assert.match(page, /lastRank: page\.lastRank/);
+  assert.match(page, /startPosition: firstPage\.startPosition/);
+  assert.match(page, /lastRank: lastPage\.lastRank/);
   assert.match(page, /initialRegions=\{\{ continents, countries \}\}/);
   assert.match(page, /getRegions\("continent"\)/);
   assert.match(page, /getRegions\("country"\)/);
@@ -195,9 +201,10 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(page, /eventId/);
   assert.match(page, /result/);
   assert.doesNotMatch(page, /getSearchParam\(resolvedSearchParams, "scope"\)/);
-  assert.match(page, /searchPageStartForRank/);
+  assert.match(page, /pageFirstSubRank/);
   assert.match(page, /searchParams/);
-  assert.match(page, /const startRank = firstMatch \? searchPageStartForRank\(firstMatch\.subRank\) : 1/);
+  assert.match(page, /const targetPageStart = pageFirstSubRank/);
+  assert.match(page, /pages\.flatMap/);
   assert.match(layout, /title:\s*"WCA Rankings"/);
   assert.match(layout, /PwaRegistration/);
   assert.match(manifest, /display: "standalone"/);

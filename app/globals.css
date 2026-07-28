@@ -42,6 +42,14 @@ ul {
   padding-bottom: 6em;
 }
 
+.app.app--searching {
+  padding-bottom: calc(3.5em + 50vh);
+}
+
+.app.app--searching.app--vimMode {
+  padding-bottom: calc(6em + 50vh);
+}
+
 .app,
 button,
 input,
@@ -414,26 +422,11 @@ select {
   position: relative;
 }
 
-.loader {
-  position: absolute;
-  width: 100%;
-  opacity: 0;
-}
-
 .listItem.isLoading {
-  transform: scale(96%, 85%);
+  transform: none;
 }
 
-.isLoading .loader {
-  opacity: 1;
-}
-
-.isLoading .row {
-  opacity: 0;
-}
-
-.row,
-.loader {
+.row {
   display: flex;
   align-items: center;
   gap: 0.5em;
@@ -443,6 +436,11 @@ select {
   border-radius: 0;
   font-weight: 300;
   transition: opacity var(--t-duration) ease var(--t-animation-delay), background-color 40ms ease;
+}
+
+.loaderRow {
+  width: 100%;
+  min-height: 61.6px;
 }
 
 .virtualRow:not(:last-child) .row,
@@ -456,6 +454,10 @@ select {
 
 .listItem:hover .row {
   background-color: #eaf4fa;
+}
+
+.row--searchResult {
+  background-color: #fff8dc;
 }
 
 .row--searchMatch {
@@ -896,4 +898,15 @@ select {
   right: 1em;
   left: auto;
   width: min(20em, calc(100vw - 2em));
+}
+
+.debugScrollY {
+  position: fixed;
+  z-index: 11;
+  top: 0.75em;
+  left: 1em;
+  color: #6b7880;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75em;
+  pointer-events: none;
 }

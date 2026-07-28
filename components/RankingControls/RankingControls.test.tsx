@@ -16,6 +16,8 @@ test("renders event and ranking type controls", () => {
     />,
   );
   assert.match(markup, /name="Event Id"/);
+  assert.match(markup, /class="chooserEventPicker"/);
+  assert.match(markup, /class="EventPicker-preview cubing-icon event-333"/);
   assert.match(markup, /Single/);
   assert.match(markup, /Average/);
   assert.match(markup, /aria-label="Region"/);

@@ -284,7 +284,7 @@ select {
   overflow: hidden;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 22px;
+  border-radius: 0.5em;
   background-color: transparent;
   box-shadow: none;
   transition: width 250ms var(--cubic-move),
@@ -426,8 +426,12 @@ select {
   display: flex;
   width: min(100%, 36em);
   align-items: center;
-  justify-self: center;
+  justify-self: start;
   gap: 1em;
+}
+
+.chooserEventPicker {
+  display: none;
 }
 
 .searchButton {
@@ -1107,6 +1111,30 @@ select {
     gap: 0.5em;
   }
 
+  .eventInput {
+    display: none;
+  }
+
+  .chooserEventPicker {
+    position: relative;
+    display: block;
+    flex: 0 0 44px;
+  }
+
+  .chooserEventPicker .EventPicker-preview {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding-left: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.5em;
+    background: var(--surface);
+  }
+
+  .chooserEventPicker .EventPicker-menu {
+    z-index: 20;
+  }
+
   .headerTopRow {
     gap: 0.5em;
   }
@@ -1163,8 +1191,8 @@ select {
 
   .regionPickerTrigger {
     min-height: 40px;
-    padding: 0.75em 0.45em;
-    font-size: 0.75em;
+    padding: 0.75em;
+    font-size: 16px;
   }
 
   .selectInput select,
@@ -1172,6 +1200,11 @@ select {
   .regionPickerTrigger {
     height: 2.75em;
     min-height: 2.75em;
+  }
+
+  .regionPickerTrigger {
+    height: 44px;
+    min-height: 44px;
   }
 
 }

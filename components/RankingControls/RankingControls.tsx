@@ -1,6 +1,7 @@
 "use client";
 
 import { WCA_EVENTS } from "@/lib/wca";
+import { EventPicker } from "../EventPicker/EventPicker";
 import SelectChevronIcon from "../Icon/select-chevron.svg?react";
 import { RegionPicker } from "../RegionPicker/RegionPicker";
 import type { RegionOption, RegionSelection } from "../RankingsExplorer/types";
@@ -22,8 +23,13 @@ export function RankingControls({
   onRankingTypeChange: (rankingType: "single" | "average") => void;
   onRegionChange: (region: RegionOption) => void;
 }) {
+  const selectedEvent = WCA_EVENTS.find((event) => event.id === eventId)!;
+
   return (
     <div className="chooser">
+      <div className="chooserEventPicker">
+        <EventPicker event={selectedEvent} onChange={onEventChange} />
+      </div>
       <div className="selectInput eventInput">
         <select
           name="Event Id"

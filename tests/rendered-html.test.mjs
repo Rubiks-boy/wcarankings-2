@@ -106,6 +106,9 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /requestAnimationFrame/);
   assert.match(component, /initialScrollRef/);
   assert.match(component, /initialSearchRef/);
+  assert.doesNotMatch(component, /wca-rankings-scroll-v1/);
+  assert.doesNotMatch(component, /scrollRestoreAttemptedRef/);
+  assert.doesNotMatch(component, /scrollPersistenceReadyRef/);
   assert.match(component, /scrollToEntry\(\{[\s\S]*targetIndex/);
   assert.match(component, /requestedBehavior\?: ScrollBehavior/);
   assert.match(component, /MIN_LOCAL_SCROLL_DURATION_MS = \d+/);

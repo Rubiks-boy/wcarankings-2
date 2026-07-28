@@ -26,13 +26,21 @@
   display: none;
 }
 
+.EventPicker-preview--named,
+.EventPicker-option--named {
+  font-weight: 700;
+}
+
+.EventPicker-symbol {
+  display: block;
+}
+
 .EventPicker-menu {
   position: absolute;
   z-index: 2;
   top: calc(100% + 0.5em);
   left: 0;
   display: grid;
-  grid-template-columns: repeat(5, 40px);
   padding: 0.35em;
   border: 1px solid var(--border-subtle);
   border-radius: 20px;
@@ -48,6 +56,18 @@
     visibility 0s linear 150ms;
 }
 
+.EventPicker-eventOptions {
+  display: grid;
+  grid-template-columns: repeat(5, 40px);
+}
+
+.EventPicker-additionalOptions {
+  display: grid;
+  margin-top: 0.35em;
+  padding-top: 0.35em;
+  border-top: 1px solid var(--border-subtle);
+}
+
 .EventPicker-menu[data-open="true"] {
   visibility: visible;
   opacity: 1;
@@ -59,6 +79,26 @@
 
 .EventPicker-option {
   font-size: 1.25em;
+}
+
+.EventPicker-option--named {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 10em;
+  justify-content: flex-start;
+  padding-inline: 0.65em;
+  gap: 0.65em;
+  color: var(--text-strong);
+  font-size: 0.9em;
+  font-weight: 400;
+}
+
+.EventPicker-optionSymbol {
+  display: inline-grid;
+  width: 1.4em;
+  place-items: center;
+  font-size: 1.2em;
 }
 
 .EventPicker-preview:hover,

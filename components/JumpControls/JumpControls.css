@@ -26,6 +26,14 @@
   overflow: visible;
 }
 
+.Jump--rankings.Jump--withoutResultType {
+  --result-type-width: 0px;
+}
+
+.Jump--rankings.Jump--withHemisphere {
+  --rail-event-width: 7.25em;
+}
+
 .Jump-railSettings {
   display: flex;
   width: var(--rail-settings-width);
@@ -46,6 +54,32 @@
 .Jump-railSettings > .EventPicker-preview:focus-visible {
   box-shadow: inset 0 0 0 2px var(--focus-ring);
 }
+
+.Jump-latitudeToggle {
+  display: flex;
+  width: var(--rail-event-width);
+  height: var(--rail-control-height);
+  flex: 0 0 var(--rail-event-width);
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-right: 1px solid var(--border-subtle);
+  background: transparent;
+  gap: 0.45em;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8em;
+  font-weight: 600;
+  border-radius: calc(var(--rail-control-height) / 2) 0 0 calc(var(--rail-control-height) / 2);
+}
+
+.Jump-latitudeToggle[data-hemisphere="north"] { color: color-mix(in srgb, var(--record-world) 55%, var(--text-muted)); }
+.Jump-latitudeToggle[data-hemisphere="south"] { color: color-mix(in srgb, var(--primary) 55%, var(--text-muted)); }
+.Jump-latitudeToggle svg { width: 1.25em; height: 1.25em; transition: transform 150ms var(--cubic-move); }
+.Jump-latitudeToggle[data-hemisphere="south"] svg { transform: rotate(180deg); }
+.Jump-latitudeToggle:hover { color: var(--text-strong); }
+.Jump-latitudeToggle:focus-visible { box-shadow: inset 0 0 0 2px var(--focus-ring); outline: none; }
 
 .Jump-railSettings .EventPicker-menu {
   z-index: 20;
@@ -111,4 +145,5 @@
 @media only screen and (max-width: 600px) {
   .Jump--rankings { --rail-control-height: 44px; --rail-event-width: 44px; --rail-select-width: min(8.5em, calc((100vw - 88px) / 2)); --expanded-result-type-width: var(--rail-select-width); font-size: 1rem; }
   .Jump-pagerButton, .Jump-searchNavigationButton { padding-inline: .5em; }
+  .Jump--rankings.Jump--withHemisphere { --rail-event-width: min(7.25em, calc(100vw - 88px)); }
 }

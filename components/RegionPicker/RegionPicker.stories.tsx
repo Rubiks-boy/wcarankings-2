@@ -26,7 +26,7 @@ function InteractiveRegionPicker() {
 }
 
 const meta = {
-  title: "Rankings/RegionPicker",
+  title: "Components/RegionPicker",
   component: RegionPicker,
   parameters: { layout: "centered" },
   args: {

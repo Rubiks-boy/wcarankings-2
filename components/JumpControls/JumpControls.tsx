@@ -1,11 +1,12 @@
 "use client";
 
 import { forwardRef, useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
-import { EventPicker } from "../EventPicker/EventPicker";
+import { EventPicker, type EventPickerOption } from "../EventPicker/EventPicker";
 import { RegionPicker } from "../RegionPicker/RegionPicker";
 import ArrowDownIcon from "../Icon/arrow-down.svg?react";
 import ArrowUpIcon from "../Icon/arrow-up.svg?react";
 import CloseIcon from "../Icon/close.svg?react";
+import CompassIcon from "../Icon/compass.svg?react";
 import SearchIcon from "../Icon/search.svg?react";
 import { formatRankingNumber, type RankingEntry, type RegionOption, type RegionSelection } from "../RankingsExplorer/types";
 import { WCA_EVENTS } from "@/lib/wca";
@@ -80,9 +81,11 @@ function RailSearch({ searchInputRef, findOpen, findQuery, findError, findLoadin
   );
 }
 
-export function RankingsJumpRail({ event, onEventChange, rankingType, onRankingTypeChange, regions, regionSelection, onRegionChange, onEventPickerTrigger, compactResultType = false, ...searchProps }: {
-  event: (typeof WCA_EVENTS)[number];
-  onEventChange: (eventId: (typeof WCA_EVENTS)[number]["id"]) => void;
+export function RankingsControlsRail<T extends EventPickerOption>({ event, eventOptions, additionalEventOptions, onEventChange, rankingType, onRankingTypeChange, regions, regionSelection, onRegionChange, onEventPickerTrigger, compactResultType = false, showResultType = true, showEventPicker = true, hemisphere, onHemisphereChange, ...searchProps }: {
+  event: T;
+  eventOptions?: readonly T[];
+  additionalEventOptions?: readonly T[];
+  onEventChange: (eventId: T["id"]) => void;
   rankingType: "single" | "average";
   onRankingTypeChange: (rankingType: "single" | "average") => void;
   regions: RegionOption[];
@@ -90,13 +93,24 @@ export function RankingsJumpRail({ event, onEventChange, rankingType, onRankingT
   onRegionChange: (region: RegionOption) => void;
   onEventPickerTrigger?: (trigger: HTMLButtonElement | null) => void;
   compactResultType?: boolean;
+  showResultType?: boolean;
+  showEventPicker?: boolean;
+  hemisphere?: "north" | "south";
+  onHemisphereChange?: (hemisphere: "north" | "south") => void;
 } & Parameters<typeof RailSearch>[0]) {
   const nextType = rankingType === "single" ? "average" : "single";
   return (
-    <JumpRail className="Jump--rankings" direction="up" compactResultType={compactResultType}>
+    <JumpRail className={`Jump--rankings${showResultType ? "" : " Jump--withoutResultType"}${hemisphere ? " Jump--withHemisphere" : ""}`} direction="up" compactResultType={compactResultType}>
       <div className="Jump-railSettings">
-        <EventPicker event={event} onChange={onEventChange} onTriggerReady={onEventPickerTrigger} />
-        <div className="Jump-resultTypeControl">
+        {showEventPicker ? (
+          <EventPicker event={event} options={eventOptions} additionalOptions={additionalEventOptions} onChange={onEventChange} onTriggerReady={onEventPickerTrigger} />
+        ) : hemisphere ? (
+          <button className="Jump-latitudeToggle" type="button" data-hemisphere={hemisphere} aria-label={`Latitude: ${hemisphere} first. Switch to ${hemisphere === "north" ? "south" : "north"} first`} title={`Latitude: ${hemisphere} first`} onClick={() => onHemisphereChange?.(hemisphere === "north" ? "south" : "north")}>
+            <CompassIcon />
+            <span>{hemisphere === "north" ? "North" : "South"}</span>
+          </button>
+        ) : null}
+        {showResultType && <div className="Jump-resultTypeControl">
           <fieldset className="rankingTypeToggle Jump-resultTypeOptions" data-ranking-type={rankingType} aria-label="Ranking type" aria-hidden={compactResultType}>
             <legend className="visuallyHidden">Ranking type</legend>
             {(["single", "average"] as const).map((option) => {
@@ -108,7 +122,7 @@ export function RankingsJumpRail({ event, onEventChange, rankingType, onRankingT
             })}
           </fieldset>
           <button className="Jump-resultTypeToggle" type="button" tabIndex={compactResultType ? 0 : -1} aria-hidden={!compactResultType} disabled={event.id === "333mbf"} aria-label={`Switch to ${nextType} rankings`} onClick={() => onRankingTypeChange(nextType)}>{rankingType === "single" ? "Single" : "Average"}</button>
-        </div>
+        </div>}
         <RegionPicker className="Jump-regionPicker" options={regions} selected={regionSelection} onChange={onRegionChange} />
       </div>
       <RailSearch {...searchProps} />

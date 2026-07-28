@@ -39,12 +39,22 @@ import {
   notifyAnalyticsNavigation,
   trackGoogleAnalyticsEvent,
 } from "@/lib/google-analytics";
-import { RankingsJumpRail, RankingsPagerRail } from "../JumpControls/JumpControls";
+import { RankingsControlsRail, RankingsPagerRail } from "../JumpControls/JumpControls";
+import {
+  ALL_EVENT_RANKING_OPTIONS,
+  isAllEventRankingOption,
+} from "../EventPicker/allEventRankingOptions";
 import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVisibility";
 import { ResultsTable } from "../ResultsTable/ResultsTable";
+import { SubjectMockRows } from "./SubjectMockRows";
 import { ThemeToggle } from "../ThemeToggle/ThemeToggle";
 import { VimHelp } from "../VimHelp/VimHelp";
 import { VimSearchInput } from "../VimSearchInput/VimSearchInput";
+import {
+  ExplorerSubjectSwitch,
+  type ExplorerSubject,
+} from "../ExplorerSubjectSwitch/ExplorerSubjectSwitch";
+import { TextDropdown } from "../Dropdown/TextDropdown";
 import {
   formatRankingsFreshness,
   type InitialRankingData,
@@ -64,6 +74,13 @@ const ROW_HEIGHT = 65.45;
 const RAIL_REVEAL_DISTANCE = ROW_HEIGHT * 1.5;
 const TOP_RAIL_TRANSFORM_DISTANCE = ROW_HEIGHT * 2;
 const END_MARKER_PEEK = ROW_HEIGHT + 40;
+const COMPETITION_RANKING_OPTIONS = [
+  { value: "best-result", label: "Best result" },
+  { value: "podiums", label: "Podiums" },
+  { value: "latitude", label: "Latitude" },
+] as const;
+
+type CompetitionRanking = (typeof COMPETITION_RANKING_OPTIONS)[number]["value"];
 
 type NetworkInformationLike = {
   saveData?: boolean;
@@ -423,6 +440,12 @@ export function RankingsExplorer({
   initialEventId = "333",
   initialRankingType = "single",
   initialRegionSelection = { scope: "world", regionId: "" },
+  showAllEventRankingOptions = false,
+  showSubjectSwitch = false,
+  initialSubject = "people",
+  initialCompetitionRanking = "best-result",
+  initialLatitudeHemisphere = "north",
+  mockSubjectRows = false,
   initialRegions = {
     continents: FALLBACK_CONTINENTS,
     countries: FALLBACK_COUNTRIES,
@@ -434,6 +457,12 @@ export function RankingsExplorer({
   initialEventId?: (typeof WCA_EVENTS)[number]["id"];
   initialRankingType?: "single" | "average";
   initialRegionSelection?: RegionSelection;
+  showAllEventRankingOptions?: boolean;
+  showSubjectSwitch?: boolean;
+  initialSubject?: ExplorerSubject;
+  initialCompetitionRanking?: CompetitionRanking;
+  initialLatitudeHemisphere?: "north" | "south";
+  mockSubjectRows?: boolean;
   initialRegions?: {
     continents: Array<{ id: string; name: string }>;
     countries: Array<{ id: string; name: string; iso2?: string }>;
@@ -441,6 +470,10 @@ export function RankingsExplorer({
 }) {
   const normalizedInitialSearch = initialSearch.trim();
   const [eventId, setEventId] = useState(initialEventId);
+  const [allEventRankingId, setAllEventRankingId] = useState<string | null>(null);
+  const [subject, setSubject] = useState<ExplorerSubject>(initialSubject);
+  const [competitionRanking, setCompetitionRanking] = useState<CompetitionRanking>(initialCompetitionRanking);
+  const [latitudeHemisphere, setLatitudeHemisphere] = useState<"north" | "south">(initialLatitudeHemisphere);
   const [rankingType, setRankingType] = useState<"single" | "average">(
     initialRankingType
   );
@@ -2439,7 +2472,17 @@ export function RankingsExplorer({
     [findMatches, findResolvedQuery]
   );
   const activeFindMatch = findMatches[findIndex] ?? null;
-  const currentEvent = WCA_EVENTS.find((event) => event.id === eventId)!;
+  const currentEvent = allEventRankingId
+    ? ALL_EVENT_RANKING_OPTIONS.find((option) => option.id === allEventRankingId)!
+    : WCA_EVENTS.find((event) => event.id === eventId)!;
+  const changeRailEvent = (nextEventId: string) => {
+    if (isAllEventRankingOption(nextEventId)) {
+      setAllEventRankingId(nextEventId);
+      return;
+    }
+    setAllEventRankingId(null);
+    changeEvent(nextEventId as (typeof WCA_EVENTS)[number]["id"]);
+  };
 
   return (
     <div
@@ -2447,12 +2490,30 @@ export function RankingsExplorer({
         findQuery.trim() ? " app--searching" : ""
       }`}
     >
-      <header className="header">
+      <header className={`header${showSubjectSwitch ? " header--subjectMenu" : ""}`}>
         <div className="headerTopRow">
           <div className="headerTitle">
             <h1 className="title">
               <Link href="/">WCA Rankings</Link>
             </h1>
+            {showSubjectSwitch && (
+              <>
+                <ExplorerSubjectSwitch
+                  subject={subject}
+                  onChange={setSubject}
+                  variant="text"
+                />
+                {subject === "competitions" && (
+                  <TextDropdown
+                    options={COMPETITION_RANKING_OPTIONS}
+                    value={competitionRanking}
+                    onChange={setCompetitionRanking}
+                    ariaLabel="Competition ranking"
+                    className="competitionRankingDropdown"
+                  />
+                )}
+              </>
+            )}
           </div>
           <div className="headerActions">
             <ThemeToggle />
@@ -2465,9 +2526,11 @@ export function RankingsExplorer({
         className="stickyRankingsRail"
         style={{ "--rail-scroll-progress": topRailProgress } as CSSProperties}
       >
-        <RankingsJumpRail
+        <RankingsControlsRail
           event={currentEvent}
-          onEventChange={changeEvent}
+          eventOptions={WCA_EVENTS}
+          additionalEventOptions={showAllEventRankingOptions ? ALL_EVENT_RANKING_OPTIONS : undefined}
+          onEventChange={changeRailEvent}
           rankingType={rankingType}
           onRankingTypeChange={changeRankingType}
           regions={regions}
@@ -2475,6 +2538,10 @@ export function RankingsExplorer({
           onRegionChange={changeRegion}
           onEventPickerTrigger={(trigger) => { railEventPickerTriggerRef.current = trigger; }}
           compactResultType={topRailProgress >= 1}
+          showResultType={!(subject === "competitions" && (competitionRanking === "podiums" || competitionRanking === "latitude"))}
+          showEventPicker={!(subject === "competitions" && competitionRanking === "latitude")}
+          hemisphere={subject === "competitions" && competitionRanking === "latitude" ? latitudeHemisphere : undefined}
+          onHemisphereChange={setLatitudeHemisphere}
           searchInputRef={setRailFindInputRef}
           findOpen={findOpen}
           findQuery={findQuery}
@@ -2498,6 +2565,12 @@ export function RankingsExplorer({
             )}
             {error ? (
               <div className="listMessage">{error}</div>
+            ) : mockSubjectRows ? (
+              <SubjectMockRows
+                subject={subject}
+                competitionRanking={competitionRanking}
+                latitudeHemisphere={latitudeHemisphere}
+              />
             ) : (
               <ResultsTable
                 listRef={rankingListRef}

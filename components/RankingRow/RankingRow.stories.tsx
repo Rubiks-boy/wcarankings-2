@@ -21,7 +21,7 @@ const recordEntry: RankingEntry = {
 };
 
 const meta = {
-  title: "Rankings/RankingRow",
+  title: "Components/RankingRow",
   component: RankingRow,
   parameters: { layout: "fullscreen" },
   args: {

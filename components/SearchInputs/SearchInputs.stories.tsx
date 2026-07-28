@@ -43,7 +43,7 @@ function InteractiveSearchInputs({
 }
 
 const meta = {
-  title: "Rankings/SearchInputs",
+  title: "Components/SearchInputs",
   component: SearchInputs,
   parameters: { layout: "centered" },
   args: {

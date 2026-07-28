@@ -1,6 +1,9 @@
 @import "@cubing/icons/css";
 @import "./theme.css";
 @import "../components/EventPicker/EventPicker.css";
+@import "../components/Dropdown/Dropdown.css";
+@import "../components/ExplorerSubjectSwitch/ExplorerSubjectSwitch.css";
+@import "../components/RankingsExplorer/SubjectMockRows.css";
 @import "../components/JumpControls/JumpControls.css";
 @import "../components/JumpControlsVisibility/JumpControlsVisibility.css";
 @import "../components/PwaUpdatePrompt/PwaUpdatePrompt.css";
@@ -81,6 +84,10 @@ select {
   padding-bottom: 1em;
 }
 
+.header--subjectMenu {
+  z-index: 21;
+}
+
 .header > * {
   margin: 0;
 }
@@ -99,6 +106,23 @@ select {
   align-items: center;
   min-width: max-content;
   gap: 0.75em;
+}
+
+.competitionRankingDropdown {
+  padding-left: 0.45em;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.competitionRankingDropdown .TextDropdown-trigger {
+  min-height: 34px;
+  padding-block: 0.3rem;
+  color: var(--text-subtle);
+  font-size: 0.85rem;
+}
+
+.competitionRankingDropdown .TextDropdown-trigger:hover,
+.competitionRankingDropdown .TextDropdown-trigger[aria-expanded="true"] {
+  color: var(--text-muted);
 }
 
 .headerActions {

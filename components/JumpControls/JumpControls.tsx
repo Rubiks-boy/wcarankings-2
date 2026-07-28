@@ -104,11 +104,13 @@ export function JumpUpControls({
     <div className="Jump" data-direction="up">
       <EventPicker event={event} onChange={onEventChange} />
       <div className="Jump-buttonWrapper">
-        <button className="Jump-button" onClick={onJump} type="button">
-          <ArrowUpIcon />
-          <span>{label}</span>
-          <ArrowUpIcon />
-        </button>
+        <div className="Jump-buttonClip">
+          <button className="Jump-button" onClick={onJump} type="button">
+            <ArrowUpIcon />
+            <span>{label}</span>
+            <ArrowUpIcon />
+          </button>
+        </div>
       </div>
       <div
         ref={searchBarRef}
@@ -189,17 +191,19 @@ export function JumpDownControls({
       data-search-navigation={searchActive}
     >
       <div className="Jump-buttonWrapper">
-        <button
-          className="Jump-button"
-          onClick={onJump}
-          type="button"
-          disabled={searchActive}
-          aria-hidden={searchActive}
-        >
-          <ArrowDownIcon />
-          <span>{label}</span>
-          <ArrowDownIcon />
-        </button>
+        <div className="Jump-buttonClip">
+          <button
+            className="Jump-button"
+            onClick={onJump}
+            type="button"
+            disabled={searchActive}
+            aria-hidden={searchActive}
+          >
+            <ArrowDownIcon />
+            <span>{label}</span>
+            <ArrowDownIcon />
+          </button>
+        </div>
       </div>
       <div
         className="Jump-searchNavigation"

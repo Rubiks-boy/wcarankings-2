@@ -27,10 +27,17 @@
 }
 
 .Jump-buttonWrapper {
-  width: max-content;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
-  interpolate-size: allow-keywords;
-  transition: width 250ms var(--cubic-move);
+  opacity: 1;
+  transition: grid-template-columns 250ms var(--cubic-move),
+    opacity 150ms var(--cubic-enter);
+}
+
+.Jump-buttonClip {
+  min-width: 0;
+  overflow: hidden;
 }
 
 .Jump[data-direction="up"] > .Jump-buttonWrapper {
@@ -38,16 +45,12 @@
 }
 
 .Jump[data-direction="down"] {
-  width: max-content;
   justify-content: center;
-  interpolate-size: allow-keywords;
-  transition: width 250ms var(--cubic-move);
 }
 
 .Jump[data-direction="down"] > .Jump-buttonWrapper {
-  visibility: visible;
-  opacity: 1;
-  transition: opacity 150ms var(--cubic-enter), visibility 0s;
+  transition: grid-template-columns 250ms var(--cubic-move),
+    opacity 150ms var(--cubic-enter);
 }
 
 .Jump-button {
@@ -71,36 +74,38 @@
 }
 
 .Jump-searchNavigation {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  visibility: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 0fr);
   overflow: hidden;
   justify-content: center;
   opacity: 0;
-  transition: opacity 150ms var(--cubic-exit), visibility 0s linear 150ms;
-}
-
-.Jump[data-search-navigation="true"] {
-  width: min(20em, calc(100vw - 2em));
+  pointer-events: none;
+  transition: grid-template-columns 250ms var(--cubic-move),
+    opacity 150ms var(--cubic-exit);
 }
 
 .Jump[data-search-navigation="true"] .Jump-searchNavigation {
-  visibility: visible;
+  grid-template-columns: minmax(0, 1fr);
   opacity: 1;
-  transition: opacity 150ms var(--cubic-enter), visibility 0s;
+  pointer-events: auto;
+  transition: grid-template-columns 250ms var(--cubic-move),
+    opacity 150ms var(--cubic-enter);
 }
 
 .Jump[data-search-navigation="true"] > .Jump-buttonWrapper {
-  visibility: hidden;
+  grid-template-columns: minmax(0, 0fr);
   opacity: 0;
-  transition: opacity 150ms var(--cubic-exit), visibility 0s linear 150ms;
+  pointer-events: none;
+  transition: grid-template-columns 250ms var(--cubic-move),
+    opacity 150ms var(--cubic-exit);
 }
 
 .Jump-searchNavigationContent {
   display: flex;
   width: min(20em, calc(100vw - 2em));
+  min-width: 0;
   flex: none;
+  overflow: hidden;
 }
 
 .Jump-searchNavigationButton {
@@ -133,7 +138,8 @@
 .Jump[data-direction="up"]:has(
     .findBar--rail:is([data-has-text="true"], :focus-within)
   ) > .Jump-buttonWrapper {
-  width: 0;
+  grid-template-columns: minmax(0, 0fr);
+  opacity: 0;
 }
 
 .Jump .findBar--rail .findIcon,

@@ -9,7 +9,12 @@ export function JumpControlsVisibility({
   children: ReactElement;
 }) {
   return (
-    <div className="JumpControlsVisibility" data-visible={visible}>
+    <div
+      className="JumpControlsVisibility"
+      data-visible={visible}
+      aria-hidden={!visible}
+      inert={!visible}
+    >
       {children}
     </div>
   );

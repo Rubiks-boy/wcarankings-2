@@ -100,7 +100,7 @@ export async function GET() {
       lastSuccessfulRun: serializeRun(successful.rows[0] ?? null),
       recentFailures: failures.rows.map(serializeRun),
       projectionTables: {
-        ready: latestRun?.projection_swap_status === "published" && tableHealth.every((table) => table.present),
+        ready: Boolean(currentExport.export_date) && tableHealth.every((table) => table.present),
         tables: tableHealth,
       },
       diagnostics: latestRun

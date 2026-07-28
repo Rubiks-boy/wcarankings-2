@@ -4,7 +4,7 @@ import test from "node:test";
 
 const root = new URL("../", import.meta.url);
 
-test("implements the proposal registry and semantic projection grains", async () => {
+test("implements the permanent registry and semantic projection grains", async () => {
   const [schema, facts, people, results, metrics, scores, podiums, competitionEvents, cities, importer] =
     await Promise.all([
       readFile(new URL("scripts/mysql-schema.mjs", root), "utf8"),

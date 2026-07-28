@@ -26,11 +26,11 @@ async function projectionSql(file) {
   return readFile(join(projectionDirectory, file), "utf8");
 }
 
-const proposalProjectionDefinitions = [
+const projectionDefinitions = [
   { name: "result-facts", dependencies: ["raw-wca"], files: ["result_facts.sql"], tables: ["result_facts"] },
   { name: "person-event-rankings", dependencies: ["result-facts"], files: ["person_event_rankings.sql"], tables: ["person_event_rankings"] },
   { name: "result-rankings", dependencies: ["result-facts"], files: ["result_rankings.sql"], tables: ["result_rankings"] },
-  { name: "person-ranking-counts", dependencies: ["person-event-rankings", "result-rankings"], files: ["proposal_counts.sql"], tables: ["person_ranking_counts", "result_ranking_counts"] },
+  { name: "person-ranking-counts", dependencies: ["person-event-rankings", "result-rankings"], files: ["projection_counts.sql"], tables: ["person_ranking_counts", "result_ranking_counts"] },
   { name: "person-metric-values", dependencies: ["person-event-rankings"], files: ["person_metric_values.sql"], tables: ["person_metric_values"] },
   { name: "person-metric-scores", dependencies: ["person-metric-values"], files: ["person_metric_scores.sql"], tables: ["person_metric_scores", "person_metric_counts"] },
   { name: "competition-podium-members", dependencies: ["result-facts"], files: ["competition_podium_members.sql"], tables: ["competition_podium_members"] },
@@ -39,7 +39,7 @@ const proposalProjectionDefinitions = [
   { name: "city-event-stats", dependencies: ["result-facts"], files: ["city_event_stats.sql"], tables: ["city_event_stats"] },
 ];
 
-export const PROPOSAL_PROJECTION_TABLES = proposalProjectionDefinitions.flatMap(({ tables }) => tables);
+export const SEMANTIC_PROJECTION_TABLES = projectionDefinitions.flatMap(({ tables }) => tables);
 export const COMPATIBILITY_PROJECTION_TABLES = [
   "ranking_entries_single",
   "ranking_entries_average",
@@ -49,11 +49,11 @@ export const COMPATIBILITY_PROJECTION_TABLES = [
 ];
 export const PUBLISHED_PROJECTION_TABLES = [
   ...COMPATIBILITY_PROJECTION_TABLES,
-  ...PROPOSAL_PROJECTION_TABLES,
+  ...SEMANTIC_PROJECTION_TABLES,
 ];
 
 function projectionNames(sql, suffix) {
-  return [...PROPOSAL_PROJECTION_TABLES]
+  return [...SEMANTIC_PROJECTION_TABLES]
     .sort((left, right) => right.length - left.length)
     .reduce((renamed, table) => renamed.replaceAll(table, `${table}${suffix}`), sql);
 }
@@ -74,7 +74,7 @@ async function validateProjection(connection, definition, suffix) {
   return rowCounts;
 }
 
-export const PROJECTION_REGISTRY = proposalProjectionDefinitions.map((definition) => ({
+export const PROJECTION_REGISTRY = projectionDefinitions.map((definition) => ({
   ...definition,
   build: (connection, suffix) => buildSqlProjection(connection, definition, suffix),
   validate: (connection, suffix) => validateProjection(connection, definition, suffix),

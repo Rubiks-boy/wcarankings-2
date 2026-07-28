@@ -1,8 +1,10 @@
-# Projection Architecture Proposal
+# Projection Architecture
 
-> Temporary proposal for discussion. This is not yet the permanent schema
-> contract. Table names and grains should be finalized before dependent APIs are
-> treated as stable.
+This document is the permanent schema and naming contract for CubeRanks
+projection work. Implemented core projections are listed separately from
+planned extension grains. Changes to a documented grain, identifier, metric
+version, or publication guarantee require an explicit migration and a
+corresponding update here.
 
 ## Goals
 
@@ -57,7 +59,9 @@ migration rather than exposing either name in the UI.
 Do not include `_entries` in new table names. It does not identify a grain or
 purpose. Existing `_entries` tables can remain temporarily for compatibility.
 
-## Proposed projection graph
+## Projection graph
+
+The core graph implemented by the projection registry is:
 
 ```text
 raw WCA export
@@ -66,10 +70,6 @@ raw WCA export
     │   ├── person_metric_values
     │   └── person_metric_scores
     ├── result_rankings
-    ├── person_year_event_rankings
-    ├── result_year_rankings
-    ├── person_event_weekly_bests
-    │   └── person_event_rank_changes
     ├── competition_stats
     ├── competition_event_stats
     │   └── competition_podium_members
@@ -84,6 +84,10 @@ result_ranking_counts
 person_metric_counts
 ```
 
+The time-based grains documented below are planned extensions of this graph.
+They are not part of the published generation until their registry entries,
+validations, and product semantics are implemented.
+
 ## Core fact table
 
 ### `result_facts`
@@ -94,7 +98,7 @@ Grain:
 one row per official WCA result
 ```
 
-Proposed columns:
+Columns:
 
 ```text
 result_id
@@ -143,12 +147,16 @@ PRIMARY KEY (result_id)
 (competition_id, event_id, result_id)
 (event_id, best, result_id)
 (event_id, average, result_id)
+```
+
+Yearly indexes are intentionally absent while time-based projections are
+planned. Add them only if benchmarks show that the yearly projections benefit
+enough to justify their size:
+
+```text
 (competition_year, event_id, best, result_id)
 (competition_year, event_id, average, result_id)
 ```
-
-Only retain the yearly indexes if benchmarks show that the yearly projections
-benefit enough to justify their size.
 
 ## Person-event rankings
 
@@ -160,7 +168,7 @@ Grain:
 person + event + result type
 ```
 
-Proposed columns:
+Columns:
 
 ```text
 person_id
@@ -220,7 +228,7 @@ Grain:
 official result + result type
 ```
 
-Proposed columns:
+Columns:
 
 ```text
 result_id
@@ -338,6 +346,17 @@ position
 Sum of Ranks v1 should require complete coverage of its versioned event set.
 Kinch must have an explicit, versioned missing-event and Overall aggregation
 policy.
+
+The v1 policy is:
+
+- Sum of Ranks Single requires all 17 current Single events.
+- Sum of Ranks Average requires all 16 current Average events.
+- Kinch excludes Multi-Blind, requires all 16 remaining events for both result
+  types, and sums the event percentages for Overall.
+- Missing events make a person ineligible for the corresponding v1 score.
+
+Any event-set or missing-event policy change increments `metric_version` or
+`event_set_version`; it does not silently reinterpret stored v1 rows.
 
 ## Time-based rankings
 
@@ -554,18 +573,19 @@ The declarative registry should define:
 It should support dependency ordering, selective backfills, per-projection
 timing, row counts, validation, and controlled concurrency.
 
-## Open decisions
+## Future architecture decisions
 
-Before treating this proposal as final, decide and benchmark:
+These decisions affect future migrations or planned projection layers; they do
+not make the current contract provisional:
 
-1. Unified versus physically split Single/Average ranking tables.
-2. `position` migration timing for existing `sub_rank` columns.
-3. The versioned event sets for Sum of Ranks and Kinch.
-4. Kinch Overall and missing-event policy.
-5. Whether yearly source indexes justify their storage cost.
-6. Whether competition-wide pages need another event-normalized grain.
-7. Which system cohorts are large or frequent enough to materialize.
-8. Whether explicit `generation_id` columns add value beyond atomic table
+1. When compatibility `_entries` tables can be retired after consumers move to
+   unified semantic ranking tables.
+2. Whether a future metric version should use different event sets or Kinch
+   aggregation semantics.
+3. Whether yearly source indexes justify their storage cost.
+4. Whether competition-wide pages need another event-normalized grain.
+5. Which system cohorts are large or frequent enough to materialize.
+6. Whether explicit `generation_id` columns add value beyond atomic table
    publication and export metadata.
 
 ## Related roadmap issues

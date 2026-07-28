@@ -80,4 +80,8 @@ Dockerfile                   Multi-stage production image
 docker-compose.yml           MariaDB + app services
 ```
 
+See [docs/projection-architecture.md](docs/projection-architecture.md) for the
+permanent projection naming, grain, dependency, metric-versioning, and atomic
+publication contract.
+
 CubeRanks is an independent community project and is not affiliated with or endorsed by the World Cube Association.

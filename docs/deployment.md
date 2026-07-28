@@ -46,7 +46,7 @@ docker compose run --rm app node /app/scripts/sync-wca-export.mjs
 The import downloads one SQL archive per export date into the persistent cache,
 streams the SQL dump into MariaDB, and then builds the compatibility rankings
 plus the dependency-ordered semantic projections documented in
-`docs/projection-architecture-proposal.md`. The shared `result_facts` table is
+`docs/projection-architecture.md`. The shared `result_facts` table is
 the only new general-purpose layer that scans raw `results`.
 Use `--force` to re-import an already recorded export.
 For a manually downloaded archive, set `WCA_SQL_EXPORT_PATH` in the environment or

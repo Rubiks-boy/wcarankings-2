@@ -41,6 +41,4 @@ ALTER TABLE result_facts
   ADD INDEX idx_result_facts_person_event_date (person_id, event_id, competition_start_date, result_id),
   ADD INDEX idx_result_facts_competition_event (competition_id, event_id, result_id),
   ADD INDEX idx_result_facts_event_single (event_id, best, result_id),
-  ADD INDEX idx_result_facts_event_average (event_id, average, result_id),
-  ADD INDEX idx_result_facts_year_single (competition_year, event_id, best, result_id),
-  ADD INDEX idx_result_facts_year_average (competition_year, event_id, average, result_id);
+  ADD INDEX idx_result_facts_event_average (event_id, average, result_id);

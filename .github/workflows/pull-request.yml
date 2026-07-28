@@ -67,7 +67,7 @@ jobs:
       - name: Validate Flyway image and migrations
         run: |
           docker run --rm --entrypoint sh wcarankings-flyway:pull-request -c \
-            'test -f /flyway/migrations/V1__export_metadata.sql && test -f /flyway/migrations/V2__import_health.sql'
+            'test -f /flyway/migrations/V1__export_metadata.sql && test -f /flyway/migrations/V2__import_health.sql && test -f /flyway/migrations/V3__projection_build_timing.sql'
           docker tag wcarankings-flyway:pull-request wcarankings-flyway:latest
           docker compose up -d db
           docker compose run --rm flyway migrate

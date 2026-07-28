@@ -104,6 +104,15 @@ type SearchLayoutAnchor = {
   viewportTop: number;
 };
 
+type SearchSurface = "header" | "rail";
+
+type PendingSearchFocusHandoff = {
+  target: SearchSurface;
+  selectionStart: number | null;
+  selectionEnd: number | null;
+  selectionDirection: "forward" | "backward" | "none" | null;
+};
+
 const CLIENT_PAGE_CACHE_CAPACITY_333 = 512;
 const CLIENT_PAGE_CACHE_CAPACITY_DEFAULT = 128;
 
@@ -470,6 +479,12 @@ export function RankingsExplorer({
   const listRef = useRef<HTMLDivElement>(null);
   const headerFindInputRef = useRef<HTMLInputElement>(null);
   const railFindInputRef = useRef<HTMLInputElement>(null);
+  const tableReachedTopRef = useRef(false);
+  const pendingSearchFocusHandoffRef =
+    useRef<PendingSearchFocusHandoff | null>(null);
+  const searchCompositionActiveRef = useRef(false);
+  const searchFocusHandoffFrameRef = useRef<number | null>(null);
+  const searchFocusHandoffTimerRef = useRef<number | null>(null);
   const vimInputRef = useRef<HTMLInputElement>(null);
   const vimCommandRef = useRef(vimCommand);
   const moreRequestRef = useRef(false);
@@ -537,6 +552,95 @@ export function RankingsExplorer({
   });
   const rowVirtualizerRef = useRef(rowVirtualizer);
   const virtualRows = rowVirtualizer.getVirtualItems();
+
+  const focusPendingSearchSurface = useCallback(() => {
+    const pending = pendingSearchFocusHandoffRef.current;
+    if (!pending || searchCompositionActiveRef.current) return false;
+
+    const targetShouldBeRail = tableReachedTopRef.current;
+    if ((pending.target === "rail") !== targetShouldBeRail) {
+      pendingSearchFocusHandoffRef.current = null;
+      return true;
+    }
+
+    const target =
+      pending.target === "rail"
+        ? railFindInputRef.current
+        : headerFindInputRef.current;
+    if (!target) return false;
+
+    target.focus({ preventScroll: true });
+    if (document.activeElement !== target) return false;
+
+    if (pending.selectionStart !== null && pending.selectionEnd !== null) {
+      try {
+        target.setSelectionRange(
+          pending.selectionStart,
+          pending.selectionEnd,
+          pending.selectionDirection ?? undefined
+        );
+      } catch {
+        // Some mobile browsers can reject selection changes during focus transfer.
+      }
+    }
+
+    pendingSearchFocusHandoffRef.current = null;
+    return true;
+  }, []);
+
+  const schedulePendingSearchFocus = useCallback(() => {
+    if (!pendingSearchFocusHandoffRef.current) return;
+
+    if (searchFocusHandoffFrameRef.current !== null) {
+      window.cancelAnimationFrame(searchFocusHandoffFrameRef.current);
+      searchFocusHandoffFrameRef.current = null;
+    }
+    if (searchFocusHandoffTimerRef.current !== null) {
+      window.clearTimeout(searchFocusHandoffTimerRef.current);
+      searchFocusHandoffTimerRef.current = null;
+    }
+
+    if (focusPendingSearchSurface()) return;
+    if (searchCompositionActiveRef.current) return;
+
+    searchFocusHandoffFrameRef.current = window.requestAnimationFrame(() => {
+      searchFocusHandoffFrameRef.current = null;
+      if (focusPendingSearchSurface()) return;
+
+      searchFocusHandoffTimerRef.current = window.setTimeout(() => {
+        searchFocusHandoffTimerRef.current = null;
+        focusPendingSearchSurface();
+      }, 25);
+    });
+  }, [focusPendingSearchSurface]);
+
+  useLayoutEffect(() => {
+    schedulePendingSearchFocus();
+  }, [schedulePendingSearchFocus, tableReachedTop]);
+
+  useEffect(() => {
+    const isFindInput = (target: EventTarget | null) =>
+      target === headerFindInputRef.current || target === railFindInputRef.current;
+    const handleCompositionStart = (event: CompositionEvent) => {
+      if (isFindInput(event.target)) searchCompositionActiveRef.current = true;
+    };
+    const handleCompositionEnd = (event: CompositionEvent) => {
+      if (!isFindInput(event.target)) return;
+      searchCompositionActiveRef.current = false;
+      schedulePendingSearchFocus();
+    };
+
+    document.addEventListener("compositionstart", handleCompositionStart);
+    document.addEventListener("compositionend", handleCompositionEnd);
+    return () => {
+      document.removeEventListener("compositionstart", handleCompositionStart);
+      document.removeEventListener("compositionend", handleCompositionEnd);
+      if (searchFocusHandoffFrameRef.current !== null)
+        window.cancelAnimationFrame(searchFocusHandoffFrameRef.current);
+      if (searchFocusHandoffTimerRef.current !== null)
+        window.clearTimeout(searchFocusHandoffTimerRef.current);
+    };
+  }, [schedulePendingSearchFocus]);
 
   useLayoutEffect(() => {
     const anchor = pendingSearchLayoutAnchorRef.current;
@@ -693,7 +797,23 @@ export function RankingsExplorer({
   useEffect(() => {
     const updateRailVisibility = () => {
       const tableTop = rankingListRef.current?.getBoundingClientRect().top;
-      setTableReachedTop((tableTop ?? Number.POSITIVE_INFINITY) <= 0);
+      const nextTableReachedTop =
+        (tableTop ?? Number.POSITIVE_INFINITY) <= 0;
+      if (nextTableReachedTop !== tableReachedTopRef.current) {
+        const source = nextTableReachedTop
+          ? headerFindInputRef.current
+          : railFindInputRef.current;
+        if (source && document.activeElement === source) {
+          pendingSearchFocusHandoffRef.current = {
+            target: nextTableReachedTop ? "rail" : "header",
+            selectionStart: source.selectionStart,
+            selectionEnd: source.selectionEnd,
+            selectionDirection: source.selectionDirection,
+          };
+        }
+        tableReachedTopRef.current = nextTableReachedTop;
+        setTableReachedTop(nextTableReachedTop);
+      }
       setAtPageEnd(
         window.scrollY + window.innerHeight >=
           document.documentElement.scrollHeight - 1

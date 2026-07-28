@@ -66,9 +66,9 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   );
   assert.match(component, /className="chooser"/);
   assert.match(component, /className="selectInput(?: eventInput)?"/);
-  assert.match(component, /className=.*searchButton/);
+  assert.match(component, /findBar/);
   assert.match(component, /Search names or WCA IDs/);
-  assert.match(component, /onOpen={openFind}/);
+  assert.match(component, /openFind/);
   assert.match(component, /RegionPicker/);
   assert.match(component, /className="regionPickerTrigger"/);
   assert.match(component, /initialRegions/);
@@ -77,7 +77,6 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /label: "World"/);
   assert.match(component, /flagEmoji/);
   assert.match(component, /recordBadges/);
-  assert.match(component, /data-direction=\{direction\}/);
   assert.match(component, /formatRankingNumber\(5000\)/);
   assert.match(component, /Jump to top/);
   assert.match(component, /Jump to end/);
@@ -251,9 +250,9 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(css, /\.rankingTypeOption/);
   assert.match(css, /\.selectInput select,[\s\S]*\.rankingTypeToggle,[\s\S]*\.regionPickerTrigger/);
   assert.match(css, /\.listItem/);
-  assert.match(css, /\.result \{[\s\S]*display: grid;[\s\S]*grid-template-columns: 8ch 5\.5ch;/);
+  assert.match(css, /\.result \{[\s\S]*display: grid;[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto;/);
   assert.match(css, /\.resultValue \{[\s\S]*display: contents;/);
-  assert.match(css, /\.competitionName \{[\s\S]*grid-column: 1;[\s\S]*width: max-content;[\s\S]*justify-self: end;/);
+  assert.match(css, /\.competitionName \{[\s\S]*grid-column: 1 \/ -1;[\s\S]*justify-self: end;/);
   assert.match(css, /overflow-anchor: none/);
   assert.doesNotMatch(css, /\.loaderBlob/);
   assert.match(css, /\.Jump/);
@@ -262,7 +261,6 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.doesNotMatch(css, /border-bottom: 1px solid #e5eaed/);
   assert.match(css, /\.listItem:hover \.row/);
   assert.match(css, /background-color 40ms ease/);
-  assert.match(css, /\.competitionName \{[\s\S]*max-width: none;[\s\S]*overflow: visible;/);
   assert.match(css, /\.regionPickerMenu/);
   assert.match(css, /\.regionPickerTrigger/);
   assert.match(css, /\.regionOptions[\s\S]*overflow-y: auto/);

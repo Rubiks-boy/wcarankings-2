@@ -40,6 +40,10 @@ test("builds projection transfers on Actions before publishing them atomically",
   assert.match(workflow, /node scripts\/prepare-projection-transfer\.mjs/);
   assert.match(workflow, /mariadb-dump[\s\S]*projection-transfer\.sql\.gz/);
   assert.match(workflow, /publish-projection-transfer\.mjs/);
+  assert.match(
+    workflow,
+    /mariadb --user="\$MARIADB_USER" --password="\$MARIADB_PASSWORD" "\$MARIADB_DATABASE"/,
+  );
   assert.doesNotMatch(
     workflow,
     /docker compose run --rm app node \/app\/scripts\/backfill-result-entries\.mjs/,

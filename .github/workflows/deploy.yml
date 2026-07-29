@@ -229,7 +229,7 @@ jobs:
             heartbeat_pid=$!
             trap "kill $heartbeat_pid 2>/dev/null || true; rm -f /tmp/wcarankings-projection-transfer.sql.gz" EXIT
             gzip -dc /tmp/wcarankings-projection-transfer.sql.gz |
-              docker compose exec -T db sh -c '"'"'mariadb --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'"'"'
+              docker compose exec -T db sh -c '"'"'mariadb --user="$MARIADB_USER" --password="$MARIADB_PASSWORD" "$MARIADB_DATABASE"'"'"'
             docker compose run --rm app node /app/scripts/publish-projection-transfer.mjs
             docker compose run --rm app node /app/scripts/check-ranking-projections.mjs'
           completed_at=$(date +%s)

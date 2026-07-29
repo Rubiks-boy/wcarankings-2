@@ -127,7 +127,8 @@ The deployment workflow does the following:
     projection generation with one atomic table rename.
 12. Starts the new application and proxy only after projection publication and
     readiness checks succeed.
-13. Verifies the app locally on the server and through the configured public host.
+13. Verifies readiness, SOR, Kinch, competition rankings, SSR assets, and the
+    configured public host.
 14. Rolls back to `wcarankings-app:previous` if deployment health checks or
     migrations fail; otherwise removes the previous image after success.
 
@@ -137,6 +138,31 @@ raw WCA tables; transferred projections are accepted only when their source
 export date matches those tables. The daily systemd sync remains responsible for
 updating raw production data. The app entrypoint only starts the server, so a
 fresh host should be imported before it is considered ready for ranking traffic.
+
+### Production projection-transfer benchmark
+
+The first complete production publication through this workflow ran on
+2026-07-29 against the `2026-07-29T00:00:23Z` WCA generation:
+
+| Phase | Time |
+| --- | ---: |
+| Cold Actions build and index-free dump | 42m 27s |
+| Upload, bulk import, index rebuild, validation, and atomic publication | 6m 47s |
+| Entire deployment job | 53m 40s |
+| Compressed transfer artifact | 432,325,262 bytes |
+
+The cold artifact was saved to the Actions cache. A subsequent successful
+cache-hit deployment skipped generation and completed the entire deployment job
+in 10m 34s. Its transfer and publication phase took 7m 03s. About 4m 04s was
+bulk transfer before index construction, and the 22 deferred indexes took about
+2m 51s in total. Five `result_entries_single` indexes dominated index time at
+125.6s; every other table's indexes together took about 45s.
+
+The cache is therefore the main steady-state optimization. The next transfer
+optimization target is `result_entries_single`: either reduce its exposed access
+paths or benchmark a physical backup/restore format that can preserve built
+indexes without row-by-row logical replay. Do not remove an index without
+matching it to product query paths and measuring endpoint behavior.
 
 ## Ranking performance verification
 

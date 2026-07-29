@@ -396,9 +396,10 @@ Measured phases were:
 ### GitHub Actions transfer experiment
 
 On 2026-07-29, a GitHub-hosted runner restored the dated WCA export archive,
-imported it into fresh MariaDB, and attempted to build the complete active
-projection generation for transfer to production. It did not beat the
-20-minute VPS-side comparison threshold.
+imported it into fresh MariaDB, and built the complete active projection
+generation for transfer to production. Cold generation did not beat the
+20-minute VPS-side comparison threshold, but moving it off the VPS removed the
+SSH idle timeout and made the completed artifact reusable.
 
 The raw export import took approximately 2 minutes 54 seconds. Required raw
 indexes took approximately 1 minute 23 seconds. The optimized Sum of Ranks
@@ -422,8 +423,20 @@ date and projection-schema hash so unchanged deploys can reuse a validated
 generation. New artifacts omit secondary indexes during logical import and
 rebuild all indexes for a table together after its bulk data load. A future
 runner experiment may still benefit from caching a validated imported database
-snapshot or building only the projection group being deployed. The failed
-experiments never published tables on production.
+snapshot or building only the projection group being deployed.
+
+The first successful production publication used a 432,325,262-byte artifact.
+The cold Actions build and dump took 2,547 seconds; transfer, bulk import,
+deferred index construction, validation, and atomic publication took 407
+seconds. A subsequent cache-hit deployment skipped the cold build and completed
+the whole deployment in 10 minutes 34 seconds, including a 423-second transfer
+and publication phase.
+
+The 22 deferred indexes took approximately 171 seconds on the successful
+cache-hit run. The five `result_entries_single` indexes accounted for 125.6
+seconds; Sum of Ranks indexes took 15.6 seconds, person-event single and average
+indexes took 14.4 and 12.3 seconds, and competition indexes took less than three
+seconds. This makes result-entry indexing the clearest next optimization target.
 
 Deployment projection builds use the export date already published on
 production, not the newest export advertised by the WCA API. This keeps raw

@@ -303,6 +303,15 @@ jobs:
             'cd /srv/wcarankings && docker compose ps && for attempt in $(seq 1 30); do curl --fail --silent http://127.0.0.1:3000/api/health/ready >/dev/null && exit 0; sleep 2; done; docker compose logs --tail=80 app; exit 1'
 
           ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
+            'set -eu
+            for endpoint in \
+              "/api/rankings?eventId=SOR&result=single&start=0&limit=10" \
+              "/api/rankings?eventId=sor-kinch&result=average&start=0&limit=10" \
+              "/api/rankings/competitions?ranking=competitor-count&start=0&limit=10"; do
+              curl --fail --silent --show-error --max-time 15 "http://127.0.0.1:3000${endpoint}" >/dev/null
+            done'
+
+          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
             'set -eu; html=$(curl --fail --silent http://127.0.0.1:3000/); css=$(printf "%s" "$html" | sed -n "s/.*href=\"\([^\"]*\.css\)\".*/\1/p" | head -n 1); if [ -z "$css" ]; then echo "SSR response did not include a stylesheet link." >&2; exit 1; fi; echo "SSR stylesheet: $css"; curl --fail --silent --show-error --dump-header - "http://127.0.0.1:3000$css" >/dev/null'
 
           PUBLIC_HOST="${SERVER_HOST#https://}"

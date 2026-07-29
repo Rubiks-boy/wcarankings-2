@@ -4,7 +4,7 @@ import {
   AUTH_SESSION_MAX_AGE_SECONDS,
   generateSessionToken,
 } from "@/lib/auth";
-import { getWcaAuthConfig } from "@/lib/wca-auth";
+import { getWcaAuthConfig, toWcaProfile } from "@/lib/wca-auth";
 
 test("creates high-entropy opaque session tokens", () => {
   const first = generateSessionToken();
@@ -24,4 +24,18 @@ test("uses the configured WCA OAuth origin", () => {
     if (previousOrigin === undefined) delete process.env.WCA_ORIGIN;
     else process.env.WCA_ORIGIN = previousOrigin;
   }
+});
+
+test("prefers the WCA avatar thumbnail for the profile menu", () => {
+  const profile = toWcaProfile({
+    me: {
+      wca_id: "2010TEST01",
+      name: "Test Cuber",
+      avatar: {
+        thumb_url: "https://staging.worldcubeassociation.org/thumb.jpg",
+        url: "https://staging.worldcubeassociation.org/full.jpg",
+      },
+    },
+  });
+  assert.equal(profile?.avatarUrl, "https://staging.worldcubeassociation.org/thumb.jpg");
 });

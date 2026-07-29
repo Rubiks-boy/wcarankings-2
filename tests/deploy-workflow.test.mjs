@@ -41,7 +41,9 @@ test("builds projection transfers on Actions before publishing them atomically",
   assert.match(workflow, /0x6578706f72745f64617465/);
   assert.match(workflow, /cat \/var\/cache\/wcarankings\/wca-export-/);
   assert.doesNotMatch(workflow, /worldcubeassociation\.org\/api\/v0\/export\/public/);
-  assert.match(workflow, /key: projection-transfer-v2-/);
+  assert.match(workflow, /key: projection-transfer-core-v1-/);
+  assert.match(workflow, /key: projection-transfer-yearly-v1-/);
+  assert.match(workflow, /--groups=core,yearly-person-rankings/);
   assert.match(workflow, /node scripts\/sync-wca-export\.mjs --force/);
   assert.match(workflow, /node scripts\/prepare-projection-transfer\.mjs/);
   assert.match(workflow, /mariadb-dump[\s\S]*projection-transfer\.sql\.gz/);

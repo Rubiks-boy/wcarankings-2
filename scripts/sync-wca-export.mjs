@@ -18,6 +18,11 @@ function argumentValue(name) {
   return argument ? argument.slice(prefix.length) : "";
 }
 
+const selectedProjectionNames = argumentValue("projection-names")
+  .split(",")
+  .map((name) => name.trim())
+  .filter(Boolean);
+
 function databaseOptions(connectionString = process.env.DATABASE_URL) {
   if (!connectionString) throw new Error("DATABASE_URL is required");
   const url = new URL(connectionString);
@@ -286,7 +291,10 @@ async function writeExportMetadata(latest) {
 async function refreshRankingsSchema() {
   const connection = await mysql.createConnection(databaseOptions());
   try {
-    await refreshMysqlSchema(connection, { projectionSuffix: "_staging" });
+    await refreshMysqlSchema(connection, {
+      projectionSuffix: "_staging",
+      projectionNames: selectedProjectionNames.length > 0 ? selectedProjectionNames : undefined,
+    });
   } finally {
     await connection.end();
   }

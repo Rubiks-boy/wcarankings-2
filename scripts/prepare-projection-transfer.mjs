@@ -1,5 +1,11 @@
 import mysql from "mysql2/promise";
-import { PUBLISHED_PROJECTION_TABLES, dropManagedObject } from "./mysql-schema.mjs";
+import { DEPLOYMENT_PROJECTION_GROUPS, dropManagedObject } from "./mysql-schema.mjs";
+
+const groupName = process.argv.find((value) => value.startsWith("--group="))?.slice("--group=".length);
+const group = DEPLOYMENT_PROJECTION_GROUPS.find(({ name }) => name === groupName);
+if (!group) throw new Error(`Unknown deployment projection group: ${groupName || "(missing)"}.`);
+const manifestTable = `projection_transfer_manifest_${group.name.replaceAll("-", "_")}`;
+const indexesTable = `projection_transfer_indexes_${group.name.replaceAll("-", "_")}`;
 
 function databaseOptions(connectionString = process.env.DATABASE_URL) {
   if (!connectionString) throw new Error("DATABASE_URL is required");
@@ -21,20 +27,20 @@ try {
   const exportDate = metadata[0]?.value;
   if (!exportDate) throw new Error("The projection source has no WCA export date.");
 
-  await dropManagedObject(connection, "projection_transfer_manifest");
+  await dropManagedObject(connection, manifestTable);
   await connection.query(`
-    CREATE TABLE projection_transfer_manifest (
+    CREATE TABLE \`${manifestTable}\` (
       export_date VARCHAR(32) NOT NULL,
       created_at DATETIME(3) NOT NULL
     )
   `);
   await connection.query(
-    "INSERT INTO projection_transfer_manifest (export_date, created_at) VALUES (?, UTC_TIMESTAMP(3))",
+    `INSERT INTO \`${manifestTable}\` (export_date, created_at) VALUES (?, UTC_TIMESTAMP(3))`,
     [exportDate],
   );
-  await dropManagedObject(connection, "projection_transfer_indexes");
+  await dropManagedObject(connection, indexesTable);
   await connection.query(`
-    CREATE TABLE projection_transfer_indexes (
+    CREATE TABLE \`${indexesTable}\` (
       table_name VARCHAR(128) NOT NULL,
       index_name VARCHAR(128) NOT NULL,
       index_sql TEXT NOT NULL,
@@ -43,7 +49,7 @@ try {
   `);
 
   const renames = [];
-  for (const table of PUBLISHED_PROJECTION_TABLES) {
+  for (const table of group.tables) {
     const transfer = `${table}_transfer`;
     await dropManagedObject(connection, transfer);
     renames.push(`\`${table}\` TO \`${transfer}\``);
@@ -51,7 +57,7 @@ try {
   await connection.query(`RENAME TABLE ${renames.join(", ")}`);
 
   let deferredIndexCount = 0;
-  for (const table of PUBLISHED_PROJECTION_TABLES) {
+  for (const table of group.tables) {
     const transfer = `${table}_transfer`;
     const [indexRows] = await connection.query(`SHOW INDEX FROM \`${transfer}\``);
     const indexes = new Map();
@@ -75,7 +81,7 @@ try {
       index.columns.sort((left, right) => left.sequence - right.sequence);
       const indexSql = `ADD ${index.unique ? "UNIQUE " : ""}INDEX \`${index.name}\` (${index.columns.map(({ sql }) => sql).join(", ")})`;
       await connection.query(
-        `INSERT INTO projection_transfer_indexes
+        `INSERT INTO \`${indexesTable}\`
           (table_name, index_name, index_sql)
          VALUES (?, ?, ?)`,
         [transfer, index.name, indexSql],
@@ -90,12 +96,13 @@ try {
   }
 
   process.stdout.write(`${JSON.stringify({
+    group: group.name,
     exportDate,
     deferredIndexCount,
     tables: [
-      ...PUBLISHED_PROJECTION_TABLES.map((table) => `${table}_transfer`),
-      "projection_transfer_manifest",
-      "projection_transfer_indexes",
+      ...group.tables.map((table) => `${table}_transfer`),
+      manifestTable,
+      indexesTable,
     ],
   })}\n`);
 } finally {

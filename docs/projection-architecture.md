@@ -232,45 +232,56 @@ result_type
 event_id
 person_id
 competition_id
-competition_start_date
-round_type_id
 result_value
 country_id
 continent_id
+record_code
 world_rank
+world_position
 continent_rank
+continent_position
 country_rank
+country_position
 ```
 
-As with person rankings, physical Single and Average tables are acceptable:
+The logical projection is stored as two physical tables:
 
 ```text
-single_result_rankings
-average_result_rankings
+result_rankings_single
+result_rankings_average
 ```
+
+Result type is part of the logical grain, but separating it physically halves
+peak window-sort size and avoids repeating `result_type` in every row and browse
+index. Both tables have the same columns and API contract.
 
 Their ordering should be deterministic:
 
 ```text
 result_value
-competition_start_date
-competition_id
-person_id
 result_id
 ```
 
-Result rankings keyset-page directly on that tuple. They do not store separate
-World, continent, or country position columns; removing those three
-`ROW_NUMBER()` windows materially reduces generation cost while preserving the
-public tied ranks.
+Result rankings expose the same position-addressable page contract as the other
+list surfaces. Tied rank and stable position are separate: rank is calculated
+with `RANK()` from `result_value`, so it equals one plus the number of official
+result rows with a strictly better value and skips ranks after ties. Position
+uses `ROW_NUMBER()` over `result_value, result_id` to give every row a stable
+address. The World, continent, and country position columns support direct page
+windows, backward loading, and jumps without large offsets.
+
+The projection deliberately omits competition dates, round metadata, person
+names, competition names, and country display names. After selecting at most
+one page from the narrow ordering table, the API joins those display fields
+from the source tables. This avoids millions of competition lookups during
+generation and keeps the published table and indexes narrower.
 
 Person search uses the same `persons`-first lookup described for person-event
 rankings. Once a `person_id` is selected, use projection indexes matching the
 two exposed result views:
 
 ```text
-(person_id, competition_start_date DESC, result_id DESC)
-(person_id, event_id, result_type, result_value, result_id)
+(person_id, event_id, result_type, world_position, result_id)
 ```
 
 The compatibility result projection retains its equivalent ranked access path:
@@ -839,6 +850,37 @@ timing, row counts, validation, and controlled concurrency. Its explicit
 default set is the activation boundary. A targeted Sum of Ranks backfill
 stages and swaps only its two tables; failures leave the previously published
 group intact.
+
+Projection builds log a start and finish record for every physical table,
+including temporary build tables, with elapsed milliseconds. Compatibility
+tables include their indexes in the table duration. Registered projections
+also retain their projection-level duration and validated row counts. A failed
+table and its containing projection both log their elapsed time before the
+error aborts publication.
+
+### Local result-ranking backfill benchmark
+
+The first targeted all-results backfill ran on 2026-07-29 against 6,750,045 raw
+`results` rows. The logical projection was split into physical Single and
+Average tables to bound peak window-sort space:
+
+| Table | Rows | Data | Indexes | Build time |
+| --- | ---: | ---: | ---: | ---: |
+| `result_rankings_single` | 6,564,373 | 911.0 MiB | 888.8 MiB | about 4m 15s observed |
+| `result_rankings_average` | 5,890,382 | 818.0 MiB | 797.8 MiB | 3m 40.4s |
+| `result_ranking_counts` | scope counts | 0.3 MiB | negligible | 8.2s |
+
+The first Single timer wrapper exited after the SQL succeeded because it used a
+reserved zsh variable, so its duration is an observed approximation; subsequent
+registry builds use the tested JavaScript timing logger. The complete published
+projection occupies approximately 3.416 GiB. MariaDB shared rank and position
+calculation into three scope sorts per physical table. Omitting competition
+dates and round metadata from the projection avoided millions of competition
+lookups; the API joins competition display data only after selecting a page.
+
+Local API checks for first, middle, final, Average, continent, and person-search
+windows completed in approximately 9–23ms end to end. The first-page database
+work reported 1.8ms for 50 rows.
 
 ## Future architecture decisions
 

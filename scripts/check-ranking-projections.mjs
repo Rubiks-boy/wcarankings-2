@@ -34,6 +34,28 @@ const RESULT_ENTRY_COLUMNS = [
 const RESULT_ENTRY_INDEXES = [
   "PRIMARY",
 ];
+const RESULT_RANKING_COLUMNS = [
+  "result_id",
+  "event_id",
+  "result_value",
+  "world_rank",
+  "world_position",
+  "continent_rank",
+  "continent_position",
+  "country_rank",
+  "country_position",
+];
+const RESULT_RANKING_INDEXES = [
+  "PRIMARY",
+  "idx_results_single_world",
+  "idx_results_single_continent",
+  "idx_results_single_country",
+  "idx_results_single_person",
+  "idx_results_average_world",
+  "idx_results_average_continent",
+  "idx_results_average_country",
+  "idx_results_average_person",
+];
 const SUM_OF_RANKS_COLUMNS = [
   "metric_version",
   "event_set_version",
@@ -116,16 +138,16 @@ async function main() {
       connection.query(
         `SELECT table_name, column_name FROM information_schema.columns
          WHERE table_schema = DATABASE()
-           AND table_name IN (?, ?, ?, ?, ?, ?)
-           AND column_name IN (${[...ENTRY_COLUMNS, ...RESULT_ENTRY_COLUMNS, ...SUM_OF_RANKS_COLUMNS, ...COMPETITION_EVENT_COLUMNS, ...COMPETITION_PODIUM_COLUMNS].map(() => "?").join(", ")})`,
-        ["ranking_entries_single", "ranking_entries_average", "result_entries_single", "person_sum_of_ranks_scores", "competition_event_stats", "competition_podium_members", ...ENTRY_COLUMNS, ...RESULT_ENTRY_COLUMNS, ...SUM_OF_RANKS_COLUMNS, ...COMPETITION_EVENT_COLUMNS, ...COMPETITION_PODIUM_COLUMNS],
+           AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?)
+           AND column_name IN (${[...ENTRY_COLUMNS, ...RESULT_ENTRY_COLUMNS, ...RESULT_RANKING_COLUMNS, ...SUM_OF_RANKS_COLUMNS, ...COMPETITION_EVENT_COLUMNS, ...COMPETITION_PODIUM_COLUMNS].map(() => "?").join(", ")})`,
+        ["ranking_entries_single", "ranking_entries_average", "result_entries_single", "result_rankings_single", "result_rankings_average", "person_sum_of_ranks_scores", "competition_event_stats", "competition_podium_members", ...ENTRY_COLUMNS, ...RESULT_ENTRY_COLUMNS, ...RESULT_RANKING_COLUMNS, ...SUM_OF_RANKS_COLUMNS, ...COMPETITION_EVENT_COLUMNS, ...COMPETITION_PODIUM_COLUMNS],
       ).then(([rows]) => rows),
       connection.query(
         `SELECT table_name, index_name FROM information_schema.statistics
          WHERE table_schema = DATABASE()
-           AND table_name IN (?, ?, ?, ?, ?, ?)
-           AND index_name IN (${[...ENTRY_INDEXES, ...RESULT_ENTRY_INDEXES, ...SUM_OF_RANKS_INDEXES, ...COMPETITION_EVENT_INDEXES, ...COMPETITION_PODIUM_INDEXES].map(() => "?").join(", ")})`,
-        ["ranking_entries_single", "ranking_entries_average", "result_entries_single", "person_sum_of_ranks_scores", "competition_event_stats", "competition_podium_members", ...ENTRY_INDEXES, ...RESULT_ENTRY_INDEXES, ...SUM_OF_RANKS_INDEXES, ...COMPETITION_EVENT_INDEXES, ...COMPETITION_PODIUM_INDEXES],
+           AND table_name IN (?, ?, ?, ?, ?, ?, ?, ?)
+           AND index_name IN (${[...ENTRY_INDEXES, ...RESULT_ENTRY_INDEXES, ...RESULT_RANKING_INDEXES, ...SUM_OF_RANKS_INDEXES, ...COMPETITION_EVENT_INDEXES, ...COMPETITION_PODIUM_INDEXES].map(() => "?").join(", ")})`,
+        ["ranking_entries_single", "ranking_entries_average", "result_entries_single", "result_rankings_single", "result_rankings_average", "person_sum_of_ranks_scores", "competition_event_stats", "competition_podium_members", ...ENTRY_INDEXES, ...RESULT_ENTRY_INDEXES, ...RESULT_RANKING_INDEXES, ...SUM_OF_RANKS_INDEXES, ...COMPETITION_EVENT_INDEXES, ...COMPETITION_PODIUM_INDEXES],
       ).then(([rows]) => rows),
     ]);
     const metadataRows = tables.has("export_metadata")
@@ -139,6 +161,9 @@ async function main() {
         ENTRY_COLUMNS.filter((column) => !columns.has(`${table}.${column}`)).map((column) => `missing column ${table}.${column}`),
       ),
       ...RESULT_ENTRY_COLUMNS.filter((column) => !columns.has(`result_entries_single.${column}`)).map((column) => `missing column result_entries_single.${column}`),
+      ...["result_rankings_single", "result_rankings_average"].flatMap((table) =>
+        RESULT_RANKING_COLUMNS.filter((column) => !columns.has(`${table}.${column}`)).map((column) => `missing column ${table}.${column}`),
+      ),
       ...SUM_OF_RANKS_COLUMNS.filter((column) => !columns.has(`person_sum_of_ranks_scores.${column}`)).map((column) => `missing column person_sum_of_ranks_scores.${column}`),
       ...COMPETITION_EVENT_COLUMNS.filter((column) => !columns.has(`competition_event_stats.${column}`)).map((column) => `missing column competition_event_stats.${column}`),
       ...COMPETITION_PODIUM_COLUMNS.filter((column) => !columns.has(`competition_podium_members.${column}`)).map((column) => `missing column competition_podium_members.${column}`),
@@ -146,6 +171,15 @@ async function main() {
         ENTRY_INDEXES.filter((index) => !indexes.has(`${table}.${index}`)).map((index) => `missing index ${table}.${index}`),
       ),
       ...RESULT_ENTRY_INDEXES.filter((index) => !indexes.has(`result_entries_single.${index}`)).map((index) => `missing index result_entries_single.${index}`),
+      ...RESULT_RANKING_INDEXES.filter((index) => {
+        const table = index.includes("_average_")
+          ? "result_rankings_average"
+          : "result_rankings_single";
+        return index !== "PRIMARY" && !indexes.has(`${table}.${index}`);
+      }).map((index) => `missing result ranking index ${index}`),
+      ...["result_rankings_single", "result_rankings_average"]
+        .filter((table) => !indexes.has(`${table}.PRIMARY`))
+        .map((table) => `missing index ${table}.PRIMARY`),
       ...SUM_OF_RANKS_INDEXES.filter((index) => !indexes.has(`person_sum_of_ranks_scores.${index}`)).map((index) => `missing index person_sum_of_ranks_scores.${index}`),
       ...COMPETITION_EVENT_INDEXES.filter((index) => !indexes.has(`competition_event_stats.${index}`)).map((index) => `missing index competition_event_stats.${index}`),
       ...COMPETITION_PODIUM_INDEXES.filter((index) => !indexes.has(`competition_podium_members.${index}`)).map((index) => `missing index competition_podium_members.${index}`),

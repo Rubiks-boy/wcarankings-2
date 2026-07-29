@@ -2,19 +2,19 @@ import { query } from "@/db";
 import {
   addTimings,
   ApiInputError,
-  optionalInteger,
-  optionalText,
   parseEvent,
   parseLimit,
-  parsePersonId,
   parseResultType,
   parseScope,
 } from "@/lib/projection-api";
+import { searchPersonIds } from "@/lib/person-search";
+import { getRecordBadges } from "@/lib/wca";
 
 type ResultRankingRow = {
   result_id: number;
   result_value: number;
   rank: number;
+  position: number;
   person_id: string;
   person_name: string;
   country_id: string;
@@ -23,166 +23,163 @@ type ResultRankingRow = {
   continent_id: string;
   competition_id: string;
   competition_name: string;
-  competition_start_date: string;
-  round_type_id: string;
+  record_code: string;
 };
 
-export async function loadResultRankings(params: URLSearchParams) {
-  const order = params.get("order") ?? "ranking";
-  if (order !== "ranking" && order !== "recent") {
-    throw new ApiInputError("order must be ranking or recent.");
+function parsePageStart(params: URLSearchParams) {
+  const raw = params.get("start") ?? "0";
+  const start = Number(raw);
+  if (!Number.isInteger(start) || start < 0) {
+    throw new ApiInputError("start must be a non-negative integer.");
   }
-  const eventId = parseEvent(params, { required: order === "ranking" });
+  return start;
+}
+
+function parseSearchLimit(params: URLSearchParams) {
+  const raw = params.get("searchLimit") ?? "500";
+  const limit = Number(raw);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+    throw new ApiInputError("searchLimit must be between 1 and 500.");
+  }
+  return limit;
+}
+
+export async function loadResultRankings(params: URLSearchParams) {
+  const eventId = parseEvent(params);
   const resultType = parseResultType(params, eventId);
   const { scope, regionId } = parseScope(params);
-  const personId = parsePersonId(params, { required: order === "recent" });
+  const start = parsePageStart(params);
   const limit = parseLimit(params);
-  const conditions = ["ranking.result_type = ?"];
-  const values: unknown[] = [resultType];
-  if (eventId) {
-    conditions.push("ranking.event_id = ?");
-    values.push(eventId);
-  }
+  const search = (params.get("search") ?? "").trim().slice(0, 80);
+  const regexSearch = params.get("mode") === "vim";
+  const table = resultType === "average"
+    ? "result_rankings_average"
+    : "result_rankings_single";
+  const rankColumn = `${scope}_rank`;
+  const positionColumn = `${scope}_position`;
+  const conditions = [
+    "ranking.event_id = ?",
+  ];
+  const values: unknown[] = [eventId];
   if (scope !== "world") {
-    if (order === "recent") throw new ApiInputError("region is not supported with recent ordering.");
     conditions.push(`ranking.${scope}_id = ?`);
     values.push(regionId);
   }
-  if (personId) {
-    conditions.push("ranking.person_id = ?");
-    values.push(personId);
-  }
-  const countConditions = [...conditions];
-  const countValues = [...values];
 
-  let cursor = "";
-  let ordering = "";
-  if (order === "recent") {
-    const afterDate = optionalText(params, "afterDate", 10);
-    const afterResultId = optionalInteger(params, "afterResultId");
-    if ((afterDate === null) !== (afterResultId === null)) {
-      throw new ApiInputError("afterDate and afterResultId must be supplied together.");
+  let peopleTimings = { queueMs: 0, statementMs: 0 };
+  let peopleReturnedRows = 0;
+  let queryCount = 2;
+  let rowLimit = limit + 1;
+  if (search) {
+    const people = await searchPersonIds(search, regexSearch, parseSearchLimit(params));
+    peopleTimings = people.timings;
+    peopleReturnedRows = people.returnedRows;
+    queryCount += 1;
+    if (people.personIds.length === 0) {
+      return {
+        data: {
+          entries: [],
+          hasMore: false,
+          nextPageStart: null,
+          previousPageStart: null,
+          startPosition: 0,
+          lastRank: null,
+          total: 0,
+        },
+        diagnostics: {
+          timings: people.timings,
+          queryCount: 1,
+          returnedRows: people.returnedRows,
+        },
+      };
     }
-    if (afterDate) {
-      cursor = " AND (ranking.competition_start_date < ? OR (ranking.competition_start_date = ? AND ranking.result_id < ?))";
-      values.push(afterDate, afterDate, afterResultId);
-    }
-    ordering = "ranking.competition_start_date DESC, ranking.result_id DESC";
+    conditions.push(`ranking.person_id IN (${people.personIds.map(() => "?").join(", ")})`);
+    values.push(...people.personIds);
+    rowLimit = parseSearchLimit(params);
   } else {
-    const cursorValues = {
-      value: optionalInteger(params, "afterValue"),
-      date: optionalText(params, "afterDate", 10),
-      competitionId: optionalText(params, "afterCompetitionId"),
-      personId: optionalText(params, "afterPersonId", 20),
-      resultId: optionalInteger(params, "afterResultId"),
-    };
-    const supplied = Object.values(cursorValues).filter((value) => value !== null).length;
-    if (supplied !== 0 && supplied !== 5) {
-      throw new ApiInputError("All ranking cursor fields must be supplied together.");
-    }
-    if (supplied === 5) {
-      cursor = ` AND (
-        ranking.result_value > ?
-        OR (ranking.result_value = ? AND ranking.competition_start_date > ?)
-        OR (ranking.result_value = ? AND ranking.competition_start_date = ? AND ranking.competition_id > ?)
-        OR (ranking.result_value = ? AND ranking.competition_start_date = ? AND ranking.competition_id = ? AND ranking.person_id > ?)
-        OR (ranking.result_value = ? AND ranking.competition_start_date = ? AND ranking.competition_id = ? AND ranking.person_id = ? AND ranking.result_id > ?)
-      )`;
-      values.push(
-        cursorValues.value,
-        cursorValues.value, cursorValues.date,
-        cursorValues.value, cursorValues.date, cursorValues.competitionId,
-        cursorValues.value, cursorValues.date, cursorValues.competitionId, cursorValues.personId,
-        cursorValues.value, cursorValues.date, cursorValues.competitionId, cursorValues.personId, cursorValues.resultId,
-      );
-    }
-    ordering = "ranking.result_value, ranking.competition_start_date, ranking.competition_id, ranking.person_id, ranking.result_id";
+    conditions.push(`ranking.${positionColumn} > ?`);
+    values.push(start);
   }
 
   const rows = await query<ResultRankingRow>(`
     WITH page AS (
-      SELECT ranking.*, ranking.${scope}_rank AS rank
-      FROM result_rankings ranking
-      WHERE ${conditions.join(" AND ")}${cursor}
-      ORDER BY ${ordering}
+      SELECT
+        ranking.result_id,
+        ranking.result_value,
+        ranking.${rankColumn} AS rank,
+        ranking.${positionColumn} AS position,
+        ranking.person_id,
+        ranking.country_id,
+        ranking.continent_id,
+        ranking.competition_id,
+        ranking.record_code
+      FROM ${table} ranking
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY ranking.${positionColumn}
       LIMIT ?
     )
-    SELECT page.result_id, page.result_value, page.rank, page.person_id,
+    SELECT
+      page.*,
       COALESCE(person.name, page.person_id) AS person_name,
-      page.country_id, COALESCE(country.name, page.country_id) AS country_name,
-      COALESCE(country.iso2, '') AS country_iso2, page.continent_id,
-      page.competition_id, COALESCE(competition.name, page.competition_id) AS competition_name,
-      page.competition_start_date, page.round_type_id
+      COALESCE(country.name, page.country_id) AS country_name,
+      COALESCE(country.iso2, '') AS country_iso2,
+      COALESCE(competition.name, page.competition_id) AS competition_name
     FROM page
     LEFT JOIN persons person ON person.wca_id = page.person_id AND person.sub_id = 1
     LEFT JOIN countries country ON country.id = page.country_id
     LEFT JOIN competitions competition ON competition.id = page.competition_id
-    ORDER BY ${order === "recent"
-      ? "page.competition_start_date DESC, page.result_id DESC"
-      : "page.result_value, page.competition_start_date, page.competition_id, page.person_id, page.result_id"}
-  `, [...values, limit + 1]);
+    ORDER BY page.position
+  `, [...values, rowLimit]);
 
-  let total = rows.rows.length;
-  let countTimings = { queueMs: 0, statementMs: 0 };
-  let countRows = 0;
-  if (order === "ranking" && eventId && !personId) {
-    const count = await query<{ count: number }>(
-      `SELECT count FROM result_ranking_counts
-       WHERE event_id = ? AND result_type = ? AND scope = ? AND region_id = ?`,
-      [eventId, resultType, scope, regionId],
-    );
-    total = Number(count.rows[0]?.count ?? 0);
-    countTimings = count.timings;
-    countRows = count.rows.length;
-  } else {
-    const count = await query<{ count: number }>(
-      `SELECT COUNT(*) AS count FROM result_rankings ranking
-       WHERE ${countConditions.join(" AND ")}`,
-      countValues,
-    );
-    total = Number(count.rows[0]?.count ?? 0);
-    countTimings = count.timings;
-    countRows = count.rows.length;
-  }
-
-  const pageRows = rows.rows.slice(0, limit);
+  const counts = await query<{ count: number }>(
+    `SELECT count
+       FROM result_ranking_counts
+      WHERE event_id = ? AND result_type = ? AND scope = ? AND region_id = ?`,
+    [eventId, resultType, scope, regionId],
+  );
+  const pageRows = search ? rows.rows : rows.rows.slice(0, limit);
+  const total = Number(counts.rows[0]?.count ?? 0);
   const last = pageRows.at(-1);
-  let next = null;
-  if (rows.rows.length > limit && last) {
-    next = order === "recent"
-      ? { afterDate: last.competition_start_date, afterResultId: Number(last.result_id) }
-      : {
-          afterValue: Number(last.result_value),
-          afterDate: last.competition_start_date,
-          afterCompetitionId: last.competition_id,
-          afterPersonId: last.person_id,
-          afterResultId: Number(last.result_id),
-        };
-  }
+  const entries = pageRows.map((row) => ({
+    entryKey: `result:${resultType}:${row.result_id}`,
+    resultId: Number(row.result_id),
+    rank: Number(row.rank),
+    subRank: Number(row.position),
+    personId: row.person_id,
+    personName: row.person_name,
+    countryId: row.country_id,
+    countryName: row.country_name,
+    countryIso2: row.country_iso2,
+    continentId: row.continent_id,
+    best: Number(row.result_value),
+    competitionId: row.competition_id,
+    competitionName: row.competition_name,
+    recordBadges: getRecordBadges({
+      isWorldRecord: row.record_code === "WR",
+      isContinentRecord: row.record_code === "CR",
+      isCountryRecord: row.record_code === "NR",
+      continentId: row.continent_id,
+    }),
+  }));
+
   return {
     data: {
-      entries: pageRows.map((row) => ({
-        rank: Number(row.rank),
-        resultId: Number(row.result_id),
-        value: Number(row.result_value),
-        person: { id: row.person_id, name: row.person_name },
-        country: { id: row.country_id, name: row.country_name, iso2: row.country_iso2 },
-        continentId: row.continent_id,
-        competition: {
-          id: row.competition_id,
-          name: row.competition_name,
-          startDate: row.competition_start_date,
-        },
-        roundTypeId: row.round_type_id,
-      })),
-      context: { resource: "results", order, eventId, result: resultType, scope, regionId, personId: personId || null },
-      page: { limit, hasMore: rows.rows.length > limit, next },
-      total,
+      entries,
+      hasMore: !search && rows.rows.length > limit,
+      nextPageStart: !search && rows.rows.length > limit && last
+        ? Number(last.position) + 1
+        : null,
+      previousPageStart: !search && start > 0
+        ? Math.max(0, start - limit)
+        : null,
+      startPosition: Number(pageRows[0]?.position ?? start + 1) - 1,
+      lastRank: pageRows.length ? Number(last?.rank) : null,
+      total: search ? entries.length : total,
     },
     diagnostics: {
-      timings: addTimings(rows.timings, countTimings),
-      queryCount: 2,
-      returnedRows: rows.rows.length + countRows,
+      timings: addTimings(peopleTimings, rows.timings, counts.timings),
+      queryCount,
+      returnedRows: peopleReturnedRows + rows.rows.length + counts.rows.length,
     },
   };
 }

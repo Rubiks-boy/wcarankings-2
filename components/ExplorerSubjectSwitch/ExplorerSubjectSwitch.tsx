@@ -4,6 +4,7 @@ import { TextDropdown } from "../Dropdown/TextDropdown";
 
 export const EXPLORER_SUBJECTS = [
   { id: "people", label: "Persons" },
+  { id: "results", label: "Results" },
   { id: "competitions", label: "Competitions" },
 ] as const;
 

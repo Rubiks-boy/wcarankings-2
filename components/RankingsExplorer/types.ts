@@ -1,6 +1,8 @@
 import type { RecordBadgeCode, RegionScope } from "@/lib/wca";
 
 export type RankingEntry = {
+  entryKey?: string;
+  resultId?: number;
   rank: number;
   subRank: number;
   personId: string;
@@ -14,6 +16,10 @@ export type RankingEntry = {
   competitionName: string;
   recordBadges: RecordBadgeCode[];
 };
+
+export function rankingEntryKey(entry: Pick<RankingEntry, "entryKey" | "personId">) {
+  return entry.entryKey ?? entry.personId;
+}
 
 export type RankingPage = {
   entries: RankingEntry[];

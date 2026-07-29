@@ -16,8 +16,8 @@
   font-size: 0.85rem;
 }
 
-.sumOfRanks-summary strong {
-  color: var(--text);
+.sumOfRanks-summary {
+  justify-content: flex-end;
 }
 
 .sumOfRanks-search {

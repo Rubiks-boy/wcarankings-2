@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flagEmoji, WCA_EVENTS, type RegionScope } from "@/lib/wca";
-import { formatExportDate, formatRankingNumber } from "../RankingsExplorer/types";
+import { formatRankingNumber } from "../RankingsExplorer/types";
 
 const PAGE_SIZE = 50;
 
@@ -105,8 +105,6 @@ export function SumOfRanksTable({
   const [entries, setEntries] = useState<SumOfRanksEntry[]>([]);
   const [eventIds, setEventIds] = useState<string[]>([]);
   const [nextStart, setNextStart] = useState<number | null>(1);
-  const [total, setTotal] = useState(0);
-  const [exportDate, setExportDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedPersonId, setSelectedPersonId] = useState(initialPersonId);
@@ -144,8 +142,6 @@ export function SumOfRanksTable({
         : data.entries);
       setEventIds(data.context.eventIds);
       setNextStart(data.page.next?.start ?? null);
-      setTotal(data.total);
-      setExportDate(data.snapshot.exportDate);
       setSelection(data.selection);
     } catch (loadError) {
       if (epoch === requestEpochRef.current) {
@@ -225,11 +221,6 @@ export function SumOfRanksTable({
   return (
     <section className="sumOfRanks" aria-label="Sum of Ranks">
       <div className="sumOfRanks-summary">
-        <div>
-          <strong>{formatRankingNumber(total)}</strong> eligible competitors
-          <span> · Lower is better · Complete {resultType === "single" ? "17" : "16"}-event coverage required</span>
-          {exportDate && <span> · WCA export {formatExportDate(exportDate)}</span>}
-        </div>
         <div className="sumOfRanks-search">
           <label>
             <span className="visuallyHidden">Find a competitor in Sum of Ranks</span>

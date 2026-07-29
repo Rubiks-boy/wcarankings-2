@@ -2175,7 +2175,7 @@ export function RankingsExplorer({
     void locateRanking(eventId, rankingType, regionSelection, wcaId)
       .then(({ located }) => {
         if (!located) {
-          setError("This person has no ranking for the selected event and region.");
+          resetToRank(1, false);
           return;
         }
         resetToRank(

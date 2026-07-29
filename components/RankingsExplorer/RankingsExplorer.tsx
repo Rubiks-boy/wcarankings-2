@@ -668,6 +668,7 @@ export function RankingsExplorer({
   const previousRequestRef = useRef(false);
   const navigationEpochRef = useRef(0);
   const lastFocusRequestRef = useRef("");
+  const pendingFocusedPersonIdRef = useRef<string | null>(null);
   const pendingRankRef = useRef(1);
   const pendingFocusLastRef = useRef(false);
   const pendingScrollToTopRef = useRef(false);
@@ -1060,11 +1061,17 @@ export function RankingsExplorer({
         setTotal(data.total);
         setExportDate(data.exportDate ?? null);
         setOfflineStale(Boolean(data.offlineStale));
+        const focusedPersonId = pendingFocusedPersonIdRef.current;
+        const focusedTargetIndex = focusedPersonId
+          ? loadedEntries.findIndex((entry) => entry.personId === focusedPersonId)
+          : -1;
         const requestedTargetIndex = focusLast
           ? Math.max(0, loadedEntries.length - 1)
-          : loadedEntries.findIndex(
-              (entry) => entry.subRank >= rankForStep
-            );
+          : focusedTargetIndex >= 0
+            ? focusedTargetIndex
+            : loadedEntries.findIndex(
+                (entry) => entry.subRank >= rankForStep
+              );
         const targetIndex =
           requestedTargetIndex >= 0
             ? requestedTargetIndex
@@ -1077,6 +1084,7 @@ export function RankingsExplorer({
             pendingDirection ||
             appendNavigation
         );
+        pendingFocusedPersonIdRef.current = null;
         pendingScrollDirectionRef.current = null;
         if (scrollToTop) {
           animateScrollTo(
@@ -1101,7 +1109,11 @@ export function RankingsExplorer({
               state: scrollAnimationStateRef.current,
               list: listRef.current,
               index: targetIndex,
-              alignment: focusLast ? "bottom" : "top",
+              alignment: focusLast
+                ? "bottom"
+                : focusedTargetIndex >= 0
+                  ? "center"
+                  : "top",
               bottomOffset: focusLast ? END_MARKER_PEEK : 0,
               requestedBehavior: "smooth",
               requestedDuration: getScrollAnimationDuration(
@@ -2003,7 +2015,7 @@ export function RankingsExplorer({
     : entries.length * ROW_HEIGHT + (hasMore ? ROW_HEIGHT : 0);
 
   const resetToRank = useCallback(
-    (rank: number, animate = true) => {
+    (rank: number, animate = true, focusedPersonId: string | null = null) => {
       // Vim and jump controls pass the internal sub_rank, never the displayed rank.
       navigationEpochRef.current += 1;
       cancelScrollAnimation(scrollAnimationStateRef.current);
@@ -2028,6 +2040,7 @@ export function RankingsExplorer({
       );
       navigationTargetRankRef.current = normalizedRank;
       pendingRankRef.current = normalizedRank;
+      pendingFocusedPersonIdRef.current = focusedPersonId;
       if (normalizedRank === 1) {
         if (findQuery.trim()) skipNextFindResetRef.current = true;
         resetFind();
@@ -2071,9 +2084,12 @@ export function RankingsExplorer({
         normalizedRank >= firstLoadedRank &&
         normalizedRank <= lastLoadedRank
       ) {
-        const requestedTargetIndex = entries.findIndex(
-          (entry) => entry.subRank >= normalizedRank
-        );
+        const focusedTargetIndex = focusedPersonId
+          ? entries.findIndex((entry) => entry.personId === focusedPersonId)
+          : -1;
+        const requestedTargetIndex = focusedTargetIndex >= 0
+          ? focusedTargetIndex
+          : entries.findIndex((entry) => entry.subRank >= normalizedRank);
         const targetIndex =
           requestedTargetIndex >= 0
             ? requestedTargetIndex
@@ -2084,7 +2100,7 @@ export function RankingsExplorer({
           state: scrollAnimationStateRef.current,
           list: listRef.current,
           index: targetIndex,
-          alignment: "top",
+          alignment: focusedTargetIndex >= 0 ? "center" : "top",
           requestedBehavior: "smooth",
           requestedDuration: getScrollAnimationDuration(
             Math.abs(normalizedRank - currentRank)
@@ -2092,6 +2108,7 @@ export function RankingsExplorer({
           targetOffset: () =>
             rowVirtualizer.getOffsetForIndex(targetIndex, "start")?.[0],
         });
+        pendingFocusedPersonIdRef.current = null;
         pendingScrollDirectionRef.current = null;
         return;
       }
@@ -2119,7 +2136,11 @@ export function RankingsExplorer({
           setError("This person has no ranking for the selected event and region.");
           return;
         }
-        resetToRank(located.subRank, animate);
+        resetToRank(
+          located.subRank,
+          animate,
+          animate ? located.personId : null,
+        );
       })
       .catch((requestError: unknown) => {
         setError(requestError instanceof Error ? requestError.message : "Could not find this person in the rankings.");

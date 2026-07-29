@@ -666,6 +666,15 @@ export function RankingsExplorer({
   const [topRailProgress, setTopRailProgress] = useState(0);
   const [bottomRailProgress, setBottomRailProgress] = useState(0);
   const [debugScrollY, setDebugScrollY] = useState(0);
+  const activeListKey = [
+    subject,
+    competitionRanking,
+    latitudeHemisphere,
+    eventId,
+    rankingType,
+    regionSelection.scope,
+    regionSelection.regionId,
+  ].join(":");
   const listRef = useRef<HTMLDivElement>(null);
   const stickyRankingsRailRef = useRef<HTMLDivElement>(null);
   const railFindInputRef = useRef<HTMLInputElement>(null);
@@ -679,7 +688,10 @@ export function RankingsExplorer({
   const moreRequestRef = useRef(false);
   const previousRequestRef = useRef(false);
   const navigationEpochRef = useRef(0);
+  const activeListKeyRef = useRef(activeListKey);
+  activeListKeyRef.current = activeListKey;
   const focusResolutionEpochRef = useRef(0);
+  const focusedWcaIdRef = useRef("");
   const lastFocusRequestRef = useRef("");
   const pendingPersonFocusRef = useRef<PendingPersonFocus | null>(null);
   const pendingRankRef = useRef(1);
@@ -1729,6 +1741,7 @@ export function RankingsExplorer({
     )
       return;
     const requestEpoch = navigationEpochRef.current;
+    const requestListKey = activeListKeyRef.current;
     moreRequestRef.current = true;
     setLoadingMore(true);
     try {
@@ -1761,6 +1774,7 @@ export function RankingsExplorer({
       );
       if (
         requestEpoch !== navigationEpochRef.current ||
+        requestListKey !== activeListKeyRef.current ||
         preserveListDuringLoadRef.current ||
         scrollAnimationStateRef.current.programmatic
       )
@@ -1799,6 +1813,7 @@ export function RankingsExplorer({
     )
       return;
     const requestEpoch = navigationEpochRef.current;
+    const requestListKey = activeListKeyRef.current;
     previousRequestRef.current = true;
     setLoadingPrevious(true);
     const previousListHeight = rowVirtualizer.getTotalSize();
@@ -1812,6 +1827,7 @@ export function RankingsExplorer({
       );
       if (
         requestEpoch !== navigationEpochRef.current ||
+        requestListKey !== activeListKeyRef.current ||
         preserveListDuringLoadRef.current ||
         scrollAnimationStateRef.current.programmatic
       )
@@ -2199,6 +2215,7 @@ export function RankingsExplorer({
   }, [eventId, rankingType, regionSelection, resetToRank, subject]);
 
   const focusMyRanking = useCallback((wcaId: string) => {
+    focusedWcaIdRef.current = wcaId;
     updateQueryParams({ focus: "me", wcaId: null });
     lastFocusRequestRef.current = [
       eventId,
@@ -2218,11 +2235,17 @@ export function RankingsExplorer({
     const focusMe = url.searchParams.get("focus") === "me";
     const requestKey = [eventId, rankingType, regionSelection.scope, regionSelection.regionId, explicitWcaId ?? "", focusMe ? "me" : ""].join(":");
     if ((!explicitWcaId && !focusMe) || lastFocusRequestRef.current === requestKey) return;
-    lastFocusRequestRef.current = requestKey;
 
     if (explicitWcaId) {
-      const timer = window.setTimeout(() => focusWcaId(explicitWcaId, false), 0);
-      return () => window.clearTimeout(timer);
+      lastFocusRequestRef.current = requestKey;
+      focusWcaId(explicitWcaId, false);
+      return;
+    }
+
+    if (focusedWcaIdRef.current) {
+      lastFocusRequestRef.current = requestKey;
+      focusWcaId(focusedWcaIdRef.current, false);
+      return;
     }
 
     const controller = new AbortController();
@@ -2231,6 +2254,8 @@ export function RankingsExplorer({
         if (!response.ok) throw new Error("Could not load your profile.");
         const { profile } = await response.json() as { profile: { wcaId: string } | null };
         if (!profile) throw new Error("Sign in with WCA to jump to your ranking.");
+        focusedWcaIdRef.current = profile.wcaId;
+        lastFocusRequestRef.current = requestKey;
         focusWcaId(profile.wcaId, false);
       })
       .catch((requestError: unknown) => {

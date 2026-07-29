@@ -2003,7 +2003,7 @@ export function RankingsExplorer({
     : entries.length * ROW_HEIGHT + (hasMore ? ROW_HEIGHT : 0);
 
   const resetToRank = useCallback(
-    (rank: number) => {
+    (rank: number, animate = true) => {
       // Vim and jump controls pass the internal sub_rank, never the displayed rank.
       navigationEpochRef.current += 1;
       cancelScrollAnimation(scrollAnimationStateRef.current);
@@ -2034,7 +2034,7 @@ export function RankingsExplorer({
         setFindOpen(false);
         pendingFocusLastRef.current = false;
         pendingScrollDirectionRef.current = null;
-        pendingScrollToTopRef.current = true;
+        pendingScrollToTopRef.current = animate;
         cancelScrollAnimation(scrollAnimationStateRef.current);
         preserveListDuringLoadRef.current = true;
         setPreserveListDuringLoad(true);
@@ -2045,18 +2045,26 @@ export function RankingsExplorer({
       }
       pendingScrollToTopRef.current = false;
       pendingFocusLastRef.current = false;
-      pendingScrollDirectionRef.current =
+      pendingScrollDirectionRef.current = animate
+        ?
         normalizedRank < currentRank
           ? -1
           : normalizedRank > currentRank
           ? 1
-          : null;
+          : null
+        : null;
       // Rank values can be missing, so ask the API for the exact target and let
       // its ordered query choose the first real result at or beyond that rank.
       pendingNavigationAppendRef.current = Boolean(
         pendingScrollDirectionRef.current
       );
       const nextStart = pageStartForSubRank(normalizedRank) + 1;
+      if (!animate) {
+        preserveListDuringLoadRef.current = true;
+        setPreserveListDuringLoad(true);
+        setStartRank(nextStart);
+        return;
+      }
       const firstLoadedRank = entries[0]?.subRank ?? Number.POSITIVE_INFINITY;
       const lastLoadedRank = entries.at(-1)?.subRank ?? 0;
       if (
@@ -2102,7 +2110,7 @@ export function RankingsExplorer({
     ]
   );
 
-  const focusWcaId = useCallback((wcaId: string) => {
+  const focusWcaId = useCallback((wcaId: string, animate = true) => {
     if (subject !== "people") return;
     setError("");
     void locateRanking(eventId, rankingType, regionSelection, wcaId)
@@ -2111,7 +2119,7 @@ export function RankingsExplorer({
           setError("This person has no ranking for the selected event and region.");
           return;
         }
-        resetToRank(located.subRank);
+        resetToRank(located.subRank, animate);
       })
       .catch((requestError: unknown) => {
         setError(requestError instanceof Error ? requestError.message : "Could not find this person in the rankings.");
@@ -2120,8 +2128,16 @@ export function RankingsExplorer({
 
   const focusMyRanking = useCallback((wcaId: string) => {
     updateQueryParams({ focus: "me", wcaId: null });
+    lastFocusRequestRef.current = [
+      eventId,
+      rankingType,
+      regionSelection.scope,
+      regionSelection.regionId,
+      "",
+      "me",
+    ].join(":");
     focusWcaId(wcaId);
-  }, [focusWcaId]);
+  }, [eventId, focusWcaId, rankingType, regionSelection]);
 
   useEffect(() => {
     if (subject !== "people") return;
@@ -2133,7 +2149,7 @@ export function RankingsExplorer({
     lastFocusRequestRef.current = requestKey;
 
     if (explicitWcaId) {
-      const timer = window.setTimeout(() => focusWcaId(explicitWcaId), 0);
+      const timer = window.setTimeout(() => focusWcaId(explicitWcaId, false), 0);
       return () => window.clearTimeout(timer);
     }
 
@@ -2143,7 +2159,7 @@ export function RankingsExplorer({
         if (!response.ok) throw new Error("Could not load your profile.");
         const { profile } = await response.json() as { profile: { wcaId: string } | null };
         if (!profile) throw new Error("Sign in with WCA to jump to your ranking.");
-        focusWcaId(profile.wcaId);
+        focusWcaId(profile.wcaId, false);
       })
       .catch((requestError: unknown) => {
         if (requestError instanceof DOMException && requestError.name === "AbortError") return;

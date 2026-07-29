@@ -4,7 +4,7 @@ import {
   AUTH_SESSION_MAX_AGE_SECONDS,
   generateSessionToken,
 } from "@/lib/auth";
-import { getWcaAuthConfig, toWcaProfile } from "@/lib/wca-auth";
+import { getRequestOrigin, getWcaAuthConfig, makeCookie, toWcaProfile } from "@/lib/wca-auth";
 
 test("creates high-entropy opaque session tokens", () => {
   const first = generateSessionToken();
@@ -24,6 +24,14 @@ test("uses the configured WCA OAuth origin", () => {
     if (previousOrigin === undefined) delete process.env.WCA_ORIGIN;
     else process.env.WCA_ORIGIN = previousOrigin;
   }
+});
+
+test("uses the forwarded HTTPS protocol for callback URLs and cookies", () => {
+  const request = new Request("http://wcarankings.com/api/auth/wca", {
+    headers: { "x-forwarded-proto": "https" },
+  });
+  assert.equal(getRequestOrigin(request), "https://wcarankings.com");
+  assert.match(makeCookie("state", "value", request), /; Secure$/);
 });
 
 test("prefers the WCA avatar thumbnail for the profile menu", () => {

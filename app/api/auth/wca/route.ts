@@ -1,10 +1,10 @@
-import { getWcaAuthConfig, makeCookie } from "@/lib/wca-auth";
+import { getRequestOrigin, getWcaAuthConfig, makeCookie } from "@/lib/wca-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const { clientId, redirectUri, wcaOrigin } = getWcaAuthConfig(request);
-  const origin = new URL(request.url).origin;
+  const origin = getRequestOrigin(request);
   if (!clientId) return Response.redirect(`${origin}/?auth=not-configured`, 302);
 
   const state = crypto.randomUUID();

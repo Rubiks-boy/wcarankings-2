@@ -18,9 +18,18 @@ export function getWcaAuthConfig(request: Request) {
   const runtime = process.env;
   const clientId = runtime.WCA_CLIENT_ID;
   const clientSecret = runtime.WCA_CLIENT_SECRET;
-  const redirectUri = runtime.WCA_REDIRECT_URI ?? `${new URL(request.url).origin}/api/auth/wca/callback`;
+  const redirectUri = runtime.WCA_REDIRECT_URI ?? `${getRequestOrigin(request)}/api/auth/wca/callback`;
   const wcaOrigin = (runtime.WCA_ORIGIN ?? "https://www.worldcubeassociation.org").replace(/\/+$/, "");
   return { clientId, clientSecret, redirectUri, wcaOrigin };
+}
+
+export function getRequestOrigin(request: Request) {
+  const requestUrl = new URL(request.url);
+  const forwardedProtocol = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  if (forwardedProtocol === "https" || forwardedProtocol === "http") {
+    return `${forwardedProtocol}://${requestUrl.host}`;
+  }
+  return requestUrl.origin;
 }
 
 export function readCookie(request: Request, name: string) {
@@ -38,7 +47,7 @@ export function makeCookie(
   request: Request,
   options: { maxAge?: number; sameSite?: "Lax" | "Strict" } = {},
 ) {
-  const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
+  const secure = getRequestOrigin(request).startsWith("https:") ? "; Secure" : "";
   const maxAge = options.maxAge === undefined ? "" : `; Max-Age=${options.maxAge}`;
   return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=${options.sameSite ?? "Lax"}${maxAge}${secure}`;
 }

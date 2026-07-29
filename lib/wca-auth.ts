@@ -19,7 +19,8 @@ export function getWcaAuthConfig(request: Request) {
   const clientId = runtime.WCA_CLIENT_ID;
   const clientSecret = runtime.WCA_CLIENT_SECRET;
   const redirectUri = runtime.WCA_REDIRECT_URI ?? `${new URL(request.url).origin}/api/auth/wca/callback`;
-  return { clientId, clientSecret, redirectUri };
+  const wcaOrigin = (runtime.WCA_ORIGIN ?? "https://www.worldcubeassociation.org").replace(/\/+$/, "");
+  return { clientId, clientSecret, redirectUri, wcaOrigin };
 }
 
 export function readCookie(request: Request, name: string) {

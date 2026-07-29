@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const code = requestUrl.searchParams.get("code");
   const state = requestUrl.searchParams.get("state");
   const storedState = readCookie(request, "wca_oauth_state");
-  const { clientId, clientSecret, redirectUri } = getWcaAuthConfig(request);
+  const { clientId, clientSecret, redirectUri, wcaOrigin } = getWcaAuthConfig(request);
 
   if (!code || !state || state !== storedState || !clientId || !clientSecret) {
     return Response.redirect(`${origin}/?auth=failed`, 302);
@@ -28,7 +28,7 @@ export async function GET(request: Request) {
       code,
       redirect_uri: redirectUri,
     });
-    const tokenResponse = await fetch("https://www.worldcubeassociation.org/oauth/token", {
+    const tokenResponse = await fetch(new URL("/oauth/token", wcaOrigin), {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     const token = (await tokenResponse.json()) as { access_token?: string };
     if (!token.access_token) throw new Error("Token was missing");
 
-    const meResponse = await fetch("https://www.worldcubeassociation.org/api/v0/me", {
+    const meResponse = await fetch(new URL("/api/v0/me", wcaOrigin), {
       headers: { Authorization: `Bearer ${token.access_token}` },
     });
     if (!meResponse.ok) throw new Error("Profile request failed");

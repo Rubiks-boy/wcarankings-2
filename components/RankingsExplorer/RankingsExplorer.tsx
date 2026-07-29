@@ -700,7 +700,7 @@ export function RankingsExplorer({
   const pendingRegionFallbackPageKeyRef = useRef<string | null>(null);
   const initialScrollRef = useRef(
     Boolean(
-      initialData && normalizedInitialSearch && initialData.initialMatchPersonId
+      initialData && initialData.initialMatchPersonId
     )
   );
   const initialSearchRef = useRef(

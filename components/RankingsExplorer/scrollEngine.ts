@@ -270,3 +270,12 @@ export function getCurrentViewportSubRank(
   );
   return entries[index]?.subRank ?? fallbackSubRank;
 }
+
+export function getEndSubRank(
+  total: number,
+  lastLoadedSubRank: number | null,
+  visibleSubRank: number
+) {
+  if (Number.isFinite(total)) return Math.max(1, total);
+  return lastLoadedSubRank ?? visibleSubRank;
+}

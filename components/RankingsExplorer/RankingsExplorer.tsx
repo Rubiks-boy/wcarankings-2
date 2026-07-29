@@ -16,6 +16,7 @@ import {
   cancelScrollAnimation,
   getCurrentViewportPosition,
   getCurrentViewportSubRank,
+  getEndSubRank,
   getPrefetchRowCount,
   shouldPrefetchExtraPage,
   getScrollAnimationDuration,
@@ -853,7 +854,6 @@ export function RankingsExplorer({
       setNextPageStart(null);
       setPreviousPageStart(null);
       setHasMore(true);
-      setTotal(Number.POSITIVE_INFINITY);
     }
     setError("");
     moreRequestRef.current = false;
@@ -1988,48 +1988,64 @@ export function RankingsExplorer({
   );
 
   const jumpToEnd = useCallback(() => {
-    navigationEpochRef.current += 1;
+    const requestEpoch = navigationEpochRef.current + 1;
+    navigationEpochRef.current = requestEpoch;
     cancelScrollAnimation(scrollAnimationStateRef.current);
     pendingNavigationAppendRef.current = false;
     setLoading(false);
-    const endRank = lastRank ?? (Number.isFinite(total) ? total : visibleSubRank);
-    const nextStart = pageStartForSubRank(endRank) + 1;
-    const currentRank = getCurrentViewportSubRank(
-      listRef.current,
-      entriesRef.current,
-      startRankRef.current
-    );
-    navigationTargetRankRef.current = endRank;
-    pendingRankRef.current = endRank;
-    pendingScrollToTopRef.current = false;
-    pendingFocusLastRef.current = true;
-    pendingScrollDirectionRef.current =
-      endRank < currentRank ? -1 : endRank > currentRank ? 1 : null;
-    if (!hasMore && entries.length > 0) {
-      const targetIndex = Math.max(0, entries.length - 1);
-      scrollToEntry({
-        state: scrollAnimationStateRef.current,
-        list: listRef.current,
-        index: targetIndex,
-        alignment: "bottom",
-        bottomOffset: END_MARKER_PEEK,
-        requestedBehavior: "smooth",
-        requestedDuration: getScrollAnimationDuration(
-          Math.abs(endRank - currentRank)
-        ),
+    void getPage(eventId, rankingType, 1, regionSelection)
+      .then((boundaryPage) => {
+        if (requestEpoch !== navigationEpochRef.current) return;
+        const endRank = getEndSubRank(
+          boundaryPage.total,
+          boundaryPage.lastRank ?? lastRank,
+          visibleSubRank
+        );
+        const nextStart = pageStartForSubRank(endRank) + 1;
+        const currentRank = getCurrentViewportSubRank(
+          listRef.current,
+          entriesRef.current,
+          startRankRef.current
+        );
+        navigationTargetRankRef.current = endRank;
+        pendingRankRef.current = endRank;
+        pendingScrollToTopRef.current = false;
+        pendingFocusLastRef.current = true;
+        pendingScrollDirectionRef.current =
+          endRank < currentRank ? -1 : endRank > currentRank ? 1 : null;
+        if (nextStart === startRankRef.current && entriesRef.current.length > 0) {
+          scrollToEntry({
+            state: scrollAnimationStateRef.current,
+            list: listRef.current,
+            index: entriesRef.current.length - 1,
+            alignment: "bottom",
+            bottomOffset: END_MARKER_PEEK,
+            requestedBehavior: "smooth",
+            requestedDuration: getScrollAnimationDuration(
+              Math.abs(endRank - currentRank)
+            ),
+          });
+          pendingScrollDirectionRef.current = null;
+          pendingFocusLastRef.current = false;
+          return;
+        }
+        preserveListDuringLoadRef.current = true;
+        setPreserveListDuringLoad(true);
+        setStartRank(nextStart);
+      })
+      .catch((requestError: unknown) => {
+        if (requestEpoch !== navigationEpochRef.current) return;
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Rankings are unavailable."
+        );
       });
-      pendingScrollDirectionRef.current = null;
-      pendingFocusLastRef.current = false;
-      return;
-    }
-    preserveListDuringLoadRef.current = true;
-    setPreserveListDuringLoad(true);
-    setStartRank(nextStart);
   }, [
-    entries.length,
-    hasMore,
+    eventId,
     lastRank,
-    total,
+    rankingType,
+    regionSelection,
     visibleSubRank,
   ]);
 

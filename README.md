@@ -65,7 +65,9 @@ Create an OAuth application in your [WCA account](https://www.worldcubeassociati
 https://YOUR_DOMAIN/api/auth/wca/callback
 ```
 
-Set `WCA_CLIENT_ID`, `WCA_CLIENT_SECRET`, and `WCA_REDIRECT_URI` in the deployment `.env` file. The app requests only the `public` scope and stores a signed, HTTP-only profile cookie; it does not persist the WCA access token.
+Set `WCA_CLIENT_ID`, `WCA_CLIENT_SECRET`, and `WCA_REDIRECT_URI` in the deployment `.env` file. The app requests only the `public` scope, persists the verified WCA identity in `app_users`, and stores a hashed, revocable session in `auth_sessions`. It does not persist the WCA access token.
+
+Run Flyway before enabling sign-in so the user and session tables exist.
 
 ## Repository layout
 

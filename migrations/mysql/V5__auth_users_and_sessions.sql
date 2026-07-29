@@ -1,0 +1,24 @@
+CREATE TABLE IF NOT EXISTS app_users (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  wca_id VARCHAR(10) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  country_iso2 CHAR(2) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '',
+  avatar_url VARCHAR(1024) NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  last_login_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE KEY uq_app_users_wca_id (wca_id)
+);
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  token_hash BINARY(32) NOT NULL PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  expires_at DATETIME(6) NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  last_seen_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_auth_sessions_user
+    FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE,
+  INDEX idx_auth_sessions_user (user_id),
+  INDEX idx_auth_sessions_expiry (expires_at)
+);
+

@@ -327,6 +327,19 @@ ties by WCA ID for stable positional paging.
 Names and countries are joined only after selecting a score page. Counts use
 the score browse index rather than another persisted count grain.
 
+### Local Sum of Ranks refresh benchmark
+
+The targeted persistent-database refresh on 2026-07-28 completed in 738.9
+seconds. It published 5,699,074 event-value rows and 1,735,888 score rows. The
+score projection occupied approximately 201 MiB of table data and 95 MiB of
+indexes; event values occupied approximately 433 MiB.
+
+After publication, uncached local HTTP checks returned the first 50-row World
+Single page in 21 ms, a page around position 250,000 in 18 ms, and an exact
+WCA-ID search in 5 ms. These are single local observations rather than a
+capacity benchmark, but they confirm that incomplete coverage increases build
+and storage cost without changing the indexed read path.
+
 ### Inactive general metric projections
 
 ### `person_metric_values`

@@ -254,6 +254,13 @@ export function pageStartForViewportSubRank(subRank: number) {
   return pageStartForSubRank(subRank) + 1;
 }
 
+function getRenderedPersonTop(personId: string) {
+  const row = Array.from(
+    document.querySelectorAll<HTMLElement>(".listItem[data-person-id]")
+  ).find((element) => element.dataset.personId === personId);
+  return row ? row.getBoundingClientRect().top + window.scrollY : undefined;
+}
+
 export function shouldFallbackToFirstPage(
   startRank: number,
   entryCount: number
@@ -829,10 +836,8 @@ export function RankingsExplorer({
           requestedDuration: getScrollAnimationDuration(targetIndex),
           schedule: false,
           targetOffset: () =>
-            rowVirtualizerRef.current.getOffsetForIndex(
-              targetIndex,
-              "start"
-            )?.[0],
+            getRenderedPersonTop(initialData.initialMatchPersonId) ??
+            rowVirtualizerRef.current.getOffsetForIndex(targetIndex, "start")?.[0],
         });
       });
     });
@@ -1138,6 +1143,9 @@ export function RankingsExplorer({
               targetOffset: focusLast
                 ? undefined
                 : () =>
+                    (personFocus
+                      ? getRenderedPersonTop(personFocus.personId)
+                      : undefined) ??
                     rowVirtualizerRef.current.getOffsetForIndex(
                       targetIndex,
                       "start"
@@ -2130,6 +2138,9 @@ export function RankingsExplorer({
             Math.abs(normalizedRank - currentRank)
           ),
           targetOffset: () =>
+            (focusedPersonId
+              ? getRenderedPersonTop(focusedPersonId)
+              : undefined) ??
             rowVirtualizer.getOffsetForIndex(targetIndex, "start")?.[0],
         });
         pendingPersonFocusRef.current = null;

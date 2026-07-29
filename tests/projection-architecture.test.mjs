@@ -4,7 +4,7 @@ import test from "node:test";
 
 const root = new URL("../", import.meta.url);
 
-test("keeps future grains registered while activating person metrics", async () => {
+test("keeps future grains registered while activating person metrics and competition bests", async () => {
   const [schema, facts, people, results, metricValues, metricScores, sumValues, sumScores, podiums, competitionEvents, competitions, cities, counts, importer] =
     await Promise.all([
       readFile(new URL("scripts/mysql-schema.mjs", root), "utf8"),
@@ -67,19 +67,39 @@ test("keeps future grains registered while activating person metrics", async () 
   assert.doesNotMatch(sumScores, /CROSS JOIN/);
   assert.doesNotMatch(sumScores, /coverage = required_coverage/);
   assert.match(podiums, /podium_position/);
-  assert.match(podiums, /is_final_round = 1/);
+  assert.match(podiums, /round_type\.final = 1/);
+  assert.match(podiums, /result\.pos BETWEEN 1 AND 3/);
+  assert.match(podiums, /result\.event_id IN \('333bf', '444bf', '555bf'\)/);
+  assert.match(podiums, /result\.event_id NOT IN \('333bf', '444bf', '555bf', '333mbf'\)/);
   assert.match(competitionEvents, /fastest_single_result_id/);
-  assert.match(competitionEvents, /winning_average_result_id/);
   assert.match(competitionEvents, /fastest_single_rank/);
-  assert.match(competitionEvents, /podium_average_rank/);
-  assert.match(competitionEvents, /CASE WHEN best > 0 THEN best END/);
+  assert.match(competitionEvents, /fastest_single_position/);
+  assert.match(competitionEvents, /fastest_average_position/);
+  assert.match(competitionEvents, /CASE WHEN result\.best > 0 THEN/);
+  assert.match(competitionEvents, /FROM results result/);
+  assert.match(competitionEvents, /idx_competition_event_fastest_single/);
+  assert.match(competitionEvents, /AVG\(DISTINCT result_value\)/);
+  assert.match(competitionEvents, /HAVING COUNT\(DISTINCT person_id\) >= 3/);
+  assert.match(competitionEvents, /podium_rank/);
+  assert.match(competitionEvents, /podium_position/);
+  assert.match(competitionEvents, /idx_competition_event_podium/);
   assert.match(competitions, /northernmost_rank/);
+  assert.match(competitions, /competitor_count_rank/);
+  assert.match(competitions, /competitor_count_position/);
+  assert.match(competitions, /COUNT\(DISTINCT person_id\) AS competitor_count/);
+  assert.match(competitions, /northernmost_position/);
   assert.match(competitions, /southernmost_rank/);
+  assert.match(competitions, /southernmost_position/);
   assert.match(competitions, /NOT \(latitude = 0 AND longitude = 0\)/);
+  assert.match(competitions, /FROM competitions comp/);
+  assert.match(competitions, /idx_competition_stats_north/);
+  assert.match(competitions, /idx_competition_stats_competitor_count/);
+  assert.match(competitions, /idx_competition_stats_south/);
   assert.match(cities, /fastest_average_result_id/);
   assert.match(cities, /fastest_average_rank/);
   assert.match(counts, /CREATE TABLE entity_ranking_counts AS/);
   assert.match(schema, /entity-ranking-counts/);
+  assert.match(schema, /name: "competition-event-stats"[\s\S]*enabledByDefault: true/);
 });
 
 test("does not introduce entries or sub-rank vocabulary in new schemas", async () => {
@@ -126,24 +146,28 @@ test("exposes bounded resource APIs without projection name scans", async () => 
   assert.match(rankings, /score\.\$\{positionColumn\} AS sub_rank/);
   assert.match(rankings, /score\.kinch_score \/ 16\.0/);
   assert.match(entities, /FROM competition_event_stats stats/);
+  assert.match(entities, /stats\.\$\{positionColumn\} > \?/);
+  assert.match(entities, /INNER JOIN results result ON result\.id = page\.result_id/);
   assert.match(entities, /FROM city_event_stats stats/);
   assert.match(search, /FROM persons person/);
 
-  for (const source of [people, results, rankings, entities]) {
+  for (const source of [people, results, rankings]) {
     assert.doesNotMatch(source, /FROM results\b/);
     assert.doesNotMatch(source, /person_name LIKE/);
   }
+  assert.doesNotMatch(entities, /person_name LIKE/);
+  assert.match(entities, /Number\(last\.position\) \+ 1/);
 });
 
 test("only exposes APIs backed by active projections", async () => {
   const activeRoutes = [
     "app/api/people/search/route.ts",
     "app/api/rankings/route.ts",
+    "app/api/rankings/competitions/route.ts",
   ];
   const inactiveRoutes = [
     "app/api/rankings/people/route.ts",
     "app/api/rankings/results/route.ts",
-    "app/api/rankings/competitions/route.ts",
     "app/api/rankings/podiums/route.ts",
     "app/api/rankings/cities/route.ts",
     "app/api/rankings/metrics/route.ts",
@@ -154,6 +178,17 @@ test("only exposes APIs backed by active projections", async () => {
   for (const route of inactiveRoutes) {
     await assert.rejects(readFile(new URL(route, root), "utf8"));
   }
+});
+
+test("backfills only the active competition-event projection", async () => {
+  const backfill = await readFile(
+    new URL("scripts/backfill-competition-event-stats.mjs", root),
+    "utf8",
+  );
+  assert.match(backfill, /projectionNames = \["competition-event-stats"\]/);
+  assert.match(backfill, /projectionSuffix: "_staging"/);
+  assert.match(backfill, /promoteRegisteredProjections/);
+  assert.doesNotMatch(backfill, /DROP DATABASE|TRUNCATE TABLE/);
 });
 
 test("person search resolves IDs before querying projections", async () => {

@@ -81,7 +81,7 @@ function RailSearch({ searchInputRef, findOpen, findQuery, findError, findLoadin
   );
 }
 
-export function RankingsControlsRail<T extends EventPickerOption>({ event, eventOptions, additionalEventOptions, onEventChange, rankingType, onRankingTypeChange, regions, regionSelection, onRegionChange, onEventPickerTrigger, compactResultType = false, showResultType = true, showEventPicker = true, showSearch = true, hemisphere, onHemisphereChange, ...searchProps }: {
+export function RankingsControlsRail<T extends EventPickerOption>({ event, eventOptions, additionalEventOptions, onEventChange, rankingType, onRankingTypeChange, regions, regionSelection, onRegionChange, onEventPickerTrigger, compactResultType = false, showResultType = true, showEventPicker = true, showRegion = true, showSearch = true, hemisphere, onHemisphereChange, ...searchProps }: {
   event: T;
   eventOptions?: readonly T[];
   additionalEventOptions?: readonly T[];
@@ -95,6 +95,7 @@ export function RankingsControlsRail<T extends EventPickerOption>({ event, event
   compactResultType?: boolean;
   showResultType?: boolean;
   showEventPicker?: boolean;
+  showRegion?: boolean;
   showSearch?: boolean;
   hemisphere?: "north" | "south";
   onHemisphereChange?: (hemisphere: "north" | "south") => void;
@@ -124,7 +125,7 @@ export function RankingsControlsRail<T extends EventPickerOption>({ event, event
           </fieldset>
           <button className="Jump-resultTypeToggle" type="button" tabIndex={compactResultType ? 0 : -1} aria-hidden={!compactResultType} disabled={event.id === "333mbf"} aria-label={`Switch to ${nextType} rankings`} onClick={() => onRankingTypeChange(nextType)}>{rankingType === "single" ? "Single" : "Average"}</button>
         </div>}
-        <RegionPicker className="Jump-regionPicker" options={regions} selected={regionSelection} onChange={onRegionChange} />
+        {showRegion && <RegionPicker className="Jump-regionPicker" options={regions} selected={regionSelection} onChange={onRegionChange} />}
       </div>
       {showSearch && <RailSearch {...searchProps} />}
     </RankingsRail>

@@ -22,6 +22,24 @@ body {
   background: var(--page);
 }
 
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 160ms;
+  animation-timing-function: ease-out;
+}
+
+::view-transition-old(rankings-header),
+::view-transition-new(rankings-header),
+::view-transition-old(rankings-controls),
+::view-transition-new(rankings-controls) {
+  animation-duration: 180ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
 * {
   box-sizing: border-box;
   line-height: 1.2;
@@ -75,6 +93,8 @@ select {
 }
 
 .header {
+  view-transition-name: rankings-header;
+
   position: relative;
   z-index: 1;
   display: grid;
@@ -153,6 +173,8 @@ select {
 }
 
 .stickyRankingsRail {
+  view-transition-name: rankings-controls;
+
   --rail-scroll-progress: 0;
 
   position: sticky;
@@ -162,6 +184,18 @@ select {
   width: min(100%, 1000px);
   margin: 0 auto 1em;
   justify-content: center;
+}
+
+main {
+  view-transition-name: rankings-content;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0s;
+  }
 }
 
 .stickyRankingsRail > .Jump {

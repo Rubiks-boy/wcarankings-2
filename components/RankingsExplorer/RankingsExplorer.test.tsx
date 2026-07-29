@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime.js";
 import {
   centeredRowScrollTop,
+  competitionRankingPath,
   getSearchScrollDirection,
   orderSearchMatches,
   pageStartForViewportSubRank,
   RankingsExplorer,
   shouldFallbackToFirstPage,
+  subjectPath,
 } from "./RankingsExplorer";
 
 const rankingEntry = {
@@ -59,25 +62,45 @@ test("falls back to the first region page only when the current page is absent",
   assert.equal(shouldFallbackToFirstPage(1, 0), false);
 });
 
+test("gives each non-default subject and competition ranking a page", () => {
+  assert.equal(subjectPath("people"), "/");
+  assert.equal(subjectPath("results"), "/results");
+  assert.equal(subjectPath("competitions"), "/competitions/best-result");
+  assert.equal(competitionRankingPath("best-result"), "/competitions/best-result");
+  assert.equal(competitionRankingPath("podiums"), "/competitions/podiums");
+  assert.equal(competitionRankingPath("competitor-count"), "/competitions/competitor-count");
+  assert.equal(competitionRankingPath("latitude"), "/competitions/latitude");
+});
+
 test("renders the rankings shell with extracted components", () => {
   const markup = renderToStaticMarkup(
-    <RankingsExplorer
-      initialData={{
-        entries: [
-          rankingEntry,
-        ],
-        hasMore: false,
-        nextPageStart: null,
-        previousPageStart: null,
-        startRank: 1,
-        startPosition: 0,
-        lastRank: 1,
-        total: 1,
-        searchMatches: [],
-        initialMatchPersonId: "",
-      }}
-      initialRegions={{ continents: [], countries: [] }}
-    />,
+    <AppRouterContext.Provider value={{
+      back() {},
+      forward() {},
+      refresh() {},
+      hmrRefresh() {},
+      push() {},
+      replace() {},
+      prefetch() {},
+    }}>
+      <RankingsExplorer
+        initialData={{
+          entries: [
+            rankingEntry,
+          ],
+          hasMore: false,
+          nextPageStart: null,
+          previousPageStart: null,
+          startRank: 1,
+          startPosition: 0,
+          lastRank: 1,
+          total: 1,
+          searchMatches: [],
+          initialMatchPersonId: "",
+        }}
+        initialRegions={{ continents: [], countries: [] }}
+      />
+    </AppRouterContext.Provider>,
   );
   assert.match(markup, /WCA Rankings/);
   assert.match(markup, /Avery Chen/);

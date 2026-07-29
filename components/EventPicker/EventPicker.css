@@ -79,6 +79,7 @@
 
 .EventPicker-option {
   font-size: 1.25em;
+  border-radius: 0;
 }
 
 .EventPicker-option--named {

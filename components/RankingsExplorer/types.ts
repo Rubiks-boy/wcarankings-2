@@ -5,9 +5,11 @@ export type RankingEntry = {
   subRank: number;
   personId: string;
   personName: string;
+  identitySubtitle?: string;
   countryName: string;
   countryIso2: string;
   best: number;
+  formattedValue?: string;
   competitionId: string;
   competitionName: string;
   recordBadges: RecordBadgeCode[];

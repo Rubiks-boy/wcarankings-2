@@ -27,6 +27,10 @@
   transition: opacity 150ms var(--cubic-enter), transform 150ms var(--cubic-enter), visibility 0s;
 }
 
+.Dropdown-menu [role="option"] {
+  border-radius: 0;
+}
+
 .TextDropdown-trigger {
   display: inline-flex;
   min-width: 40px;
@@ -71,7 +75,7 @@
   min-height: 40px;
   padding: 0.5rem 0.65rem;
   border: 0;
-  border-radius: 0.45rem;
+  border-radius: 0;
   background: transparent;
   color: var(--text-strong);
   cursor: pointer;

@@ -521,16 +521,19 @@ start_date
 latitude
 longitude
 competitor_count
-country_count
-event_count
-attempt_count
-record_count
-largest_rank
+competitor_count_rank
+competitor_count_position
 northernmost_rank
+northernmost_position
 southernmost_rank
+southernmost_position
 ```
 
-One latitude index supports both northernmost and southernmost scans.
+The activated version contains the coordinate fields needed by latitude and
+one distinct-person aggregate for the Competitor Count product. Other activity
+aggregates remain planned and should be added only when their products are
+activated. Stable competitor-count, north, and south position indexes support
+the shared paging engine.
 
 ### `competition_event_stats`
 
@@ -546,24 +549,58 @@ Columns:
 competition_id
 event_id
 start_date
-competitor_count
 fastest_single
 fastest_single_result_id
 fastest_single_rank
+fastest_single_position
 fastest_average
 fastest_average_result_id
 fastest_average_rank
+fastest_average_position
+```
+
+The fastest-result subset is active. Its positions are internal page keys,
+ordered by result value, competition date, and competition ID. They let the
+shared list engine load arbitrary windows and jump to the end without large
+offsets. Only the public tied rank is rendered.
+
+The active podium subset adds:
+
+```text
 winning_single
 winning_single_result_id
 winning_average
 winning_average_result_id
-podium_single_score
-podium_single_rank
-podium_average_score
-podium_average_rank
+podium_score
+podium_rank
+podium_position
 ```
 
-Every displayed best or winner must retain its source `result_id`.
+Every displayed best or winner must retain its source `result_id`. The active
+fastest-result build aggregates directly from the raw export once and joins
+the selected result, person, competition, and country display data only after
+the bounded page has been selected.
+
+Podium membership comes only from official final or combined-final rows whose
+official position is at most three. Each competition-event has one podium
+ranking based on the result that determines the official final standings:
+Single (`best`) for 3BLD, 4BLD, and 5BLD, and Average for every other supported
+event. There is no result-type toggle. Ties are retained, so one competition
+may have more than three displayed members. The score is the mean of the
+distinct valid component values: an additional finisher tied on the exact same
+ranked result is visible but does not skew the score. Multi-Blind is excluded
+because its packed result representation cannot be averaged meaningfully.
+Public tied ranks and deterministic internal positions support the same
+positional paging as fastest-result rankings.
+
+The remaining competition-event statistics are planned:
+
+```text
+winning_single
+winning_single_result_id
+winning_average
+winning_average_result_id
+```
 
 ### `competition_podium_members`
 
@@ -585,8 +622,8 @@ result_id
 result_value
 ```
 
-The score belongs in `competition_event_stats`; its three auditable components
-belong here.
+The score belongs in `competition_event_stats`; all auditable final-round
+components, including tied finishers at positions up to three, belong here.
 
 ### `city_event_stats`
 

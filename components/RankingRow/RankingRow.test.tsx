@@ -42,6 +42,36 @@ test("renders a result row without exposing internal ordering", () => {
   assert.doesNotMatch(markup, /sub-rank/);
 });
 
+test("can hide an identity ID for competition ranking rows", () => {
+  const markup = renderToStaticMarkup(
+    <RankingRow
+      entry={{ ...entry, personId: entry.competitionId, personName: entry.competitionName }}
+      eventId="333"
+      rankingType="single"
+      animationIndex={0}
+      hideIdentityId
+    />,
+  );
+
+  assert.match(markup, /Storybook Open 2026/);
+  assert.doesNotMatch(markup, /class="wcaId"/);
+});
+
+test("can show a venue beneath the row identity", () => {
+  const markup = renderToStaticMarkup(
+    <RankingRow
+      entry={{ ...entry, identitySubtitle: "Polar Hotel", competitionName: "Longyearbyen" }}
+      eventId="333"
+      rankingType="single"
+      animationIndex={0}
+      hideIdentityId
+    />,
+  );
+
+  assert.match(markup, /<span class="name">Cailyn Sinclair<\/span><span class="wcaId">Polar Hotel<\/span>/);
+  assert.match(markup, /class="competitionName" title="Longyearbyen"/);
+});
+
 test("prioritizes the strongest available record badge", () => {
   assert.deepEqual(
     getRecordBadges({

@@ -16,6 +16,7 @@ export function ResultsTable({
   listOffset,
   eventId,
   rankingType,
+  hideIdentityIds = false,
   loading,
   showLoading,
   preserveListDuringLoad,
@@ -33,6 +34,7 @@ export function ResultsTable({
   listOffset: number;
   eventId: string;
   rankingType: "single" | "average";
+  hideIdentityIds?: boolean;
   loading: boolean;
   showLoading: boolean;
   preserveListDuringLoad: boolean;
@@ -63,6 +65,7 @@ export function ResultsTable({
               entry={entry}
               eventId={eventId}
               rankingType={rankingType}
+              hideIdentityId={hideIdentityIds}
               animationIndex={virtualRow.index}
               searchMatched={searchMatchPersonIds?.has(entry.personId)}
               highlighted={entry.personId === highlightedPersonId}

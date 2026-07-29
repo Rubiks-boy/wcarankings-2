@@ -16,6 +16,7 @@ export type AuthUser = {
   name: string;
   countryIso2: string;
   avatarUrl: string | null;
+  allowListInclusion: boolean;
 };
 
 type AuthUserRow = RowDataPacket & {
@@ -24,6 +25,7 @@ type AuthUserRow = RowDataPacket & {
   name: string;
   country_iso2: string;
   avatar_url: string | null;
+  allow_list_inclusion: number;
 };
 
 function toAuthUser(row: AuthUserRow): AuthUser {
@@ -33,6 +35,7 @@ function toAuthUser(row: AuthUserRow): AuthUser {
     name: row.name,
     countryIso2: row.country_iso2,
     avatarUrl: row.avatar_url,
+    allowListInclusion: Boolean(row.allow_list_inclusion),
   };
 }
 
@@ -69,7 +72,7 @@ export async function createAuthSession(profile: WcaProfile) {
       [tokenHash, userId, expiresAt],
     );
     const [rows] = await connection.execute<AuthUserRow[]>(
-      `SELECT id, wca_id, name, country_iso2, avatar_url
+      `SELECT id, wca_id, name, country_iso2, avatar_url, allow_list_inclusion
        FROM app_users
        WHERE id = ?`,
       [userId],
@@ -90,7 +93,8 @@ export async function getAuthUser(request: Request) {
       u.wca_id,
       u.name,
       u.country_iso2,
-      u.avatar_url
+      u.avatar_url,
+      u.allow_list_inclusion
      FROM auth_sessions AS s
      JOIN app_users AS u ON u.id = s.user_id
      WHERE s.token_hash = ?

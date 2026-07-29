@@ -16,7 +16,7 @@ export function PwaRegistration() {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
 
-    if (process.env.NODE_ENV !== "production") {
+    if (!import.meta.env.PROD) {
       void Promise.all([
         navigator.serviceWorker
           .getRegistrations()

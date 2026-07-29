@@ -177,6 +177,11 @@ type SearchLayoutAnchor = {
   viewportTop: number;
 };
 
+type PendingPersonFocus = {
+  personId: string;
+  animate: boolean;
+};
+
 const CLIENT_PAGE_CACHE_CAPACITY_333 = 512;
 const CLIENT_PAGE_CACHE_CAPACITY_DEFAULT = 128;
 
@@ -247,6 +252,13 @@ export function pageStartForSubRank(subRank: number) {
 
 export function pageStartForViewportSubRank(subRank: number) {
   return pageStartForSubRank(subRank) + 1;
+}
+
+function getRenderedPersonTop(personId: string) {
+  const row = Array.from(
+    document.querySelectorAll<HTMLElement>(".listItem[data-person-id]")
+  ).find((element) => element.dataset.personId === personId);
+  return row ? row.getBoundingClientRect().top + window.scrollY : undefined;
 }
 
 export function shouldFallbackToFirstPage(
@@ -357,11 +369,11 @@ async function getEndWindow(
   };
 }
 
-async function getSearchWindow(
+async function getPersonWindow(
   eventId: string,
   rankingType: "single" | "average",
   selection: RegionSelection,
-  match: RankingEntry
+  match: Pick<RankingEntry, "personId" | "subRank">
 ) {
   const targetPageStart = pageStartForSubRank(match.subRank);
   const pageFirstSubRanks = Array.from(
@@ -457,7 +469,7 @@ function prefetchSearchResultPages(
       const requestKey = pageStartForSubRank(match.subRank);
       if (requested.has(requestKey)) continue;
       requested.add(requestKey);
-      void getSearchWindow(eventId, rankingType, selection, match).catch(
+      void getPersonWindow(eventId, rankingType, selection, match).catch(
         () => undefined
       );
     }
@@ -487,6 +499,27 @@ function searchRankings(
       throw new Error(body.error ?? "Search is unavailable.");
     }
     return response.json() as Promise<{ entries: RankingEntry[] }>;
+  });
+}
+
+function locateRanking(
+  eventId: string,
+  rankingType: "single" | "average",
+  selection: RegionSelection,
+  wcaId: string,
+) {
+  const params = new URLSearchParams({
+    eventId,
+    result: rankingType,
+    locate: wcaId,
+  });
+  if (selection.scope !== "world") params.set("region", selection.regionId);
+  return fetch(`/api/rankings?${params}`).then(async (response) => {
+    if (!response.ok) {
+      const body = (await response.json()) as { error?: string };
+      throw new Error(body.error ?? "Could not find this person in the rankings.");
+    }
+    return response.json() as Promise<{ located: RankingEntry | null }>;
   });
 }
 
@@ -633,6 +666,15 @@ export function RankingsExplorer({
   const [topRailProgress, setTopRailProgress] = useState(0);
   const [bottomRailProgress, setBottomRailProgress] = useState(0);
   const [debugScrollY, setDebugScrollY] = useState(0);
+  const activeListKey = [
+    subject,
+    competitionRanking,
+    latitudeHemisphere,
+    eventId,
+    rankingType,
+    regionSelection.scope,
+    regionSelection.regionId,
+  ].join(":");
   const listRef = useRef<HTMLDivElement>(null);
   const stickyRankingsRailRef = useRef<HTMLDivElement>(null);
   const railFindInputRef = useRef<HTMLInputElement>(null);
@@ -646,6 +688,11 @@ export function RankingsExplorer({
   const moreRequestRef = useRef(false);
   const previousRequestRef = useRef(false);
   const navigationEpochRef = useRef(0);
+  const activeListKeyRef = useRef(activeListKey);
+  const focusResolutionEpochRef = useRef(0);
+  const focusedWcaIdRef = useRef("");
+  const lastFocusRequestRef = useRef("");
+  const pendingPersonFocusRef = useRef<PendingPersonFocus | null>(null);
   const pendingRankRef = useRef(1);
   const pendingFocusLastRef = useRef(false);
   const pendingScrollToTopRef = useRef(false);
@@ -677,11 +724,14 @@ export function RankingsExplorer({
   const pendingRegionFallbackPageKeyRef = useRef<string | null>(null);
   const initialScrollRef = useRef(
     Boolean(
-      initialData && normalizedInitialSearch && initialData.initialMatchPersonId
+      initialData && initialData.initialMatchPersonId
     )
   );
   const initialSearchRef = useRef(
     Boolean(initialData && normalizedInitialSearch)
+  );
+  const initialFocusRef = useRef(
+    Boolean(initialData?.initialMatchPersonId && !normalizedInitialSearch)
   );
   const findMatchesRef = useRef<RankingEntry[]>(
     orderSearchMatches(initialData?.searchMatches ?? [])
@@ -708,6 +758,10 @@ export function RankingsExplorer({
     settleTimer: null,
   });
   const scrollVelocityRef = useRef({ top: 0, timestamp: 0, downwardPixelsPerMs: 0 });
+  const queuePersonFocus = useCallback((personId: string, animate: boolean) => {
+    setHighlightedPersonId(personId);
+    pendingPersonFocusRef.current = { personId, animate };
+  }, []);
 
   const rowVirtualizer = useWindowVirtualizer({
     count: entries.length + 1,
@@ -716,6 +770,10 @@ export function RankingsExplorer({
     scrollMargin: listOffset,
   });
   const rowVirtualizerRef = useRef(rowVirtualizer);
+
+  useEffect(() => {
+    activeListKeyRef.current = activeListKey;
+  }, [activeListKey]);
   const virtualRows = rowVirtualizer.getVirtualItems();
 
   useLayoutEffect(() => {
@@ -794,10 +852,8 @@ export function RankingsExplorer({
           requestedDuration: getScrollAnimationDuration(targetIndex),
           schedule: false,
           targetOffset: () =>
-            rowVirtualizerRef.current.getOffsetForIndex(
-              targetIndex,
-              "start"
-            )?.[0],
+            getRenderedPersonTop(initialData.initialMatchPersonId) ??
+            rowVirtualizerRef.current.getOffsetForIndex(targetIndex, "start")?.[0],
         });
       });
     });
@@ -943,9 +999,15 @@ export function RankingsExplorer({
     previousRequestRef.current = false;
     const focusLast = pendingFocusLastRef.current;
     pendingFocusLastRef.current = false;
+    const personFocus = pendingPersonFocusRef.current;
+    const focusMatch = personFocus
+      ? { personId: personFocus.personId, subRank: pendingRankRef.current }
+      : null;
     const resource = rankingResource(subject, competitionRanking, latitudeHemisphere);
     const pageRequest = focusLast
       ? getEndWindow(eventId, rankingType, regionSelection, startRank, resource)
+      : focusMatch
+        ? getPersonWindow(eventId, rankingType, regionSelection, focusMatch)
       : getPage(eventId, rankingType, startRank, regionSelection, resource);
     pageRequest
       .then((data) => {
@@ -989,6 +1051,7 @@ export function RankingsExplorer({
           pendingNavigationAppendRef.current &&
           !scrollToTop &&
           !focusLast &&
+          !focusMatch &&
           Boolean(pendingDirection);
         const previousEntries = entriesRef.current;
         const previousStartPosition = startPositionRef.current;
@@ -1038,11 +1101,16 @@ export function RankingsExplorer({
         setTotal(data.total);
         setExportDate(data.exportDate ?? null);
         setOfflineStale(Boolean(data.offlineStale));
+        const focusedTargetIndex = personFocus
+          ? loadedEntries.findIndex((entry) => entry.personId === personFocus.personId)
+          : -1;
         const requestedTargetIndex = focusLast
           ? Math.max(0, loadedEntries.length - 1)
-          : loadedEntries.findIndex(
-              (entry) => entry.subRank >= rankForStep
-            );
+          : focusedTargetIndex >= 0
+            ? focusedTargetIndex
+            : loadedEntries.findIndex(
+                (entry) => entry.subRank >= rankForStep
+              );
         const targetIndex =
           requestedTargetIndex >= 0
             ? requestedTargetIndex
@@ -1053,8 +1121,10 @@ export function RankingsExplorer({
           scrollToTop ||
             focusLast ||
             pendingDirection ||
-            appendNavigation
+            appendNavigation ||
+            focusedTargetIndex >= 0
         );
+        if (focusedTargetIndex >= 0) pendingPersonFocusRef.current = null;
         pendingScrollDirectionRef.current = null;
         if (scrollToTop) {
           animateScrollTo(
@@ -1079,15 +1149,25 @@ export function RankingsExplorer({
               state: scrollAnimationStateRef.current,
               list: listRef.current,
               index: targetIndex,
-              alignment: focusLast ? "bottom" : "top",
+              alignment: focusLast
+                ? "bottom"
+                : focusedTargetIndex >= 0
+                  ? "center"
+                  : "top",
               bottomOffset: focusLast ? END_MARKER_PEEK : 0,
-              requestedBehavior: "smooth",
+              requestedBehavior:
+                focusedTargetIndex >= 0 && !personFocus?.animate
+                  ? "auto"
+                  : "smooth",
               requestedDuration: getScrollAnimationDuration(
                 Math.abs(rankForStep - currentSubRank)
               ),
               targetOffset: focusLast
                 ? undefined
                 : () =>
+                    (personFocus
+                      ? getRenderedPersonTop(personFocus.personId)
+                      : undefined) ??
                     rowVirtualizerRef.current.getOffsetForIndex(
                       targetIndex,
                       "start"
@@ -1241,7 +1321,7 @@ export function RankingsExplorer({
               match,
               scrollDirection
             )
-          : getSearchWindow(eventId, rankingType, regionSelection, match);
+          : getPersonWindow(eventId, rankingType, regionSelection, match);
 
       void pageRequest
         .then((data) => {
@@ -1470,9 +1550,10 @@ export function RankingsExplorer({
     const normalizedQuery = findQuery.trim();
     const isInitialSearch =
       initialSearchRef.current && normalizedQuery === normalizedInitialSearch;
+    const isInitialFocus = initialFocusRef.current && !normalizedQuery;
     const skipNavigationReset = skipNextFindResetRef.current;
     skipNextFindResetRef.current = false;
-    if (!isInitialSearch && !skipNavigationReset) {
+    if (!isInitialSearch && !isInitialFocus && !skipNavigationReset) {
       navigationEpochRef.current += 1;
       pendingSearchLayoutAnchorRef.current = null;
       cancelScrollAnimation(scrollAnimationStateRef.current);
@@ -1493,6 +1574,12 @@ export function RankingsExplorer({
     const timeout = window.setTimeout(
       () => {
         if (controller.signal.aborted) return;
+        if (isInitialFocus) {
+          initialFocusRef.current = false;
+          setFindResolvedQuery("");
+          setFindLoading(false);
+          return;
+        }
         if (
           initialSearchRef.current &&
           normalizedQuery === normalizedInitialSearch
@@ -1657,6 +1744,7 @@ export function RankingsExplorer({
     )
       return;
     const requestEpoch = navigationEpochRef.current;
+    const requestListKey = activeListKeyRef.current;
     moreRequestRef.current = true;
     setLoadingMore(true);
     try {
@@ -1689,6 +1777,7 @@ export function RankingsExplorer({
       );
       if (
         requestEpoch !== navigationEpochRef.current ||
+        requestListKey !== activeListKeyRef.current ||
         preserveListDuringLoadRef.current ||
         scrollAnimationStateRef.current.programmatic
       )
@@ -1727,6 +1816,7 @@ export function RankingsExplorer({
     )
       return;
     const requestEpoch = navigationEpochRef.current;
+    const requestListKey = activeListKeyRef.current;
     previousRequestRef.current = true;
     setLoadingPrevious(true);
     const previousListHeight = rowVirtualizer.getTotalSize();
@@ -1740,6 +1830,7 @@ export function RankingsExplorer({
       );
       if (
         requestEpoch !== navigationEpochRef.current ||
+        requestListKey !== activeListKeyRef.current ||
         preserveListDuringLoadRef.current ||
         scrollAnimationStateRef.current.programmatic
       )
@@ -1981,7 +2072,7 @@ export function RankingsExplorer({
     : entries.length * ROW_HEIGHT + (hasMore ? ROW_HEIGHT : 0);
 
   const resetToRank = useCallback(
-    (rank: number) => {
+    (rank: number, animate = true, focusedPersonId: string | null = null) => {
       // Vim and jump controls pass the internal sub_rank, never the displayed rank.
       navigationEpochRef.current += 1;
       cancelScrollAnimation(scrollAnimationStateRef.current);
@@ -2006,13 +2097,15 @@ export function RankingsExplorer({
       );
       navigationTargetRankRef.current = normalizedRank;
       pendingRankRef.current = normalizedRank;
+      if (focusedPersonId) queuePersonFocus(focusedPersonId, animate);
+      else pendingPersonFocusRef.current = null;
       if (normalizedRank === 1) {
         if (findQuery.trim()) skipNextFindResetRef.current = true;
         resetFind();
         setFindOpen(false);
         pendingFocusLastRef.current = false;
         pendingScrollDirectionRef.current = null;
-        pendingScrollToTopRef.current = true;
+        pendingScrollToTopRef.current = animate;
         cancelScrollAnimation(scrollAnimationStateRef.current);
         preserveListDuringLoadRef.current = true;
         setPreserveListDuringLoad(true);
@@ -2023,27 +2116,42 @@ export function RankingsExplorer({
       }
       pendingScrollToTopRef.current = false;
       pendingFocusLastRef.current = false;
-      pendingScrollDirectionRef.current =
+      pendingScrollDirectionRef.current = animate
+        ?
         normalizedRank < currentRank
           ? -1
           : normalizedRank > currentRank
           ? 1
-          : null;
+          : null
+        : null;
       // Rank values can be missing, so ask the API for the exact target and let
       // its ordered query choose the first real result at or beyond that rank.
       pendingNavigationAppendRef.current = Boolean(
         pendingScrollDirectionRef.current
       );
       const nextStart = pageStartForSubRank(normalizedRank) + 1;
+      if (!animate) {
+        preserveListDuringLoadRef.current = true;
+        setPreserveListDuringLoad(true);
+        if (nextStart === startRankRef.current) {
+          forcePageLoadRef.current = true;
+          setPageReloadNonce((nonce) => nonce + 1);
+        }
+        setStartRank(nextStart);
+        return;
+      }
       const firstLoadedRank = entries[0]?.subRank ?? Number.POSITIVE_INFINITY;
       const lastLoadedRank = entries.at(-1)?.subRank ?? 0;
       if (
         normalizedRank >= firstLoadedRank &&
         normalizedRank <= lastLoadedRank
       ) {
-        const requestedTargetIndex = entries.findIndex(
-          (entry) => entry.subRank >= normalizedRank
-        );
+        const focusedTargetIndex = focusedPersonId
+          ? entries.findIndex((entry) => entry.personId === focusedPersonId)
+          : -1;
+        const requestedTargetIndex = focusedTargetIndex >= 0
+          ? focusedTargetIndex
+          : entries.findIndex((entry) => entry.subRank >= normalizedRank);
         const targetIndex =
           requestedTargetIndex >= 0
             ? requestedTargetIndex
@@ -2054,14 +2162,18 @@ export function RankingsExplorer({
           state: scrollAnimationStateRef.current,
           list: listRef.current,
           index: targetIndex,
-          alignment: "top",
+          alignment: focusedTargetIndex >= 0 ? "center" : "top",
           requestedBehavior: "smooth",
           requestedDuration: getScrollAnimationDuration(
             Math.abs(normalizedRank - currentRank)
           ),
           targetOffset: () =>
+            (focusedPersonId
+              ? getRenderedPersonTop(focusedPersonId)
+              : undefined) ??
             rowVirtualizer.getOffsetForIndex(targetIndex, "start")?.[0],
         });
+        pendingPersonFocusRef.current = null;
         pendingScrollDirectionRef.current = null;
         return;
       }
@@ -2073,12 +2185,95 @@ export function RankingsExplorer({
       entries,
       findQuery,
       lastRank,
+      queuePersonFocus,
       resetFind,
       rowVirtualizer,
       startRank,
       total,
     ]
   );
+
+  const focusWcaId = useCallback((wcaId: string, animate = true) => {
+    if (subject !== "people") return;
+    const resolutionEpoch = focusResolutionEpochRef.current + 1;
+    focusResolutionEpochRef.current = resolutionEpoch;
+    setError("");
+    void locateRanking(eventId, rankingType, regionSelection, wcaId)
+      .then(({ located }) => {
+        if (resolutionEpoch !== focusResolutionEpochRef.current) return;
+        if (!located) {
+          resetToRank(1, false);
+          return;
+        }
+        resetToRank(
+          located.subRank,
+          animate,
+          located.personId,
+        );
+      })
+      .catch((requestError: unknown) => {
+        if (resolutionEpoch !== focusResolutionEpochRef.current) return;
+        setError(requestError instanceof Error ? requestError.message : "Could not find this person in the rankings.");
+      });
+  }, [eventId, rankingType, regionSelection, resetToRank, subject]);
+
+  const focusMyRanking = useCallback((wcaId: string) => {
+    focusedWcaIdRef.current = wcaId;
+    updateQueryParams({ focus: "me", wcaId: null });
+    lastFocusRequestRef.current = [
+      eventId,
+      rankingType,
+      regionSelection.scope,
+      regionSelection.regionId,
+      "",
+      "me",
+    ].join(":");
+    focusWcaId(wcaId);
+  }, [eventId, focusWcaId, rankingType, regionSelection]);
+
+  useEffect(() => {
+    if (subject !== "people") return;
+    const url = new URL(window.location.href);
+    const explicitWcaId = url.searchParams.get("wcaId")?.trim().toUpperCase();
+    const focusMe = url.searchParams.get("focus") === "me";
+    const requestKey = [eventId, rankingType, regionSelection.scope, regionSelection.regionId, explicitWcaId ?? "", focusMe ? "me" : ""].join(":");
+    if ((!explicitWcaId && !focusMe) || lastFocusRequestRef.current === requestKey) return;
+
+    if (explicitWcaId) {
+      lastFocusRequestRef.current = requestKey;
+      void Promise.resolve().then(() => {
+        if (lastFocusRequestRef.current === requestKey)
+          focusWcaId(explicitWcaId, false);
+      });
+      return;
+    }
+
+    if (focusedWcaIdRef.current) {
+      lastFocusRequestRef.current = requestKey;
+      const wcaId = focusedWcaIdRef.current;
+      void Promise.resolve().then(() => {
+        if (lastFocusRequestRef.current === requestKey)
+          focusWcaId(wcaId, false);
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    fetch("/api/auth/wca/me", { headers: { Accept: "application/json" }, signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not load your profile.");
+        const { profile } = await response.json() as { profile: { wcaId: string } | null };
+        if (!profile) throw new Error("Sign in with WCA to jump to your ranking.");
+        focusedWcaIdRef.current = profile.wcaId;
+        lastFocusRequestRef.current = requestKey;
+        focusWcaId(profile.wcaId, false);
+      })
+      .catch((requestError: unknown) => {
+        if (requestError instanceof DOMException && requestError.name === "AbortError") return;
+        setError(requestError instanceof Error ? requestError.message : "Could not load your profile.");
+      });
+    return () => controller.abort();
+  }, [eventId, focusWcaId, rankingType, regionSelection, subject]);
 
   const jumpToEnd = useCallback(() => {
     const requestEpoch = navigationEpochRef.current + 1;
@@ -2756,6 +2951,7 @@ export function RankingsExplorer({
             total={total}
             onJumpUp={handleJumpUp}
             onJumpDown={handleJumpDown}
+            onFocusMe={subject === "people" ? focusMyRanking : undefined}
             searchActive={findOpen && findMatches.length > 0}
             onSearchPrevious={() => cycleFind(-1)}
             onSearchNext={() => cycleFind(1)}

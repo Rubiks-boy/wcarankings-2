@@ -258,7 +258,7 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(pwaRegistration, /SKIP_WAITING/);
   assert.match(pwaRegistration, /PwaUpdatePrompt/);
   assert.match(pwaUpdatePrompt, /Update available/);
-  assert.match(pwaRegistration, /process\.env\.NODE_ENV !== "production"/);
+  assert.match(pwaRegistration, /import\.meta\.env\.PROD/);
   assert.match(pwaRegistration, /getRegistrations\(\)/);
   assert.match(pwaRegistration, /registration\.unregister\(\)/);
   assert.match(serviceWorker, /CACHE_NAME/);

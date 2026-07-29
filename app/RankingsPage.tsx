@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { RankingsExplorer } from "@/components/RankingsExplorer/RankingsExplorer";
 import type {
   RankingEntry,
@@ -10,6 +11,7 @@ import { getRegions } from "@/lib/regions";
 import { loadRankings } from "@/lib/rankings";
 import { loadCompetitionRankings } from "@/lib/semantic-entity-rankings";
 import { projectionBrowsingEnabled } from "@/lib/feature-flags";
+import { getAuthUser } from "@/lib/auth";
 
 const PAGE_SIZE = RESULTS_PAGE_SIZE;
 
@@ -88,6 +90,7 @@ async function fetchRegions(kind: RegionKind): Promise<RegionRecord[]> {
 
 async function getInitialRankings(
   searchParams: Record<string, string | string[] | undefined>,
+  focusedWcaId = "",
 ) {
   const rawEventId = getSearchParamWithLegacyKey(searchParams, "eventId", "event");
   const rawRankingType = getSearchParamWithLegacyKey(searchParams, "result", "type");
@@ -108,10 +111,20 @@ async function getInitialRankings(
         }),
       )
     : null;
+  const focusedResult = focusedWcaId
+    ? await fetchRankings(
+        new URLSearchParams({
+          eventId,
+          result: rankingType,
+          locate: focusedWcaId,
+          ...(scope === "world" ? {} : { region: regionId }),
+        }),
+      ) as unknown as { located: RankingEntry | null }
+    : null;
   const searchMatches = searchResult && Array.isArray(searchResult.entries)
     ? searchResult.entries
     : [];
-  const firstMatch = searchMatches[0];
+  const firstMatch = focusedResult?.located ?? searchMatches[0];
   const targetPageStart = pageFirstSubRank(firstMatch?.subRank ?? 1);
   const pageStarts = firstMatch
     ? [targetPageStart - PAGE_SIZE, targetPageStart, targetPageStart + PAGE_SIZE]
@@ -233,6 +246,14 @@ export async function RankingsPage({
       ? "single"
       : isRankingType(rawRankingType) ? rawRankingType : "single";
   const { scope, regionId } = parseRegionQuery(getSearchParam(resolvedSearchParams, "region"));
+  const requestedWcaId = getSearchParam(resolvedSearchParams, "wcaId")
+    .trim()
+    .toUpperCase();
+  const focusedWcaId = requestedWcaId || (
+    getSearchParam(resolvedSearchParams, "focus") === "me"
+      ? (await getAuthUser(new Request("http://localhost", { headers: await headers() })))?.wcaId ?? ""
+      : ""
+  );
   const canonicalParams = getCanonicalSearchParams(
     resolvedSearchParams,
     eventId,
@@ -265,7 +286,7 @@ export async function RankingsPage({
     redirect(query ? `${pathname}?${query}` : pathname);
   }
   const initialRankingsRequest = initialSubject !== "competitions"
-    ? getInitialRankings(resolvedSearchParams)
+    ? getInitialRankings(resolvedSearchParams, focusedWcaId)
     : initialSubject === "competitions"
       ? getInitialCompetitionRankings(
           eventId as (typeof WCA_EVENTS)[number]["id"],

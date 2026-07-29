@@ -7,6 +7,7 @@
 @import "../components/RankingsRail/RankingsRail.css";
 @import "../components/JumpControlsVisibility/JumpControlsVisibility.css";
 @import "../components/PwaUpdatePrompt/PwaUpdatePrompt.css";
+@import "../components/PlaceholderPage/PlaceholderPage.css";
 @import "./styles/search.css";
 @import "./styles/controls.css";
 @import "./styles/rankings.css";
@@ -105,6 +106,10 @@ select {
 }
 
 .header--subjectMenu {
+  z-index: 21;
+}
+
+.header:has(.profileButton[aria-expanded="true"]) {
   z-index: 21;
 }
 
@@ -232,6 +237,8 @@ main {
   display: inline-grid;
   width: 2.5em;
   height: 2.5em;
+  min-width: 40px;
+  min-height: 40px;
   flex: 0 0 auto;
   padding: 0.5em;
   place-items: center;
@@ -268,6 +275,8 @@ main {
   display: inline-grid;
   width: 2.5em;
   height: 2.5em;
+  min-width: 40px;
+  min-height: 40px;
   padding: 0.35em;
   place-items: center;
   border: 0;
@@ -297,7 +306,9 @@ main {
 .profileButton img {
   width: 100%;
   height: 100%;
+  border: 2px solid var(--border-accent);
   border-radius: 50%;
+  background: var(--text-muted);
   object-fit: cover;
 }
 

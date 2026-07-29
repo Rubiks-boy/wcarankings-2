@@ -44,25 +44,28 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y mariadb-client
 
-      - name: Resolve current WCA export
+      - name: Configure deployment SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Resolve production WCA export
         id: wca-export
         run: |
-          export_date=$(curl --fail --silent --show-error \
-            https://www.worldcubeassociation.org/api/v0/export/public |
-            jq -r '.export_date // .exportDate')
+          export_value=$(ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
+            'cd /srv/wcarankings && docker compose exec -T db sh -c '"'"'mariadb --batch --skip-column-names --user="$MARIADB_USER" --password="$MARIADB_PASSWORD" "$MARIADB_DATABASE" --execute="SELECT value FROM export_metadata WHERE \`key\` = '"'"'export_date'"'"' LIMIT 1"'"'"'')
+          export_date=${export_value:0:10}
           if [ -z "$export_date" ] || [ "$export_date" = "null" ]; then
-            echo "The WCA export API did not return an export date." >&2
+            echo "Production did not return a WCA export date." >&2
             exit 1
           fi
-          echo "date=${export_date:0:10}" >> "$GITHUB_OUTPUT"
-          sql_url=$(curl --fail --silent --show-error \
-            https://www.worldcubeassociation.org/api/v0/export/public |
-            jq -r '.sql_url // .sqlUrl')
-          if [ -z "$sql_url" ] || [ "$sql_url" = "null" ]; then
-            echo "The WCA export API did not return a SQL URL." >&2
-            exit 1
-          fi
-          echo "sql_url=$sql_url" >> "$GITHUB_OUTPUT"
+          echo "date=$export_date" >> "$GITHUB_OUTPUT"
+          echo "value=$export_value" >> "$GITHUB_OUTPUT"
 
       - name: Restore current WCA SQL export
         id: wca-export-cache
@@ -73,12 +76,13 @@ jobs:
 
       - name: Populate current WCA SQL export cache
         if: steps.wca-export-cache.outputs.cache-hit != 'true'
-        env:
-          WCA_SQL_URL: ${{ steps.wca-export.outputs.sql_url }}
         run: |
           mkdir -p /tmp/wca-export-cache
           destination="/tmp/wca-export-cache/wca-export-${{ steps.wca-export.outputs.date }}.sql.zip"
-          curl --fail --location --silent --show-error "$WCA_SQL_URL" --output "${destination}.part"
+          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
+            "cd /srv/wcarankings && docker compose run --rm -T app sh -c 'cat /var/cache/wcarankings/wca-export-${{ steps.wca-export.outputs.date }}.sql.zip'" \
+            > "${destination}.part"
+          test -s "${destination}.part"
           mv "${destination}.part" "$destination"
 
       - name: Save current WCA SQL export
@@ -87,16 +91,6 @@ jobs:
         with:
           path: /tmp/wca-export-cache
           key: wca-sql-export-${{ steps.wca-export.outputs.date }}
-
-      - name: Configure deployment SSH
-        env:
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: |
-          install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/id_ed25519"
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
 
       - name: Calculate source tree tag
         id: source-tree

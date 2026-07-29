@@ -101,8 +101,10 @@ The deployment workflow does the following:
 
 1. Checks out the merged commit and calculates its Git tree SHA.
 2. Pulls the matching prebuilt application and Flyway images from GitHub Container Registry.
-3. Restores the current dated WCA SQL archive and any matching completed
-   projection artifact from GitHub Actions caches. Projection artifacts are
+3. Reads the production database's published WCA export date, then restores
+   that dated SQL archive and any matching completed projection artifact from
+   GitHub Actions caches. On an archive-cache miss, Actions streams the matching
+   ZIP from production's persistent export cache. Projection artifacts are
    keyed by export date and projection-schema hash.
 4. On a projection-cache miss, imports the WCA archive into ephemeral MariaDB
    and builds and validates the complete generation. Secondary indexes are

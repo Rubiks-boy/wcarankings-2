@@ -57,6 +57,30 @@ try {
     }
   }
 
+  const [deferredIndexes] = await connection.query(
+    `SELECT table_name, index_name, index_sql
+       FROM projection_transfer_indexes
+      ORDER BY table_name, index_name`,
+  );
+  process.stdout.write(`Building ${deferredIndexes.length} deferred projection indexes…\n`);
+  const indexesByTable = new Map();
+  for (const index of deferredIndexes) {
+    const indexes = indexesByTable.get(index.table_name) ?? [];
+    indexes.push(index);
+    indexesByTable.set(index.table_name, indexes);
+  }
+  let builtIndexCount = 0;
+  for (const [table, indexes] of indexesByTable) {
+    const startedAt = performance.now();
+    await connection.query(
+      `ALTER TABLE \`${table}\` ${indexes.map((index) => index.index_sql).join(", ")}`,
+    );
+    builtIndexCount += indexes.length;
+    process.stdout.write(
+      `Built ${indexes.length} indexes on ${table} in ${Math.round(performance.now() - startedAt)}ms (${builtIndexCount}/${deferredIndexes.length}).\n`,
+    );
+  }
+
   const renames = [];
   for (const table of PUBLISHED_PROJECTION_TABLES) {
     const staging = `${table}_staging`;
@@ -65,6 +89,7 @@ try {
   }
   await connection.query(`RENAME TABLE ${renames.join(", ")}`);
   await promoteProjectionTables(connection);
+  await dropManagedObject(connection, "projection_transfer_indexes");
   await dropManagedObject(connection, "projection_transfer_manifest");
   process.stdout.write(`Published transferred projection generation for ${transferDate}.\n`);
 } finally {

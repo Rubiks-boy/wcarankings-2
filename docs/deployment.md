@@ -101,28 +101,32 @@ The deployment workflow does the following:
 
 1. Checks out the merged commit and calculates its Git tree SHA.
 2. Pulls the matching prebuilt application and Flyway images from GitHub Container Registry.
-3. Restores the current dated WCA SQL archive from the GitHub Actions cache,
-   imports it into an ephemeral MariaDB instance, and builds and validates the
-   complete projection generation on the runner.
-4. Dumps the completed projections as transfer tables and retains the compressed
-   SQL plus its export-date manifest as a seven-day workflow artifact.
-5. Uses repository-configured SSH credentials and host verification to establish
+3. Restores the current dated WCA SQL archive and any matching completed
+   projection artifact from GitHub Actions caches. Projection artifacts are
+   keyed by export date and projection-schema hash.
+4. On a projection-cache miss, imports the WCA archive into ephemeral MariaDB
+   and builds and validates the complete generation. Secondary indexes are
+   recorded and removed before the logical dump.
+5. Retains the compressed SQL plus its export-date and deferred-index manifest
+   as both a reusable cache entry and seven-day workflow artifact.
+6. Uses repository-configured SSH credentials and host verification to establish
    non-interactive access to the production host.
-6. Copies `docker-compose.yml` and `ops/Caddyfile` to the deployment directory.
-7. Preserves the current image as `wcarankings-app:previous`, then removes
+7. Copies `docker-compose.yml` and `ops/Caddyfile` to the deployment directory.
+8. Preserves the current image as `wcarankings-app:previous`, then removes
    obsolete application and Flyway image tags while retaining images used by
    running containers and the rollback image.
-8. Streams the new image directly to the server with
+9. Streams the new image directly to the server with
    `docker save | gzip | ssh ... 'gzip -d | docker load'`. There is no container
    registry involved.
-9. Tags the loaded application and Flyway images, then runs `docker compose run --rm flyway migrate`.
-10. Uploads and imports the transfer tables beside the live projections. Production
-    verifies that the manifest date matches its raw WCA export, then publishes the
-    entire projection generation with one atomic table rename.
-11. Starts the new application and proxy only after projection publication and
+10. Tags the loaded application and Flyway images, then runs `docker compose run --rm flyway migrate`.
+11. Uploads and bulk-imports transfer tables without secondary indexes beside
+    the live projections. Production verifies the manifest date, builds each
+    table's deferred indexes in one alter operation, then publishes the entire
+    projection generation with one atomic table rename.
+12. Starts the new application and proxy only after projection publication and
     readiness checks succeed.
-12. Verifies the app locally on the server and through the configured public host.
-13. Rolls back to `wcarankings-app:previous` if deployment health checks or
+13. Verifies the app locally on the server and through the configured public host.
+14. Rolls back to `wcarankings-app:previous` if deployment health checks or
     migrations fail; otherwise removes the previous image after success.
 
 The deployment server needs the Compose file, Caddyfile, and `.env`, but does not

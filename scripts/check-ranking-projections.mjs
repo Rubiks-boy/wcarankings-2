@@ -33,9 +33,6 @@ const RESULT_ENTRY_COLUMNS = [
 ];
 const RESULT_ENTRY_INDEXES = [
   "PRIMARY",
-  "idx_result_entries_single_world",
-  "idx_result_entries_single_continent",
-  "idx_result_entries_single_country",
 ];
 const SUM_OF_RANKS_COLUMNS = [
   "metric_version",

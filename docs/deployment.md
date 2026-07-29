@@ -158,11 +158,13 @@ bulk transfer before index construction, and the 22 deferred indexes took about
 2m 51s in total. Five `result_entries_single` indexes dominated index time at
 125.6s; every other table's indexes together took about 45s.
 
-The cache is therefore the main steady-state optimization. The next transfer
-optimization target is `result_entries_single`: either reduce its exposed access
-paths or benchmark a physical backup/restore format that can preserve built
-indexes without row-by-row logical replay. Do not remove an index without
-matching it to product query paths and measuring endpoint behavior.
+The cache is therefore the main steady-state optimization. The five
+`result_entries_single` secondary indexes had no runtime readers: current result
+browsing uses the separate `result_rankings` grain. They were removed after this
+benchmark, leaving the compatibility table's primary key and eliminating its
+125-second deferred-index phase. The next transfer optimization target is the
+compatibility table's data build and replay cost, or a physical backup/restore
+format that can preserve built indexes without row-by-row logical replay.
 
 ## Ranking performance verification
 

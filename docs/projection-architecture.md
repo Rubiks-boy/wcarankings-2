@@ -436,7 +436,9 @@ The 22 deferred indexes took approximately 171 seconds on the successful
 cache-hit run. The five `result_entries_single` indexes accounted for 125.6
 seconds; Sum of Ranks indexes took 15.6 seconds, person-event single and average
 indexes took 14.4 and 12.3 seconds, and competition indexes took less than three
-seconds. This makes result-entry indexing the clearest next optimization target.
+seconds. No application query used the compatibility result table's five
+secondary indexes; result browsing uses `result_rankings`. The unused indexes
+were subsequently removed, leaving the compatibility table's primary key.
 
 Deployment projection builds use the export date already published on
 production, not the newest export advertised by the WCA API. This keeps raw

@@ -209,6 +209,25 @@ export const Persons: Story = {
   },
 };
 
+export const PersonsInfiniteScroll: Story = {
+  args: {
+    ...sharedArgs,
+    // Keep the real virtualized table and the 10,000-entry paged fetch mock
+    // so scrolling exercises the same incremental loading path as production.
+    mockSubjectRows: false,
+    initialSubject: "people",
+    initialEventId: "333",
+    initialRankingType: "single",
+  },
+  parameters: {
+    docs: {
+      description: {
+        story: "Scroll through this 10,000-person fixture to exercise virtual rendering, page prefetching, and infinite loading.",
+      },
+    },
+  },
+};
+
 export const Results: Story = {
   args: {
     ...sharedArgs,

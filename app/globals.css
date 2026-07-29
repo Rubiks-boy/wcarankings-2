@@ -236,6 +236,8 @@ main {
   display: inline-grid;
   width: 2.5em;
   height: 2.5em;
+  min-width: 40px;
+  min-height: 40px;
   flex: 0 0 auto;
   padding: 0.5em;
   place-items: center;
@@ -272,6 +274,8 @@ main {
   display: inline-grid;
   width: 2.5em;
   height: 2.5em;
+  min-width: 40px;
+  min-height: 40px;
   padding: 0.35em;
   place-items: center;
   border: 0;

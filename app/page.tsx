@@ -201,7 +201,6 @@ export default async function Home({
       initialRegexSearch={initialRegexSearch}
       initialEventId={eventId}
       initialRankingType={rankingType}
-      initialAllEventRankingId={initialAllEventRankingId}
       initialRegionSelection={{ scope, regionId }}
       initialRegions={{ continents, countries }}
       showSubjectSwitch={projectionBrowsingEnabled}

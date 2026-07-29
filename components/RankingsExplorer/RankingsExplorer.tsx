@@ -43,7 +43,6 @@ import {
 import { RankingsControlsRail, RankingsPagerRail } from "../RankingsRail/RankingsRail";
 import {
   ALL_EVENT_RANKING_OPTIONS,
-  isAllEventRankingOption,
 } from "../EventPicker/allEventRankingOptions";
 import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVisibility";
 import { ResultsTable } from "../ResultsTable/ResultsTable";
@@ -446,7 +445,6 @@ export function RankingsExplorer({
   initialSubject = "people",
   initialCompetitionRanking = "best-result",
   initialLatitudeHemisphere = "north",
-  initialAllEventRankingId = null,
   mockSubjectRows = false,
   initialRegions = {
     continents: FALLBACK_CONTINENTS,
@@ -464,7 +462,6 @@ export function RankingsExplorer({
   initialSubject?: ExplorerSubject;
   initialCompetitionRanking?: CompetitionRanking;
   initialLatitudeHemisphere?: "north" | "south";
-  initialAllEventRankingId?: "SOR" | null;
   mockSubjectRows?: boolean;
   initialRegions?: {
     continents: Array<{ id: string; name: string }>;
@@ -473,7 +470,6 @@ export function RankingsExplorer({
 }) {
   const normalizedInitialSearch = initialSearch.trim();
   const [eventId, setEventId] = useState(initialEventId);
-  const [allEventRankingId, setAllEventRankingId] = useState<string | null>(initialAllEventRankingId);
   const [subject, setSubject] = useState<ExplorerSubject>(initialSubject);
   const [competitionRanking, setCompetitionRanking] = useState<CompetitionRanking>(initialCompetitionRanking);
   const [latitudeHemisphere, setLatitudeHemisphere] = useState<"north" | "south">(initialLatitudeHemisphere);
@@ -787,7 +783,6 @@ export function RankingsExplorer({
         url.searchParams.get("result") ?? url.searchParams.get("type");
       const nextRegion = url.searchParams.get("region");
       const search = url.searchParams.get("search") ?? "";
-      const nextAllEventRankingId = nextEventId === "SOR" ? "SOR" : null;
       const resolvedEventId = isRankingEventId(nextEventId) ? nextEventId : "333";
       const resolvedRankingType =
         resolvedEventId === "333mbf"
@@ -797,7 +792,6 @@ export function RankingsExplorer({
           : "single";
       const { scope, regionId } = parseRegionQuery(nextRegion);
       setEventId(resolvedEventId);
-      setAllEventRankingId(nextAllEventRankingId);
       setRankingType(resolvedRankingType);
       setRegionSelection({ scope, regionId });
       setFindQuery(search);
@@ -808,8 +802,7 @@ export function RankingsExplorer({
       setFindOpen(Boolean(search.trim() && !nextRegexSearch));
       updateQueryParams({
         eventId:
-          nextAllEventRankingId ??
-          (resolvedEventId === "333" ? null : resolvedEventId),
+          resolvedEventId === "333" ? null : resolvedEventId,
         result: resolvedRankingType === "single" ? null : resolvedRankingType,
         event: null,
         type: null,
@@ -2395,7 +2388,9 @@ export function RankingsExplorer({
     setStartRank(nextStartRank);
   };
 
-  const changeEvent = (nextEventId: (typeof WCA_EVENTS)[number]["id"]) => {
+  const changeEvent = (
+    nextEventId: (typeof WCA_EVENTS)[number]["id"] | "SOR"
+  ) => {
     const viewportSubRank = getCurrentViewportSubRank(
       listRef.current,
       entriesRef.current,
@@ -2494,24 +2489,14 @@ export function RankingsExplorer({
     [findMatches, findResolvedQuery]
   );
   const activeFindMatch = findMatches[findIndex] ?? null;
-  const currentEvent = allEventRankingId
-    ? ALL_EVENT_RANKING_OPTIONS.find((option) => option.id === allEventRankingId)!
-    : WCA_EVENTS.find((event) => event.id === eventId)!;
+  const currentEvent =
+    ALL_EVENT_RANKING_OPTIONS.find((option) => option.id === eventId) ??
+    WCA_EVENTS.find((event) => event.id === eventId)!;
   const changeRailEvent = (nextEventId: string) => {
-    if (isAllEventRankingOption(nextEventId)) {
-      skipNextFindResetRef.current = true;
-      setAllEventRankingId(nextEventId);
-      setEventId(nextEventId === "SOR" ? "SOR" : "333");
-      setStartRank(1);
-      updateQueryParams({
-        eventId: nextEventId,
-        event: null,
-      });
-      return;
-    }
-    setAllEventRankingId(null);
     updateQueryParams({ personId: null });
-    changeEvent(nextEventId as (typeof WCA_EVENTS)[number]["id"]);
+    changeEvent(
+      nextEventId as (typeof WCA_EVENTS)[number]["id"] | "SOR"
+    );
   };
 
   return (

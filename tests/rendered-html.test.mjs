@@ -57,10 +57,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /result: rankingType/);
   assert.match(component, /eventId: nextEventId === "333" \? null : nextEventId/);
   assert.match(component, /result: nextRankingType === "single" \? null : nextRankingType/);
-  assert.match(
-    component,
-    /if \(isAllEventRankingOption\(nextEventId\)\) \{\s*skipNextFindResetRef\.current = true;/,
-  );
+  assert.doesNotMatch(component, /allEventRankingId|initialAllEventRankingId/);
   assert.match(component, /parseRegionQuery/);
   assert.doesNotMatch(component, /searchParams\.get\("scope"\)/);
   assert.match(component, /region: option\.scope === "world" \? null : option\.regionId/);
@@ -261,7 +258,9 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(pwaRegistration, /SKIP_WAITING/);
   assert.match(pwaRegistration, /PwaUpdatePrompt/);
   assert.match(pwaUpdatePrompt, /Update available/);
-  assert.doesNotMatch(pwaRegistration, /unregister\(\)/);
+  assert.match(pwaRegistration, /process\.env\.NODE_ENV !== "production"/);
+  assert.match(pwaRegistration, /getRegistrations\(\)/);
+  assert.match(pwaRegistration, /registration\.unregister\(\)/);
   assert.match(serviceWorker, /CACHE_NAME/);
   assert.match(serviceWorker, /cache\.match/);
   assert.match(serviceWorker, /event\.data\?\.type === "SKIP_WAITING"/);

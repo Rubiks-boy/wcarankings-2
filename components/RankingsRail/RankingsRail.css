@@ -136,6 +136,8 @@
 .Jump-pagerActions, .Jump-searchNavigationContent { display: flex; width: min(20em, calc(100vw - 2em)); min-width: 0; }
 .Jump-pagerActions { grid-area: 1 / 1; opacity: 1; transition: opacity 150ms var(--cubic-move); }
 .Jump-pagerButton, .Jump-searchNavigationButton { flex: 1; }
+.Jump-pagerButton svg { flex: 0 0 auto; }
+.Jump-pagerButton--me { text-align: center; }
 .Jump-pagerButton + .Jump-pagerButton, .Jump-searchNavigationButton + .Jump-searchNavigationButton { border-left: 1px solid var(--border-subtle); }
 .Jump-pagerButton:hover, .Jump-pagerButton:focus-visible, .Jump-searchNavigationButton:hover, .Jump-searchNavigationButton:focus-visible { color: var(--focus); outline: none; }
 .Jump-searchNavigation { z-index: 1; grid-area: 1 / 1; overflow: hidden; opacity: 0; pointer-events: none; transition: opacity 150ms var(--cubic-move); }

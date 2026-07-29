@@ -9,6 +9,7 @@ export function RankingRow({
   searchMatched = false,
   highlighted = false,
   rankIsDuplicate = false,
+  hideIdentityId = false,
   rowIndex,
   onNavigate,
 }: {
@@ -19,6 +20,7 @@ export function RankingRow({
   searchMatched?: boolean;
   highlighted?: boolean;
   rankIsDuplicate?: boolean;
+  hideIdentityId?: boolean;
   rowIndex?: number;
   onNavigate?: (rowIndex: number, direction: -1 | 1) => void;
 }) {
@@ -32,6 +34,8 @@ export function RankingRow({
   const countryName = entry.countryName || "Country unavailable";
   const countryFlag = flagEmoji(entry.countryIso2);
   const recordBadge = entry.recordBadges[0];
+  const formattedResult = entry.formattedValue ??
+    formatWcaResult(eventId, entry.best, rankingType);
 
   return (
     <li
@@ -40,7 +44,7 @@ export function RankingRow({
       data-row-index={rowIndex}
       style={style}
       tabIndex={0}
-      aria-label={`Rank ${formatRankingNumber(rank)}: ${name}, ${formatWcaResult(eventId, entry.best, rankingType)}`}
+      aria-label={`Rank ${formatRankingNumber(rank)}: ${name}, ${formattedResult}`}
       onKeyDown={(keyboardEvent) => {
         if (keyboardEvent.altKey || keyboardEvent.ctrlKey || keyboardEvent.metaKey)
           return;
@@ -73,7 +77,10 @@ export function RankingRow({
           </span>
           <span className="personName">
             <span className="name">{name}</span>
-            <span className="wcaId">{id}</span>
+            {entry.identitySubtitle && (
+              <span className="wcaId">{entry.identitySubtitle}</span>
+            )}
+            {!hideIdentityId && <span className="wcaId">{id}</span>}
           </span>
         </span>
         <span className="result">
@@ -95,7 +102,7 @@ export function RankingRow({
               )}
             </span>
             <span className="best">
-              {formatWcaResult(eventId, entry.best, rankingType)}
+              {formattedResult}
             </span>
           </span>
           {entry.competitionName && (

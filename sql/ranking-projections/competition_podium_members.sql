@@ -1,20 +1,42 @@
 CREATE TABLE competition_podium_members AS
 SELECT
-  competition_id, event_id, 'single' AS result_type,
-  position AS podium_position, person_id, result_id, best AS result_value
-FROM result_facts
-WHERE is_final_round = 1 AND position IN (1, 2, 3) AND best > 0
+  result.competition_id,
+  result.event_id,
+  'single' AS result_type,
+  result.pos AS podium_position,
+  result.person_id,
+  result.id AS result_id,
+  result.best AS result_value
+FROM results result
+INNER JOIN round_types round_type
+  ON round_type.id = result.round_type_id
+  AND round_type.final = 1
+WHERE result.event_id IN ('333bf', '444bf', '555bf')
+  AND result.pos BETWEEN 1 AND 3
+  AND result.best > 0
+
 UNION ALL
+
 SELECT
-  competition_id, event_id, 'average',
-  position, person_id, result_id, average
-FROM result_facts
-WHERE is_final_round = 1
-  AND event_id <> '333mbf'
-  AND position IN (1, 2, 3)
-  AND average > 0;
+  result.competition_id,
+  result.event_id,
+  'average',
+  result.pos,
+  result.person_id,
+  result.id,
+  result.average
+FROM results result
+INNER JOIN round_types round_type
+  ON round_type.id = result.round_type_id
+  AND round_type.final = 1
+WHERE result.event_id NOT IN ('333bf', '444bf', '555bf', '333mbf')
+  AND result.pos BETWEEN 1 AND 3
+  AND result.average > 0;
 
 ALTER TABLE competition_podium_members
-  ADD PRIMARY KEY (competition_id, event_id, result_type, podium_position, result_id),
-  ADD INDEX idx_competition_podium_members_person
-    (person_id, event_id, result_type, competition_id);
+  ADD PRIMARY KEY (
+    competition_id, event_id, result_type, podium_position, result_id
+  ),
+  ADD INDEX idx_competition_podium_members_person (
+    person_id, event_id, result_type, competition_id
+  );

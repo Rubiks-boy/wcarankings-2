@@ -1,6 +1,6 @@
 import type { ExplorerSubject } from "../ExplorerSubjectSwitch/ExplorerSubjectSwitch";
 
-type CompetitionRanking = "best-result" | "podiums" | "latitude";
+type CompetitionRanking = "best-result" | "podiums" | "competitor-count" | "latitude";
 
 type MockRow = {
   rank: number;
@@ -45,6 +45,12 @@ const PODIUMS: MockRow[] = [
   { rank: 10, title: "Beijing Spring Open 2026", detail: "Yiheng Wang · Xuanyi Geng · Yufang Du", value: "13.75", valueDetail: "4.37, 4.44, 4.94", flag: "🇨🇳" },
 ];
 
+const COMPETITOR_COUNTS: MockRow[] = [
+  { rank: 1, title: "Rubik's WCA World Championship 2025", detail: "Seattle, United States", value: "1,864", flag: "🇺🇸" },
+  { rank: 2, title: "Rubik's WCA World Championship 2023", detail: "Incheon, South Korea", value: "1,187", flag: "🇰🇷" },
+  { rank: 3, title: "Rubik's WCA European Championship 2026", detail: "Gliwice, Poland", value: "1,157", flag: "🇵🇱" },
+];
+
 const LATITUDE_NORTH: MockRow[] = [
   { rank: 1, title: "Tromsø Open 2024", detail: "Tromsø, Norway", value: "69.65° N", flag: "🇳🇴" },
   { rank: 2, title: "Reykjavík Open 2025", detail: "Reykjavík, Iceland", value: "64.15° N", flag: "🇮🇸" },
@@ -64,6 +70,7 @@ function rowsFor({
   if (subject === "people") return PERSONS;
   if (subject === "results") return RESULTS;
   if (competitionRanking === "podiums") return PODIUMS;
+  if (competitionRanking === "competitor-count") return COMPETITOR_COUNTS;
   if (competitionRanking === "latitude") {
     return latitudeHemisphere === "north" ? LATITUDE_NORTH : [...LATITUDE_NORTH].reverse();
   }

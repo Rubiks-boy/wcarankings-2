@@ -1,7 +1,7 @@
 import mysql from "mysql2/promise";
 import {
-  promoteRegisteredProjections,
   buildRegisteredProjections,
+  promoteRegisteredProjections,
 } from "./mysql-schema.mjs";
 
 function databaseOptions(connectionString = process.env.DATABASE_URL) {
@@ -16,7 +16,9 @@ function databaseOptions(connectionString = process.env.DATABASE_URL) {
   };
 }
 
+const projectionNames = ["competition-event-stats"];
 const connection = await mysql.createConnection(databaseOptions());
+
 try {
   const force = process.argv.includes("--force");
   const [existing] = await connection.query(
@@ -24,29 +26,24 @@ try {
      FROM information_schema.tables
      WHERE table_schema = DATABASE()
        AND table_name IN (
-         'person_sum_of_ranks_scores',
-         'person_sum_of_ranks_event_values'
+         'competition_podium_members',
+         'competition_event_stats'
        )`,
   );
-  const existingNames = new Set(existing.map(({ table_name }) => table_name));
-  if (
-    existingNames.has("person_sum_of_ranks_scores") &&
-    !existingNames.has("person_sum_of_ranks_event_values") &&
-    !force
-  ) {
-    process.stdout.write("Sum of Ranks projection is already present. Nothing to do.\n");
-    process.exitCode = 0;
+  if (existing.length === 2 && !force) {
+    process.stdout.write(
+      "Competition event stats projection is already present. Nothing to do.\n",
+    );
   } else {
-  const projectionNames = ["sum-of-ranks"];
-  const timings = await buildRegisteredProjections(connection, {
-    projectionSuffix: "_staging",
-    projectionNames,
-  });
-  await promoteRegisteredProjections(connection, {
-    projectionSuffix: "_staging",
-    projectionNames,
-  });
-  process.stdout.write(`${JSON.stringify({ projections: timings })}\n`);
+    const timings = await buildRegisteredProjections(connection, {
+      projectionSuffix: "_staging",
+      projectionNames,
+    });
+    await promoteRegisteredProjections(connection, {
+      projectionSuffix: "_staging",
+      projectionNames,
+    });
+    process.stdout.write(`${JSON.stringify({ projections: timings })}\n`);
   }
 } finally {
   await connection.end();

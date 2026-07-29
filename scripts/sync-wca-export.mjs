@@ -6,6 +6,7 @@ import { pipeline } from "node:stream/promises";
 import mysql from "mysql2/promise";
 import * as unzipper from "unzipper";
 import { dropManagedObject, promoteProjectionTables, refreshMysqlSchema } from "./mysql-schema.mjs";
+import { refreshSystemLists } from "./refresh-system-lists.mjs";
 
 const EXPORT_API = "https://www.worldcubeassociation.org/api/v0/export/public";
 const force = process.argv.includes("--force");
@@ -337,6 +338,12 @@ async function main() {
       projection_swap_status: "swapping",
     });
     await promoteRankings();
+    const systemListConnection = await mysql.createConnection(databaseOptions());
+    try {
+      await refreshSystemLists(systemListConnection);
+    } finally {
+      await systemListConnection.end();
+    }
     const completedAt = now();
     await writeExportMetadata(latest);
     await updateImportRun(runId, {

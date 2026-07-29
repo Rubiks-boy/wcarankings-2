@@ -2113,6 +2113,10 @@ export function RankingsExplorer({
       if (!animate) {
         preserveListDuringLoadRef.current = true;
         setPreserveListDuringLoad(true);
+        if (nextStart === startRankRef.current) {
+          forcePageLoadRef.current = true;
+          setPageReloadNonce((nonce) => nonce + 1);
+        }
         setStartRank(nextStart);
         return;
       }

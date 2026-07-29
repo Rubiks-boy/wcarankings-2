@@ -210,6 +210,7 @@ test("uses the copied WCA Rankings visual language", async () => {
   ]);
   const css = `${globalCss}\n${controlsCss}\n${rankingsCss}\n${searchCss}\n${vimCss}\n${jumpCss}`;
 
+  assert.match(rankingsCss, /\.rank\s*\{[^}]*flex:\s*0 0 7ch;[^}]*width:\s*7ch;/s);
   assert.match(page, /<RankingsExplorer/);
   assert.match(page, /initialData=\{initialRankings\}/);
   assert.match(page, /initialEventId=\{eventId\}/);

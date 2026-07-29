@@ -6,7 +6,6 @@ import { RankingsExplorer } from "./RankingsExplorer";
 import type { RankingEntry } from "./types";
 
 const MOCK_RANKING_SIZE = 10_000;
-const MOCK_FETCHED_AT = "2026-07-27T00:00:00.000Z";
 const firstNames = [
   "Avery",
   "Casey",
@@ -177,7 +176,7 @@ const initialData = {
 };
 
 const meta = {
-  title: "Rankings/RankingsExplorer",
+  title: "Pages/RankingsExplorer",
   component: RankingsExplorer,
   parameters: {
     nextjs: {
@@ -192,24 +191,83 @@ type Story = StoryObj<typeof meta>;
 
 const sharedArgs = {
   initialData,
+  showAllEventRankingOptions: true,
+  showSubjectSwitch: true,
+  mockSubjectRows: true,
   initialRegions: {
     continents: FALLBACK_CONTINENTS,
     countries: FALLBACK_COUNTRIES,
   },
 };
 
-export const WorldSingle: Story = {
+export const Persons: Story = {
   args: {
     ...sharedArgs,
+    initialSubject: "people",
     initialEventId: "333",
     initialRankingType: "single",
   },
 };
 
-export const WorldAverage: Story = {
+export const PersonsInfiniteScroll: Story = {
   args: {
     ...sharedArgs,
+    // Keep the real virtualized table and the 10,000-entry paged fetch mock
+    // so scrolling exercises the same incremental loading path as production.
+    mockSubjectRows: false,
+    initialSubject: "people",
     initialEventId: "333",
-    initialRankingType: "average",
+    initialRankingType: "single",
   },
+  parameters: {
+    docs: {
+      description: {
+        story: "Scroll through this 10,000-person fixture to exercise virtual rendering, page prefetching, and infinite loading.",
+      },
+    },
+  },
+};
+
+export const Results: Story = {
+  args: {
+    ...sharedArgs,
+    initialSubject: "results",
+    initialEventId: "333",
+    initialRankingType: "single",
+  },
+};
+
+export const CompetitionBestResults: Story = {
+  args: {
+    ...sharedArgs,
+    initialSubject: "competitions",
+    initialCompetitionRanking: "best-result",
+    initialEventId: "333",
+    initialRankingType: "single",
+  },
+};
+
+export const CompetitionPodiums: Story = {
+  args: {
+    ...sharedArgs,
+    initialSubject: "competitions",
+    initialCompetitionRanking: "podiums",
+    initialEventId: "333",
+    initialRankingType: "single",
+  },
+};
+
+export const CompetitionLatitude: Story = {
+  args: {
+    ...sharedArgs,
+    initialSubject: "competitions",
+    initialCompetitionRanking: "latitude",
+    initialLatitudeHemisphere: "north",
+    initialEventId: "333",
+    initialRankingType: "single",
+  },
+};
+
+export const SearchOpen: Story = {
+  render: () => <RankingsExplorer {...sharedArgs} initialEventId="333" initialRankingType="single" initialSearch="Avery" />,
 };

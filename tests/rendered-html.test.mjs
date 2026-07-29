@@ -13,12 +13,13 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
       "../components/RankingsExplorer/types.ts",
       "../components/RankingControls/RankingControls.tsx",
       "../components/RegionPicker/RegionPicker.tsx",
+      "../components/Dropdown/Dropdown.tsx",
       "../components/RankingRow/RankingRow.tsx",
       "../components/ResultsTable/ResultsTable.tsx",
       "../components/SearchInputs/SearchInputs.tsx",
       "../components/VimSearchInput/VimSearchInput.tsx",
       "../components/VimHelp/VimHelp.tsx",
-      "../components/JumpControls/JumpControls.tsx",
+      "../components/RankingsRail/RankingsRail.tsx",
       "../components/Icon/arrow-up.svg",
       "../components/Icon/arrow-down.svg",
       "../components/Icon/search.svg",
@@ -68,7 +69,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /className="selectInput(?: eventInput)?"/);
   assert.match(component, /findBar/);
   assert.match(component, /Search names or WCA IDs/);
-  assert.match(component, /openFind/);
+  assert.match(component, /activateFind/);
   assert.match(component, /RegionPicker/);
   assert.match(component, /className="regionPickerTrigger"/);
   assert.match(component, /initialRegions/);
@@ -82,7 +83,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /Jump to end/);
   assert.match(component, /className="siteFooter"/);
   assert.match(component, /WCA export date unavailable/);
-  assert.match(component, /closeOnOutsideClick/);
+  assert.match(component, /closeOnOutsidePress/);
   assert.match(component, /document\.addEventListener\("pointerdown"/);
   assert.match(component, /loadPrevious/);
   assert.match(component, /window\.scrollBy/);
@@ -197,7 +198,7 @@ test("uses the copied WCA Rankings visual language", async () => {
     readFile(new URL("../app/styles/rankings.css", import.meta.url), "utf8"),
     readFile(new URL("../app/styles/search.css", import.meta.url), "utf8"),
     readFile(new URL("../app/styles/vim.css", import.meta.url), "utf8"),
-    readFile(new URL("../components/JumpControls/JumpControls.css", import.meta.url), "utf8"),
+    readFile(new URL("../components/RankingsRail/RankingsRail.css", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/manifest.ts", import.meta.url), "utf8"),

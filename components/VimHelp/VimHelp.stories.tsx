@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { VimHelp } from "./VimHelp";
 
 const meta = {
-  title: "Rankings/VimHelp",
+  title: "Core UI/Molecules/VimHelp",
   component: VimHelp,
   parameters: { layout: "fullscreen" },
   args: { onClose: () => undefined },

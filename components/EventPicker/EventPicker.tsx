@@ -3,20 +3,38 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { WCA_EVENTS } from "@/lib/wca";
 
-export function EventPicker({
+type WcaEvent = (typeof WCA_EVENTS)[number];
+
+export type EventPickerOption = WcaEvent | {
+  id: string;
+  name: string;
+  shortName: string;
+  symbol: string;
+};
+
+function isWcaEvent(option: EventPickerOption): option is WcaEvent {
+  return WCA_EVENTS.some((candidate) => candidate.id === option.id);
+}
+
+export function EventPicker<T extends EventPickerOption>({
   event,
+  options = WCA_EVENTS as unknown as readonly T[],
+  additionalOptions = [],
   onChange,
   onTriggerReady,
 }: {
-  event: (typeof WCA_EVENTS)[number];
-  onChange: (eventId: (typeof WCA_EVENTS)[number]["id"]) => void;
+  event: T;
+  options?: readonly T[];
+  additionalOptions?: readonly T[];
+  onChange: (eventId: T["id"]) => void;
   onTriggerReady?: (trigger: HTMLButtonElement | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const selectedIndex = WCA_EVENTS.findIndex((option) => option.id === event.id);
+  const allOptions = [...options, ...additionalOptions];
+  const selectedIndex = allOptions.findIndex((option) => option.id === event.id);
 
   useEffect(() => {
     if (!open) return;
@@ -66,14 +84,14 @@ export function EventPicker({
     if (
       keyboardEvent.key === "ArrowRight" &&
       currentIndex % columnCount < columnCount - 1 &&
-      currentIndex + 1 < WCA_EVENTS.length
+      currentIndex + 1 < allOptions.length
     ) {
       nextIndex = currentIndex + 1;
     } else if (keyboardEvent.key === "ArrowLeft" && currentIndex % columnCount > 0) {
       nextIndex = currentIndex - 1;
     } else if (
       keyboardEvent.key === "ArrowDown" &&
-      currentIndex + columnCount < WCA_EVENTS.length
+      currentIndex + columnCount < allOptions.length
     ) {
       nextIndex = currentIndex + columnCount;
     } else if (keyboardEvent.key === "ArrowUp" && currentIndex >= columnCount) {
@@ -81,7 +99,7 @@ export function EventPicker({
     } else if (keyboardEvent.key === "Home") {
       nextIndex = 0;
     } else if (keyboardEvent.key === "End") {
-      nextIndex = WCA_EVENTS.length - 1;
+      nextIndex = allOptions.length - 1;
     } else if (keyboardEvent.key === "Escape") {
       keyboardEvent.preventDefault();
       close();
@@ -97,6 +115,29 @@ export function EventPicker({
     }
   };
 
+  const renderOption = (option: T, index: number) => (
+    <button
+      ref={(element) => {
+        optionRefs.current[index] = element;
+      }}
+      key={option.id}
+      className={`EventPicker-option${isWcaEvent(option) ? ` cubing-icon event-${option.id}` : " EventPicker-option--named"}`}
+      data-selected={option.id === event.id}
+      type="button"
+      role="option"
+      tabIndex={open && option.id === event.id ? 0 : -1}
+      aria-label={option.name}
+      aria-selected={option.id === event.id}
+      title={option.name}
+      onClick={() => {
+        onChange(option.id);
+        close();
+      }}
+    >
+      {!isWcaEvent(option) && <><span className="EventPicker-optionSymbol" aria-hidden="true">{option.symbol}</span><span>{option.name}</span></>}
+    </button>
+  );
+
   return (
     <>
       <button
@@ -104,7 +145,7 @@ export function EventPicker({
           triggerRef.current = trigger;
           onTriggerReady?.(trigger);
         }}
-        className={`EventPicker-preview cubing-icon event-${event.id}`}
+        className={`EventPicker-preview${isWcaEvent(event) ? ` cubing-icon event-${event.id}` : " EventPicker-preview--named"}`}
         aria-label={event.name}
         title={event.name}
         aria-haspopup="listbox"
@@ -118,6 +159,7 @@ export function EventPicker({
           }
         }}
       >
+        {!isWcaEvent(event) && <span className="EventPicker-symbol" aria-hidden="true">{event.symbol}</span>}
         <span className="EventPicker-name">{event.name}</span>
       </button>
       <div
@@ -129,26 +171,12 @@ export function EventPicker({
         aria-hidden={!open}
         onKeyDown={handleMenuKeyDown}
       >
-        {WCA_EVENTS.map((option, index) => (
-          <button
-            ref={(element) => {
-              optionRefs.current[index] = element;
-            }}
-            key={option.id}
-            className={`EventPicker-option cubing-icon event-${option.id}`}
-            data-selected={option.id === event.id}
-            type="button"
-            role="option"
-            tabIndex={open && option.id === event.id ? 0 : -1}
-            aria-label={option.name}
-            aria-selected={option.id === event.id}
-            title={option.name}
-            onClick={() => {
-              onChange(option.id);
-              close();
-            }}
-          />
-        ))}
+        <div className="EventPicker-eventOptions">{options.map(renderOption)}</div>
+        {additionalOptions.length > 0 && (
+          <div className="EventPicker-additionalOptions">
+            {additionalOptions.map((option, index) => renderOption(option, options.length + index))}
+          </div>
+        )}
       </div>
     </>
   );

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime.js";
+import { EXPLORER_SUBJECTS } from "../ExplorerSubjectSwitch/ExplorerSubjectSwitch";
 import {
   centeredRowScrollTop,
   competitionRankingPath,
@@ -70,6 +71,13 @@ test("gives each non-default subject and competition ranking a page", () => {
   assert.equal(competitionRankingPath("podiums"), "/competitions/podiums");
   assert.equal(competitionRankingPath("competitor-count"), "/competitions/competitor-count");
   assert.equal(competitionRankingPath("latitude"), "/competitions/latitude");
+});
+
+test("launches competition browsing without exposing inactive result rankings", () => {
+  assert.deepEqual(
+    EXPLORER_SUBJECTS.map(({ id }) => id),
+    ["people", "competitions"],
+  );
 });
 
 test("renders the rankings shell with extracted components", () => {

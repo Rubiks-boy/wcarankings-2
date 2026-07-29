@@ -4,7 +4,7 @@ import test from "node:test";
 
 const root = new URL("../", import.meta.url);
 
-test("builds an indexed, result-level single projection for cursor paging", async () => {
+test("builds a result-level compatibility projection without unused secondary indexes", async () => {
   const [source, indexes, counts, schema, importer, preflight, backfill, deploy, fixture] = await Promise.all([
     readFile(new URL("sql/ranking-projections/result_entries_single_source.sql", root), "utf8"),
     readFile(new URL("sql/ranking-projections/result_entries_single_indexes.sql", root), "utf8"),
@@ -29,9 +29,7 @@ test("builds an indexed, result-level single projection for cursor paging", asyn
   assert.match(source, /PARTITION BY r\.event_id, COALESCE\(c\.continent_id, ''\)/);
   assert.match(source, /PARTITION BY r\.event_id, COALESCE\(p\.country_id, ''\)/);
   assert.match(indexes, /PRIMARY KEY \(result_id\)/);
-  assert.match(indexes, /idx_result_entries_single_world \(event_id, world_sub_rank, result_id\)/);
-  assert.match(indexes, /idx_result_entries_single_continent \(event_id, continent_id, continent_sub_rank, result_id\)/);
-  assert.match(indexes, /idx_result_entries_single_country \(event_id, country_id, country_sub_rank, result_id\)/);
+  assert.doesNotMatch(indexes, /ADD INDEX/);
   assert.match(counts, /FROM result_entries_single/);
   assert.match(counts, /PRIMARY KEY \(event_id, scope, region_id\)/);
   assert.match(schema, /result_entries_single_source/);
@@ -42,7 +40,7 @@ test("builds an indexed, result-level single projection for cursor paging", asyn
   assert.match(importer, /result_counts_staging/);
   assert.match(importer, /published_result_count/);
   assert.match(preflight, /result_entries_single/);
-  assert.match(preflight, /idx_result_entries_single_world/);
+  assert.doesNotMatch(preflight, /idx_result_entries_single_world/);
   assert.match(backfill, /refreshMysqlSchema/);
   assert.match(backfill, /promoteProjectionTables/);
   assert.match(deploy, /backfill-result-entries\.mjs/);

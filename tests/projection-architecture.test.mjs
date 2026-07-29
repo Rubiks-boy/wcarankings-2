@@ -211,8 +211,8 @@ test("person search resolves IDs before querying projections", async () => {
   assert.match(rankings, /person_id IN/);
   assert.doesNotMatch(rankings, /person_name \$\{operator\}/);
   assert.match(results, /person_id, competition_start_date DESC, result_id DESC/);
-  assert.match(compatibilityResults, /person_id, competition_date DESC, result_id DESC/);
-  assert.match(compatibilityResults, /person_id, event_id, world_sub_rank, result_id/);
+  assert.match(compatibilityResults, /PRIMARY KEY \(result_id\)/);
+  assert.doesNotMatch(compatibilityResults, /ADD INDEX/);
 });
 
 test("builds Sum of Ranks as one published score projection", async () => {

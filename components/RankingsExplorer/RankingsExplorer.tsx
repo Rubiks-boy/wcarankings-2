@@ -29,7 +29,7 @@ import {
 import {
   FALLBACK_CONTINENTS,
   FALLBACK_COUNTRIES,
-  isEventId,
+  isRankingEventId,
   isRankingType,
   parseRegionQuery,
   WCA_EVENTS,
@@ -47,7 +47,6 @@ import {
 import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVisibility";
 import { ResultsTable } from "../ResultsTable/ResultsTable";
 import { SubjectMockRows } from "./SubjectMockRows";
-import { SumOfRanksTable } from "../SumOfRanksTable/SumOfRanksTable";
 import { ThemeToggle } from "../ThemeToggle/ThemeToggle";
 import { VimHelp } from "../VimHelp/VimHelp";
 import { VimSearchInput } from "../VimSearchInput/VimSearchInput";
@@ -447,7 +446,6 @@ export function RankingsExplorer({
   initialCompetitionRanking = "best-result",
   initialLatitudeHemisphere = "north",
   initialAllEventRankingId = null,
-  initialMetricPersonId = "",
   mockSubjectRows = false,
   initialRegions = {
     continents: FALLBACK_CONTINENTS,
@@ -457,7 +455,7 @@ export function RankingsExplorer({
   initialData?: InitialRankingData;
   initialSearch?: string;
   initialRegexSearch?: boolean;
-  initialEventId?: (typeof WCA_EVENTS)[number]["id"];
+  initialEventId?: (typeof WCA_EVENTS)[number]["id"] | "SOR";
   initialRankingType?: "single" | "average";
   initialRegionSelection?: RegionSelection;
   showAllEventRankingOptions?: boolean;
@@ -466,7 +464,6 @@ export function RankingsExplorer({
   initialCompetitionRanking?: CompetitionRanking;
   initialLatitudeHemisphere?: "north" | "south";
   initialAllEventRankingId?: "SOR" | null;
-  initialMetricPersonId?: string;
   mockSubjectRows?: boolean;
   initialRegions?: {
     continents: Array<{ id: string; name: string }>;
@@ -790,10 +787,7 @@ export function RankingsExplorer({
       const nextRegion = url.searchParams.get("region");
       const search = url.searchParams.get("search") ?? "";
       const nextAllEventRankingId = nextEventId === "SOR" ? "SOR" : null;
-      const resolvedEventId =
-        nextAllEventRankingId === null && isEventId(nextEventId)
-          ? nextEventId
-          : "333";
+      const resolvedEventId = isRankingEventId(nextEventId) ? nextEventId : "333";
       const resolvedRankingType =
         resolvedEventId === "333mbf"
           ? "single"
@@ -2490,6 +2484,8 @@ export function RankingsExplorer({
   const changeRailEvent = (nextEventId: string) => {
     if (isAllEventRankingOption(nextEventId)) {
       setAllEventRankingId(nextEventId);
+      setEventId(nextEventId === "SOR" ? "SOR" : "333");
+      setStartRank(1);
       updateQueryParams({
         eventId: nextEventId,
         event: null,
@@ -2557,7 +2553,7 @@ export function RankingsExplorer({
           compactResultType={topRailProgress >= 1}
           showResultType={!(subject === "competitions" && (competitionRanking === "podiums" || competitionRanking === "latitude"))}
           showEventPicker={!(subject === "competitions" && competitionRanking === "latitude")}
-          showSearch={allEventRankingId !== "SOR"}
+          showSearch
           hemisphere={subject === "competitions" && competitionRanking === "latitude" ? latitudeHemisphere : undefined}
           onHemisphereChange={setLatitudeHemisphere}
           searchInputRef={setRailFindInputRef}
@@ -2581,13 +2577,7 @@ export function RankingsExplorer({
             {loadingPrevious && (
               <div className="listMessage">Loading earlier rankings…</div>
             )}
-            {allEventRankingId === "SOR" ? (
-              <SumOfRanksTable
-                resultType={rankingType}
-                regionSelection={regionSelection}
-                initialPersonId={initialMetricPersonId}
-              />
-            ) : error ? (
+            {error ? (
               <div className="listMessage">{error}</div>
             ) : mockSubjectRows ? (
               <SubjectMockRows
@@ -2618,7 +2608,7 @@ export function RankingsExplorer({
           </div>
         </div>
 
-        {allEventRankingId !== "SOR" && <JumpControlsVisibility
+        <JumpControlsVisibility
           progress={jumpUpArmed || jumpDownArmed ? 1 : bottomRailProgress}
         >
           <RankingsPagerRail
@@ -2632,7 +2622,7 @@ export function RankingsExplorer({
             onSearchPrevious={() => cycleFind(-1)}
             onSearchNext={() => cycleFind(1)}
           />
-        </JumpControlsVisibility>}
+        </JumpControlsVisibility>
       </main>
       {(vimMode || vimSearchActive) && (
         <VimSearchInput

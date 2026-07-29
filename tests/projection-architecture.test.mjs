@@ -93,12 +93,12 @@ test("does not introduce entries or sub-rank vocabulary in new schemas", async (
   }
 });
 
-test("exposes bounded resource APIs without semantic ordering fields", async () => {
-  const [shared, people, results, metrics, entities, search] = await Promise.all([
+test("exposes bounded resource APIs without projection name scans", async () => {
+  const [shared, people, results, rankings, entities, search] = await Promise.all([
     readFile(new URL("lib/projection-api.ts", root), "utf8"),
     readFile(new URL("lib/semantic-person-rankings.ts", root), "utf8"),
     readFile(new URL("lib/semantic-result-rankings.ts", root), "utf8"),
-    readFile(new URL("lib/semantic-metric-rankings.ts", root), "utf8"),
+    readFile(new URL("lib/rankings.ts", root), "utf8"),
     readFile(new URL("lib/semantic-entity-rankings.ts", root), "utf8"),
     readFile(new URL("lib/person-search.ts", root), "utf8"),
   ]);
@@ -109,16 +109,14 @@ test("exposes bounded resource APIs without semantic ordering fields", async () 
   assert.match(people, /FROM person_event_rankings ranking/);
   assert.match(results, /FROM result_rankings ranking/);
   assert.match(results, /afterCompetitionId/);
-  assert.match(metrics, /FROM person_sum_of_ranks_scores/);
-  assert.match(metrics, /INNER JOIN person_sum_of_ranks_event_values value/);
-  assert.match(metrics, /eventId !== "SOR"/);
-  assert.match(metrics, /reason: "incomplete_coverage"/);
-  assert.match(metrics, /previous:/);
+  assert.match(rankings, /FROM person_sum_of_ranks_scores score/);
+  assert.match(rankings, /input\.eventId === "SOR"/);
+  assert.match(rankings, /score\.position AS sub_rank/);
   assert.match(entities, /FROM competition_event_stats stats/);
   assert.match(entities, /FROM city_event_stats stats/);
   assert.match(search, /FROM persons person/);
 
-  for (const source of [people, results, metrics, entities]) {
+  for (const source of [people, results, rankings, entities]) {
     assert.doesNotMatch(source, /FROM results\b/);
     assert.doesNotMatch(source, /person_name LIKE/);
   }
@@ -127,7 +125,7 @@ test("exposes bounded resource APIs without semantic ordering fields", async () 
 test("only exposes APIs backed by active projections", async () => {
   const activeRoutes = [
     "app/api/people/search/route.ts",
-    "app/api/rankings/metrics/route.ts",
+    "app/api/rankings/route.ts",
   ];
   const inactiveRoutes = [
     "app/api/rankings/people/route.ts",
@@ -135,6 +133,7 @@ test("only exposes APIs backed by active projections", async () => {
     "app/api/rankings/competitions/route.ts",
     "app/api/rankings/podiums/route.ts",
     "app/api/rankings/cities/route.ts",
+    "app/api/rankings/metrics/route.ts",
   ];
   for (const route of activeRoutes) {
     await readFile(new URL(route, root), "utf8");

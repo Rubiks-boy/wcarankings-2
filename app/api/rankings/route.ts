@@ -1,6 +1,6 @@
 import { DatabaseOverloadedError } from "@/db";
 import { loadRankingsWithDiagnostics } from "@/lib/rankings";
-import { isEventId, isRankingType, parseRegionQuery } from "@/lib/wca";
+import { isRankingEventId, isRankingType, parseRegionQuery } from "@/lib/wca";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const searchParams = new URL(request.url).searchParams;
   const rawEventId = searchParams.get("eventId") ?? searchParams.get("event");
   const rawType = searchParams.get("result") ?? searchParams.get("type");
-  const eventId = isEventId(rawEventId) ? rawEventId : "333";
+  const eventId = isRankingEventId(rawEventId) ? rawEventId : "333";
   const type = eventId === "333mbf" ? "single" : isRankingType(rawType) ? rawType : "single";
   const { scope } = parseRegionQuery(searchParams.get("region"));
 

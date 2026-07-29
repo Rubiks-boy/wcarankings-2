@@ -5,7 +5,7 @@ import type {
   RankingPage,
 } from "@/components/RankingsExplorer/types";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
-import { isEventId, isRankingType, isValidRegexPattern, parseRegionQuery } from "@/lib/wca";
+import { isRankingEventId, isRankingType, isValidRegexPattern, parseRegionQuery } from "@/lib/wca";
 import { getRegions } from "@/lib/regions";
 import { loadRankings } from "@/lib/rankings";
 import { projectionBrowsingEnabled } from "@/lib/feature-flags";
@@ -90,7 +90,7 @@ async function getInitialRankings(
 ) {
   const rawEventId = getSearchParamWithLegacyKey(searchParams, "eventId", "event");
   const rawRankingType = getSearchParamWithLegacyKey(searchParams, "result", "type");
-  const eventId = isEventId(rawEventId) ? rawEventId : "333";
+  const eventId = isRankingEventId(rawEventId) ? rawEventId : "333";
   const rankingType = eventId === "333mbf" ? "single" : isRankingType(rawRankingType) ? rawRankingType : "single";
   const { scope, regionId } = parseRegionQuery(getSearchParam(searchParams, "region"));
   const search = getSearchParam(searchParams, "search").trim().slice(0, 80);
@@ -166,7 +166,7 @@ export default async function Home({
   const resolvedSearchParams = await searchParams;
   const rawEventId = getSearchParamWithLegacyKey(resolvedSearchParams, "eventId", "event");
   const rawRankingType = getSearchParamWithLegacyKey(resolvedSearchParams, "result", "type");
-  const eventId = isEventId(rawEventId) ? rawEventId : "333";
+  const eventId = isRankingEventId(rawEventId) ? rawEventId : "333";
   const initialAllEventRankingId =
     rawEventId === "SOR" ? rawEventId : null;
   const rankingType = eventId === "333mbf" ? "single" : isRankingType(rawRankingType) ? rawRankingType : "single";
@@ -202,7 +202,6 @@ export default async function Home({
       initialEventId={eventId}
       initialRankingType={rankingType}
       initialAllEventRankingId={initialAllEventRankingId}
-      initialMetricPersonId={getSearchParam(resolvedSearchParams, "personId")}
       initialRegionSelection={{ scope, regionId }}
       initialRegions={{ continents, countries }}
       showSubjectSwitch={projectionBrowsingEnabled}

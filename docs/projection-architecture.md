@@ -312,8 +312,7 @@ World values reuse the canonical person-event World ranks. Country and
 continent values are derived from `results.person_country_id`, which records
 the region represented when the result occurred. They must not be reassigned
 through the person's current country. This historical-region rule prevents
-country changes from corrupting regional totals or matrix cells; see issue
-#50.
+country changes from corrupting regional totals; see issue #50.
 
 `person_sum_of_ranks_scores` has one row per metric version, event-set version,
 result type, scope, region, and person. It stores the total, coverage,
@@ -620,27 +619,20 @@ The active semantic surface is exposed through:
 
 ```text
 GET /api/people/search
-GET /api/rankings/metrics
+GET /api/rankings
 ```
 
-`/api/rankings` remains the compatibility endpoint for the current person
-ranking UI. Sum of Ranks is represented as the synthetic event
-`eventId=SOR`; the metrics resource currently accepts only that event ID.
-Result, general person, competition, podium, city, and Kinch handlers remain
-unexposed until their projection groups are activated.
-Clients search `persons` first and pass the selected `personId` to the metrics
-resource. Semantic requests must not apply name searches to projection tables.
+Sum of Ranks is represented as the synthetic event `eventId=SOR` on the same
+ranking resource used by official WCA events. It returns the same bounded
+ranking-page shape, uses the same person search and navigation flow, and feeds
+the same virtualized infinite-scroll list. Only the overall Sum of Ranks score
+is returned; per-event component values are build inputs, not a published
+browse surface.
 
-New endpoints return `entries`, `context`, bounded `page` metadata, `total`, and
-an export `snapshot`. They use a default limit of 50 and a maximum of 100.
-Sum of Ranks pages accept one-based `start` and use materialized positions
-internally, but never serialize position or sub-rank fields in entries.
-Person lookup returns the containing page. Ineligible people return their
-coverage and an `incomplete_coverage` reason.
-
-All display joins occur after the projection page has been selected. Podium and
-metric matrices join only the selected page to their component rows, avoiding
-raw-result scans and per-row queries.
+Person searches resolve matching IDs from `persons` before applying an indexed
+`person_id` filter to the selected projection. No request applies a name search
+to a projection table. Display names and countries are joined only after the
+score page has been selected.
 
 ## Publication
 

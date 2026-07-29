@@ -92,7 +92,7 @@
 }
 
 .Jump-resultTypeControl { position: relative; width: var(--result-type-width); min-width: 0; height: var(--rail-control-height); flex: 0 0 var(--result-type-width); border-right: 1px solid var(--border-subtle); }
-.Jump .Jump-resultTypeOptions { width: 100%; height: var(--rail-control-height); min-height: var(--rail-control-height); border: 0; border-radius: 0; background: transparent; opacity: calc(1 - var(--rail-scroll-progress, 0)); pointer-events: auto; }
+.Jump .Jump-resultTypeOptions { width: 100%; height: var(--rail-control-height); min-height: var(--rail-control-height); border: 0; border-radius: 0; background: transparent; opacity: 1; pointer-events: auto; }
 .Jump .Jump-resultTypeOptions .rankingTypeOption { position: absolute; top: 1px; bottom: 1px; width: 50%; min-height: 0; transition: none; }
 .Jump .Jump-resultTypeOptions .rankingTypeOption[data-result-type="single"] { left: 1px; }
 .Jump .Jump-resultTypeOptions .rankingTypeOption[data-result-type="average"] { left: 50%; }
@@ -103,9 +103,9 @@
 .Jump-resultTypeToggle, .Jump-pagerButton, .Jump-searchNavigationButton {
   display: flex; min-width: 40px; min-height: 40px; align-items: center; justify-content: center; gap: .5em; padding: .5em .75em; border: 0; background: transparent; color: var(--text-strong); cursor: pointer; font: inherit; white-space: nowrap; transition: background 150ms var(--cubic-move), color 150ms var(--cubic-move);
 }
-.Jump-resultTypeToggle { position: absolute; inset: 0; width: 100%; min-width: 0; flex: none; color: var(--text-muted); font-size: .875em; font-weight: 500; opacity: var(--rail-scroll-progress, 0); pointer-events: none; }
-.Jump--rankings[data-compact-result-type="true"] .Jump-resultTypeOptions { pointer-events: none; }
-.Jump--rankings[data-compact-result-type="true"] .Jump-resultTypeToggle { pointer-events: auto; }
+.Jump-resultTypeToggle { position: absolute; inset: 0; width: 100%; min-width: 0; flex: none; color: var(--text-muted); font-size: .875em; font-weight: 500; opacity: 0; pointer-events: none; }
+.Jump--rankings[data-compact-result-type="true"] .Jump-resultTypeOptions { opacity: 0; pointer-events: none; }
+.Jump--rankings[data-compact-result-type="true"] .Jump-resultTypeToggle { opacity: 1; pointer-events: auto; }
 .Jump-resultTypeToggle:hover, .Jump-resultTypeToggle:focus-visible { background: transparent; color: var(--focus); outline: none; }
 .Jump-resultTypeToggle:focus-visible { box-shadow: inset 0 0 0 2px var(--focus-ring); }
 .Jump-resultTypeToggle:disabled { cursor: not-allowed; opacity: .45; }

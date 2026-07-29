@@ -43,13 +43,13 @@ const connection = await mysql.createConnection(databaseOptions());
 try {
   for (const table of manifestTables) if (!await tableExists(connection, table)) throw new Error(`The projection transfer manifest ${table} is missing.`);
 
-  const [[published], manifests] = await Promise.all([
+  const [publishedResult, ...manifestResults] = await Promise.all([
     connection.query("SELECT value AS export_date FROM export_metadata WHERE `key` = 'export_date' LIMIT 1"),
     ...manifestTables.map((table) => connection.query(`SELECT export_date FROM \`${table}\` LIMIT 1`)),
   ]);
-  const transferDates = manifests.map(([rows]) => rows[0]?.export_date);
+  const transferDates = manifestResults.map(([rows]) => rows[0]?.export_date);
   const transferDate = transferDates[0];
-  const publishedDate = published[0]?.export_date;
+  const publishedDate = publishedResult[0][0]?.export_date;
   const normalizedTransferDate = normalizeExportDate(transferDate);
   const normalizedPublishedDate = normalizeExportDate(publishedDate);
   if (

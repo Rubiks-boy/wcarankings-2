@@ -34,6 +34,7 @@ COPY --from=build --chown=app:app /app/scripts/mysql-schema.mjs ./scripts/mysql-
 COPY --from=build --chown=app:app /app/scripts/refresh-rankings.mjs ./scripts/refresh-rankings.mjs
 COPY --from=build --chown=app:app /app/scripts/check-ranking-projections.mjs ./scripts/check-ranking-projections.mjs
 COPY --from=build --chown=app:app /app/scripts/publish-projection-transfer.mjs ./scripts/publish-projection-transfer.mjs
+COPY --from=build --chown=app:app /app/scripts/projection-transfer-date.mjs ./scripts/projection-transfer-date.mjs
 COPY --from=build --chown=app:app /app/scripts/sync-wca-export.mjs ./scripts/sync-wca-export.mjs
 COPY --chown=app:app docker-entrypoint.sh ./docker-entrypoint.sh
 RUN mkdir -p /var/cache/wcarankings && chown app:app /var/cache/wcarankings

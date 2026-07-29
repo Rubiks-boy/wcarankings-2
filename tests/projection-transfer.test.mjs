@@ -11,6 +11,10 @@ const publish = await readFile(
   new URL("../scripts/publish-projection-transfer.mjs", import.meta.url),
   "utf8",
 );
+const dockerfile = await readFile(
+  new URL("../Dockerfile", import.meta.url),
+  "utf8",
+);
 
 test("defers secondary projection indexes until after bulk transfer import", () => {
   assert.match(prepare, /SHOW INDEX FROM/);
@@ -31,4 +35,8 @@ test("normalizes equivalent export date representations", () => {
 test("rejects missing and invalid export dates", () => {
   assert.equal(normalizeExportDate(null), null);
   assert.equal(normalizeExportDate("not-a-date"), null);
+});
+
+test("packages the export-date normalizer with the publisher", () => {
+  assert.match(dockerfile, /projection-transfer-date\.mjs/);
 });

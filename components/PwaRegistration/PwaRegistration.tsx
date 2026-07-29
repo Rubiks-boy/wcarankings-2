@@ -5,6 +5,7 @@ import { PwaUpdatePrompt } from "../PwaUpdatePrompt/PwaUpdatePrompt";
 
 const SERVICE_WORKER_URL = "/sw.js?v=5";
 const SKIP_WAITING_MESSAGE = "SKIP_WAITING";
+const DEVELOPMENT_RELOAD_KEY = "wca-rankings-development-sw-reset";
 
 export function PwaRegistration() {
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
@@ -14,6 +15,40 @@ export function PwaRegistration() {
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
+
+    if (process.env.NODE_ENV !== "production") {
+      void Promise.all([
+        navigator.serviceWorker
+          .getRegistrations()
+          .then((registrations) =>
+            Promise.all(
+              registrations.map((registration) => registration.unregister()),
+            ),
+          ),
+        "caches" in window
+          ? caches
+              .keys()
+              .then((keys) =>
+                Promise.all(
+                  keys
+                    .filter((key) => key.startsWith("wca-rankings-"))
+                    .map((key) => caches.delete(key)),
+                ),
+              )
+          : Promise.resolve([]),
+      ]).then(() => {
+        if (
+          navigator.serviceWorker.controller &&
+          sessionStorage.getItem(DEVELOPMENT_RELOAD_KEY) !== "1"
+        ) {
+          sessionStorage.setItem(DEVELOPMENT_RELOAD_KEY, "1");
+          window.location.reload();
+          return;
+        }
+        sessionStorage.removeItem(DEVELOPMENT_RELOAD_KEY);
+      });
+      return;
+    }
 
     let disposed = false;
     let registration: ServiceWorkerRegistration | null = null;

@@ -1,24 +1,25 @@
 "use client";
 
 import { forwardRef, useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
-import { EventPicker } from "../EventPicker/EventPicker";
+import { EventPicker, type EventPickerOption } from "../EventPicker/EventPicker";
 import { RegionPicker } from "../RegionPicker/RegionPicker";
 import ArrowDownIcon from "../Icon/arrow-down.svg?react";
 import ArrowUpIcon from "../Icon/arrow-up.svg?react";
 import CloseIcon from "../Icon/close.svg?react";
+import CompassIcon from "../Icon/compass.svg?react";
 import SearchIcon from "../Icon/search.svg?react";
 import { formatRankingNumber, type RankingEntry, type RegionOption, type RegionSelection } from "../RankingsExplorer/types";
 import { WCA_EVENTS } from "@/lib/wca";
 
-export const JumpRail = forwardRef<HTMLDivElement, { children: ReactNode; className?: string; direction: "up" | "down"; searchNavigation?: boolean; compactResultType?: boolean }>(
+export const RankingsRail = forwardRef<HTMLDivElement, { children: ReactNode; className?: string; direction: "up" | "down"; searchNavigation?: boolean; compactResultType?: boolean }>(
   ({ children, className = "", direction, searchNavigation, compactResultType }, ref) => (
-    <div ref={ref} className={`Jump JumpRail ${className}`} data-direction={direction} data-search-navigation={searchNavigation || undefined} data-compact-result-type={compactResultType || undefined}>
+    <div ref={ref} className={`Jump RankingsRail ${className}`} data-direction={direction} data-search-navigation={searchNavigation || undefined} data-compact-result-type={compactResultType || undefined}>
       {children}
     </div>
   )
 );
 
-JumpRail.displayName = "JumpRail";
+RankingsRail.displayName = "RankingsRail";
 
 function RailSearch({ searchInputRef, findOpen, findQuery, findError, findLoading, findPending, findMatches, findIndex, onSearchOpen, onSearchClose, onSearchQueryChange, onSearchCycle }: {
   searchInputRef?: (input: HTMLInputElement | null) => void;
@@ -80,9 +81,11 @@ function RailSearch({ searchInputRef, findOpen, findQuery, findError, findLoadin
   );
 }
 
-export function RankingsJumpRail({ event, onEventChange, rankingType, onRankingTypeChange, regions, regionSelection, onRegionChange, onEventPickerTrigger, compactResultType = false, ...searchProps }: {
-  event: (typeof WCA_EVENTS)[number];
-  onEventChange: (eventId: (typeof WCA_EVENTS)[number]["id"]) => void;
+export function RankingsControlsRail<T extends EventPickerOption>({ event, eventOptions, additionalEventOptions, onEventChange, rankingType, onRankingTypeChange, regions, regionSelection, onRegionChange, onEventPickerTrigger, compactResultType = false, showResultType = true, showEventPicker = true, showSearch = true, hemisphere, onHemisphereChange, ...searchProps }: {
+  event: T;
+  eventOptions?: readonly T[];
+  additionalEventOptions?: readonly T[];
+  onEventChange: (eventId: T["id"]) => void;
   rankingType: "single" | "average";
   onRankingTypeChange: (rankingType: "single" | "average") => void;
   regions: RegionOption[];
@@ -90,13 +93,25 @@ export function RankingsJumpRail({ event, onEventChange, rankingType, onRankingT
   onRegionChange: (region: RegionOption) => void;
   onEventPickerTrigger?: (trigger: HTMLButtonElement | null) => void;
   compactResultType?: boolean;
+  showResultType?: boolean;
+  showEventPicker?: boolean;
+  showSearch?: boolean;
+  hemisphere?: "north" | "south";
+  onHemisphereChange?: (hemisphere: "north" | "south") => void;
 } & Parameters<typeof RailSearch>[0]) {
   const nextType = rankingType === "single" ? "average" : "single";
   return (
-    <JumpRail className="Jump--rankings" direction="up" compactResultType={compactResultType}>
+    <RankingsRail className={`Jump--rankings${showResultType ? "" : " Jump--withoutResultType"}${hemisphere ? " Jump--withHemisphere" : ""}`} direction="up" compactResultType={compactResultType}>
       <div className="Jump-railSettings">
-        <EventPicker event={event} onChange={onEventChange} onTriggerReady={onEventPickerTrigger} />
-        <div className="Jump-resultTypeControl">
+        {showEventPicker ? (
+          <EventPicker event={event} options={eventOptions} additionalOptions={additionalEventOptions} onChange={onEventChange} onTriggerReady={onEventPickerTrigger} />
+        ) : hemisphere ? (
+          <button className="Jump-latitudeToggle" type="button" data-hemisphere={hemisphere} aria-label={`Latitude: ${hemisphere} first. Switch to ${hemisphere === "north" ? "south" : "north"} first`} title={`Latitude: ${hemisphere} first`} onClick={() => onHemisphereChange?.(hemisphere === "north" ? "south" : "north")}>
+            <CompassIcon />
+            <span>{hemisphere === "north" ? "North" : "South"}</span>
+          </button>
+        ) : null}
+        {showResultType && <div className="Jump-resultTypeControl">
           <fieldset className="rankingTypeToggle Jump-resultTypeOptions" data-ranking-type={rankingType} aria-label="Ranking type" aria-hidden={compactResultType}>
             <legend className="visuallyHidden">Ranking type</legend>
             {(["single", "average"] as const).map((option) => {
@@ -108,11 +123,11 @@ export function RankingsJumpRail({ event, onEventChange, rankingType, onRankingT
             })}
           </fieldset>
           <button className="Jump-resultTypeToggle" type="button" tabIndex={compactResultType ? 0 : -1} aria-hidden={!compactResultType} disabled={event.id === "333mbf"} aria-label={`Switch to ${nextType} rankings`} onClick={() => onRankingTypeChange(nextType)}>{rankingType === "single" ? "Single" : "Average"}</button>
-        </div>
+        </div>}
         <RegionPicker className="Jump-regionPicker" options={regions} selected={regionSelection} onChange={onRegionChange} />
       </div>
-      <RailSearch {...searchProps} />
-    </JumpRail>
+      {showSearch && <RailSearch {...searchProps} />}
+    </RankingsRail>
   );
 }
 
@@ -121,7 +136,7 @@ export function RankingsPagerRail({ upArmed, downArmed, currentPosition, total, 
 }) {
   const nearTop = currentPosition <= 5000;
   const nearEnd = Number.isFinite(total) && currentPosition >= total - 5000;
-  return <JumpRail className="Jump--pager" direction="down" searchNavigation={searchActive}>
+  return <RankingsRail className="Jump--pager" direction="down" searchNavigation={searchActive}>
     <div className="Jump-pagerActions" aria-hidden={searchActive}>
       <button className="Jump-pagerButton" onClick={onJumpUp} type="button" disabled={searchActive}><ArrowUpIcon /><span>{upArmed || nearTop ? "Jump to top" : `Up ${formatRankingNumber(5000)}`}</span></button>
       <button className="Jump-pagerButton" onClick={onJumpDown} type="button" disabled={searchActive}><ArrowDownIcon /><span>{downArmed || nearEnd ? "Jump to end" : `Down ${formatRankingNumber(5000)}`}</span></button>
@@ -130,5 +145,5 @@ export function RankingsPagerRail({ upArmed, downArmed, currentPosition, total, 
       <button className="Jump-searchNavigationButton" onClick={onSearchPrevious} type="button" disabled={!searchActive}><ArrowUpIcon /><span>Previous person</span></button>
       <button className="Jump-searchNavigationButton" onClick={onSearchNext} type="button" disabled={!searchActive}><span>Next person</span><ArrowDownIcon /></button>
     </div></div>
-  </JumpRail>;
+  </RankingsRail>;
 }

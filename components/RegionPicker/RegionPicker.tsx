@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import CloseIcon from "../Icon/close.svg?react";
 import SelectChevronIcon from "../Icon/select-chevron.svg?react";
+import { Dropdown } from "../Dropdown/Dropdown";
 import type { RegionOption, RegionSelection } from "../RankingsExplorer/types";
 
 export function RegionPicker({
@@ -19,7 +20,6 @@ export function RegionPicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const pickerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listboxId = useId();
   const selectedOption =
@@ -63,15 +63,15 @@ export function RegionPicker({
   useEffect(() => {
     if (!open) return;
     searchRef.current?.focus();
-    const closeOnOutsideClick = (event: PointerEvent) => {
-      if (pickerRef.current?.contains(event.target as Node)) return;
+  }, [open]);
+
+  const setPickerOpen = (nextOpen: boolean) => {
+    if (!nextOpen) {
       setQuery("");
       setActiveKey(null);
-      setOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOnOutsideClick);
-    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
-  }, [open]);
+    }
+    setOpen(nextOpen);
+  };
 
   useEffect(() => {
     if (!open || activeIndex === -1) return;
@@ -118,7 +118,11 @@ export function RegionPicker({
   };
 
   return (
-    <div className={`regionPicker${className ? ` ${className}` : ""}`} ref={pickerRef}>
+    <Dropdown
+      className={`regionPicker${className ? ` ${className}` : ""}`}
+      open={open}
+      onOpenChange={setPickerOpen}
+    >
       <input
         className="regionPickerTrigger"
         id="region-picker-button"
@@ -130,17 +134,17 @@ export function RegionPicker({
           setActiveKey(
             selectedOption?.key ?? options[0]?.key ?? null,
           );
-          setOpen(true);
+          setPickerOpen(true);
         }}
         onBlur={() => {
           setQuery("");
           setActiveKey(null);
-          setOpen(false);
+          setPickerOpen(false);
         }}
         onChange={(event) => {
           setQuery(event.target.value);
           setActiveKey(null);
-          setOpen(true);
+          setPickerOpen(true);
         }}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
@@ -165,7 +169,7 @@ export function RegionPicker({
               setActiveKey(
                 selectedOption?.key ?? options[0]?.key ?? null,
               );
-              setOpen(true);
+              setPickerOpen(true);
               return;
             }
 
@@ -215,7 +219,7 @@ export function RegionPicker({
         </button>
       )}
       <div
-        className="regionPickerMenu"
+        className="regionPickerMenu Dropdown-menu"
         id={listboxId}
         data-open={open}
         role="listbox"
@@ -238,6 +242,6 @@ export function RegionPicker({
           </div>
         )}
       </div>
-    </div>
+    </Dropdown>
   );
 }

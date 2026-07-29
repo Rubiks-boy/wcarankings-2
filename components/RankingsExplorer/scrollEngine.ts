@@ -270,3 +270,23 @@ export function getCurrentViewportSubRank(
   );
   return entries[index]?.subRank ?? fallbackSubRank;
 }
+
+export function getEndSubRank(
+  total: number,
+  lastLoadedSubRank: number | null,
+  visibleSubRank: number
+) {
+  if (Number.isFinite(total)) return Math.max(1, total);
+  return lastLoadedSubRank ?? visibleSubRank;
+}
+
+export function clampTargetSubRank(
+  targetSubRank: number,
+  total: number,
+  lastLoadedSubRank: number | null
+) {
+  const maximumSubRank = Number.isFinite(total)
+    ? total
+    : lastLoadedSubRank ?? targetSubRank;
+  return Math.max(1, Math.min(targetSubRank, maximumSubRank));
+}

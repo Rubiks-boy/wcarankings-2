@@ -88,7 +88,8 @@
 }
 
 .rank {
-  width: 5ch;
+  flex: 0 0 7ch;
+  width: 7ch;
   font-size: 1.05em;
   font-variant-numeric: tabular-nums;
 }

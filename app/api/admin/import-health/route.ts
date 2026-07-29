@@ -21,9 +21,11 @@ type ImportRunRow = {
   source_person_count: number | null;
   source_result_count: number | null;
   published_ranking_count: number | null;
+  published_result_count: number | null;
   event_count: number | null;
   region_count: number | null;
   aggregate_count: number | null;
+  result_aggregate_count: number | null;
 };
 
 type ProjectionTableRow = {
@@ -34,6 +36,10 @@ const expectedProjectionTables = [
   "ranking_entries_single",
   "ranking_entries_average",
   "ranking_counts",
+  "result_entries_single",
+  "result_counts",
+  "person_sum_of_ranks_event_values",
+  "person_sum_of_ranks_scores",
 ] as const;
 
 function serializeRun(run: ImportRunRow | null) {
@@ -61,9 +67,11 @@ function serializeRun(run: ImportRunRow | null) {
       sourcePeople: run.source_person_count == null ? null : Number(run.source_person_count),
       sourceResults: run.source_result_count == null ? null : Number(run.source_result_count),
       publishedRankings: run.published_ranking_count == null ? null : Number(run.published_ranking_count),
+      publishedResults: run.published_result_count == null ? null : Number(run.published_result_count),
       events: run.event_count == null ? null : Number(run.event_count),
       regions: run.region_count == null ? null : Number(run.region_count),
       aggregates: run.aggregate_count == null ? null : Number(run.aggregate_count),
+      resultAggregates: run.result_aggregate_count == null ? null : Number(run.result_aggregate_count),
     },
   };
 }
@@ -79,7 +87,15 @@ export async function GET() {
         SELECT table_name AS name
         FROM information_schema.tables
         WHERE table_schema = DATABASE()
-          AND table_name IN ('ranking_entries_single', 'ranking_entries_average', 'ranking_counts')
+          AND table_name IN (
+            'ranking_entries_single',
+            'ranking_entries_average',
+            'ranking_counts',
+            'result_entries_single',
+            'result_counts',
+            'person_sum_of_ranks_event_values',
+            'person_sum_of_ranks_scores'
+          )
       `),
     ]);
     const currentExport = Object.fromEntries(metadata.rows.map((row) => [row.key, row.value]));

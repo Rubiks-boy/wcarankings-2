@@ -14,8 +14,10 @@ import {
 import {
   animateScrollTo,
   cancelScrollAnimation,
+  clampTargetSubRank,
   getCurrentViewportPosition,
   getCurrentViewportSubRank,
+  getEndSubRank,
   getPrefetchRowCount,
   shouldPrefetchExtraPage,
   getScrollAnimationDuration,
@@ -29,7 +31,7 @@ import {
 import {
   FALLBACK_CONTINENTS,
   FALLBACK_COUNTRIES,
-  isEventId,
+  isRankingEventId,
   isRankingType,
   parseRegionQuery,
   WCA_EVENTS,
@@ -39,12 +41,21 @@ import {
   notifyAnalyticsNavigation,
   trackGoogleAnalyticsEvent,
 } from "@/lib/google-analytics";
-import { RankingsJumpRail, RankingsPagerRail } from "../JumpControls/JumpControls";
+import { RankingsControlsRail, RankingsPagerRail } from "../RankingsRail/RankingsRail";
+import {
+  ALL_EVENT_RANKING_OPTIONS,
+} from "../EventPicker/allEventRankingOptions";
 import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVisibility";
 import { ResultsTable } from "../ResultsTable/ResultsTable";
+import { SubjectMockRows } from "./SubjectMockRows";
 import { ThemeToggle } from "../ThemeToggle/ThemeToggle";
 import { VimHelp } from "../VimHelp/VimHelp";
 import { VimSearchInput } from "../VimSearchInput/VimSearchInput";
+import {
+  ExplorerSubjectSwitch,
+  type ExplorerSubject,
+} from "../ExplorerSubjectSwitch/ExplorerSubjectSwitch";
+import { TextDropdown } from "../Dropdown/TextDropdown";
 import {
   formatRankingsFreshness,
   type InitialRankingData,
@@ -64,6 +75,13 @@ const ROW_HEIGHT = 65.45;
 const RAIL_REVEAL_DISTANCE = ROW_HEIGHT * 1.5;
 const TOP_RAIL_TRANSFORM_DISTANCE = ROW_HEIGHT * 2;
 const END_MARKER_PEEK = ROW_HEIGHT + 40;
+const COMPETITION_RANKING_OPTIONS = [
+  { value: "best-result", label: "Best result" },
+  { value: "podiums", label: "Podiums" },
+  { value: "latitude", label: "Latitude" },
+] as const;
+
+type CompetitionRanking = (typeof COMPETITION_RANKING_OPTIONS)[number]["value"];
 
 type NetworkInformationLike = {
   saveData?: boolean;
@@ -423,6 +441,12 @@ export function RankingsExplorer({
   initialEventId = "333",
   initialRankingType = "single",
   initialRegionSelection = { scope: "world", regionId: "" },
+  showAllEventRankingOptions = false,
+  showSubjectSwitch = false,
+  initialSubject = "people",
+  initialCompetitionRanking = "best-result",
+  initialLatitudeHemisphere = "north",
+  mockSubjectRows = false,
   initialRegions = {
     continents: FALLBACK_CONTINENTS,
     countries: FALLBACK_COUNTRIES,
@@ -431,9 +455,15 @@ export function RankingsExplorer({
   initialData?: InitialRankingData;
   initialSearch?: string;
   initialRegexSearch?: boolean;
-  initialEventId?: (typeof WCA_EVENTS)[number]["id"];
+  initialEventId?: (typeof WCA_EVENTS)[number]["id"] | "SOR" | "sor-kinch";
   initialRankingType?: "single" | "average";
   initialRegionSelection?: RegionSelection;
+  showAllEventRankingOptions?: boolean;
+  showSubjectSwitch?: boolean;
+  initialSubject?: ExplorerSubject;
+  initialCompetitionRanking?: CompetitionRanking;
+  initialLatitudeHemisphere?: "north" | "south";
+  mockSubjectRows?: boolean;
   initialRegions?: {
     continents: Array<{ id: string; name: string }>;
     countries: Array<{ id: string; name: string; iso2?: string }>;
@@ -441,6 +471,9 @@ export function RankingsExplorer({
 }) {
   const normalizedInitialSearch = initialSearch.trim();
   const [eventId, setEventId] = useState(initialEventId);
+  const [subject, setSubject] = useState<ExplorerSubject>(initialSubject);
+  const [competitionRanking, setCompetitionRanking] = useState<CompetitionRanking>(initialCompetitionRanking);
+  const [latitudeHemisphere, setLatitudeHemisphere] = useState<"north" | "south">(initialLatitudeHemisphere);
   const [rankingType, setRankingType] = useState<"single" | "average">(
     initialRankingType
   );
@@ -751,7 +784,7 @@ export function RankingsExplorer({
         url.searchParams.get("result") ?? url.searchParams.get("type");
       const nextRegion = url.searchParams.get("region");
       const search = url.searchParams.get("search") ?? "";
-      const resolvedEventId = isEventId(nextEventId) ? nextEventId : "333";
+      const resolvedEventId = isRankingEventId(nextEventId) ? nextEventId : "333";
       const resolvedRankingType =
         resolvedEventId === "333mbf"
           ? "single"
@@ -769,7 +802,8 @@ export function RankingsExplorer({
       setVimSearchQuery(nextRegexSearch ? search : "");
       setFindOpen(Boolean(search.trim() && !nextRegexSearch));
       updateQueryParams({
-        eventId: resolvedEventId === "333" ? null : resolvedEventId,
+        eventId:
+          resolvedEventId === "333" ? null : resolvedEventId,
         result: resolvedRankingType === "single" ? null : resolvedRankingType,
         event: null,
         type: null,
@@ -814,7 +848,6 @@ export function RankingsExplorer({
       setNextPageStart(null);
       setPreviousPageStart(null);
       setHasMore(true);
-      setTotal(Number.POSITIVE_INFINITY);
     }
     setError("");
     moreRequestRef.current = false;
@@ -1865,8 +1898,7 @@ export function RankingsExplorer({
       }
       pendingNavigationAppendRef.current = false;
       setLoading(false);
-      const maximumRank = lastRank ?? (Number.isFinite(total) ? total : rank);
-      const normalizedRank = Math.max(1, Math.min(rank, maximumRank));
+      const normalizedRank = clampTargetSubRank(rank, total, lastRank);
       const currentRank = getCurrentViewportSubRank(
         listRef.current,
         entriesRef.current,
@@ -1949,48 +1981,64 @@ export function RankingsExplorer({
   );
 
   const jumpToEnd = useCallback(() => {
-    navigationEpochRef.current += 1;
+    const requestEpoch = navigationEpochRef.current + 1;
+    navigationEpochRef.current = requestEpoch;
     cancelScrollAnimation(scrollAnimationStateRef.current);
     pendingNavigationAppendRef.current = false;
     setLoading(false);
-    const endRank = lastRank ?? (Number.isFinite(total) ? total : visibleSubRank);
-    const nextStart = pageStartForSubRank(endRank) + 1;
-    const currentRank = getCurrentViewportSubRank(
-      listRef.current,
-      entriesRef.current,
-      startRankRef.current
-    );
-    navigationTargetRankRef.current = endRank;
-    pendingRankRef.current = endRank;
-    pendingScrollToTopRef.current = false;
-    pendingFocusLastRef.current = true;
-    pendingScrollDirectionRef.current =
-      endRank < currentRank ? -1 : endRank > currentRank ? 1 : null;
-    if (!hasMore && entries.length > 0) {
-      const targetIndex = Math.max(0, entries.length - 1);
-      scrollToEntry({
-        state: scrollAnimationStateRef.current,
-        list: listRef.current,
-        index: targetIndex,
-        alignment: "bottom",
-        bottomOffset: END_MARKER_PEEK,
-        requestedBehavior: "smooth",
-        requestedDuration: getScrollAnimationDuration(
-          Math.abs(endRank - currentRank)
-        ),
+    void getPage(eventId, rankingType, 1, regionSelection)
+      .then((boundaryPage) => {
+        if (requestEpoch !== navigationEpochRef.current) return;
+        const endRank = getEndSubRank(
+          boundaryPage.total,
+          boundaryPage.lastRank ?? lastRank,
+          visibleSubRank
+        );
+        const nextStart = pageStartForSubRank(endRank) + 1;
+        const currentRank = getCurrentViewportSubRank(
+          listRef.current,
+          entriesRef.current,
+          startRankRef.current
+        );
+        navigationTargetRankRef.current = endRank;
+        pendingRankRef.current = endRank;
+        pendingScrollToTopRef.current = false;
+        pendingFocusLastRef.current = true;
+        pendingScrollDirectionRef.current =
+          endRank < currentRank ? -1 : endRank > currentRank ? 1 : null;
+        if (nextStart === startRankRef.current && entriesRef.current.length > 0) {
+          scrollToEntry({
+            state: scrollAnimationStateRef.current,
+            list: listRef.current,
+            index: entriesRef.current.length - 1,
+            alignment: "bottom",
+            bottomOffset: END_MARKER_PEEK,
+            requestedBehavior: "smooth",
+            requestedDuration: getScrollAnimationDuration(
+              Math.abs(endRank - currentRank)
+            ),
+          });
+          pendingScrollDirectionRef.current = null;
+          pendingFocusLastRef.current = false;
+          return;
+        }
+        preserveListDuringLoadRef.current = true;
+        setPreserveListDuringLoad(true);
+        setStartRank(nextStart);
+      })
+      .catch((requestError: unknown) => {
+        if (requestEpoch !== navigationEpochRef.current) return;
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Rankings are unavailable."
+        );
       });
-      pendingScrollDirectionRef.current = null;
-      pendingFocusLastRef.current = false;
-      return;
-    }
-    preserveListDuringLoadRef.current = true;
-    setPreserveListDuringLoad(true);
-    setStartRank(nextStart);
   }, [
-    entries.length,
-    hasMore,
+    eventId,
     lastRank,
-    total,
+    rankingType,
+    regionSelection,
     visibleSubRank,
   ]);
 
@@ -2340,7 +2388,9 @@ export function RankingsExplorer({
     setStartRank(nextStartRank);
   };
 
-  const changeEvent = (nextEventId: (typeof WCA_EVENTS)[number]["id"]) => {
+  const changeEvent = (
+    nextEventId: (typeof WCA_EVENTS)[number]["id"] | "SOR" | "sor-kinch"
+  ) => {
     const viewportSubRank = getCurrentViewportSubRank(
       listRef.current,
       entriesRef.current,
@@ -2439,7 +2489,18 @@ export function RankingsExplorer({
     [findMatches, findResolvedQuery]
   );
   const activeFindMatch = findMatches[findIndex] ?? null;
-  const currentEvent = WCA_EVENTS.find((event) => event.id === eventId)!;
+  const currentEvent =
+    ALL_EVENT_RANKING_OPTIONS.find((option) => option.id === eventId) ??
+    WCA_EVENTS.find((event) => event.id === eventId)!;
+  const changeRailEvent = (nextEventId: string) => {
+    updateQueryParams({ personId: null });
+    changeEvent(
+      nextEventId as
+        | (typeof WCA_EVENTS)[number]["id"]
+        | "SOR"
+        | "sor-kinch"
+    );
+  };
 
   return (
     <div
@@ -2447,12 +2508,30 @@ export function RankingsExplorer({
         findQuery.trim() ? " app--searching" : ""
       }`}
     >
-      <header className="header">
+      <header className={`header${showSubjectSwitch ? " header--subjectMenu" : ""}`}>
         <div className="headerTopRow">
           <div className="headerTitle">
             <h1 className="title">
               <Link href="/">WCA Rankings</Link>
             </h1>
+            {showSubjectSwitch && (
+              <>
+                <ExplorerSubjectSwitch
+                  subject={subject}
+                  onChange={setSubject}
+                  variant="text"
+                />
+                {subject === "competitions" && (
+                  <TextDropdown
+                    options={COMPETITION_RANKING_OPTIONS}
+                    value={competitionRanking}
+                    onChange={setCompetitionRanking}
+                    ariaLabel="Competition ranking"
+                    className="competitionRankingDropdown"
+                  />
+                )}
+              </>
+            )}
           </div>
           <div className="headerActions">
             <ThemeToggle />
@@ -2465,9 +2544,11 @@ export function RankingsExplorer({
         className="stickyRankingsRail"
         style={{ "--rail-scroll-progress": topRailProgress } as CSSProperties}
       >
-        <RankingsJumpRail
+        <RankingsControlsRail
           event={currentEvent}
-          onEventChange={changeEvent}
+          eventOptions={WCA_EVENTS}
+          additionalEventOptions={showAllEventRankingOptions ? ALL_EVENT_RANKING_OPTIONS : undefined}
+          onEventChange={changeRailEvent}
           rankingType={rankingType}
           onRankingTypeChange={changeRankingType}
           regions={regions}
@@ -2475,6 +2556,11 @@ export function RankingsExplorer({
           onRegionChange={changeRegion}
           onEventPickerTrigger={(trigger) => { railEventPickerTriggerRef.current = trigger; }}
           compactResultType={topRailProgress >= 1}
+          showResultType={!(subject === "competitions" && (competitionRanking === "podiums" || competitionRanking === "latitude"))}
+          showEventPicker={!(subject === "competitions" && competitionRanking === "latitude")}
+          showSearch
+          hemisphere={subject === "competitions" && competitionRanking === "latitude" ? latitudeHemisphere : undefined}
+          onHemisphereChange={setLatitudeHemisphere}
           searchInputRef={setRailFindInputRef}
           findOpen={findOpen}
           findQuery={findQuery}
@@ -2498,6 +2584,12 @@ export function RankingsExplorer({
             )}
             {error ? (
               <div className="listMessage">{error}</div>
+            ) : mockSubjectRows ? (
+              <SubjectMockRows
+                subject={subject}
+                competitionRanking={competitionRanking}
+                latitudeHemisphere={latitudeHemisphere}
+              />
             ) : (
               <ResultsTable
                 listRef={rankingListRef}

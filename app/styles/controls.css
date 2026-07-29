@@ -1,5 +1,4 @@
 .regionPicker {
-  position: relative;
   min-width: 0;
   flex: 1 1 0;
 }
@@ -70,33 +69,8 @@
 }
 
 .regionPickerMenu {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 0.5em);
   right: 0;
   left: 0;
-  overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: 0.5em;
-  background: var(--surface);
-  box-shadow: 0 4px 16px var(--shadow);
-  visibility: hidden;
-  opacity: 0;
-  pointer-events: none;
-  transform: scale(0.97);
-  transform-origin: top left;
-  transition: opacity 150ms var(--cubic-exit),
-    transform 150ms var(--cubic-exit),
-    visibility 0s linear 150ms;
-}
-
-.regionPickerMenu[data-open="true"] {
-  visibility: visible;
-  opacity: 1;
-  pointer-events: auto;
-  transform: scale(1);
-  transition: opacity 150ms var(--cubic-enter),
-    transform 150ms var(--cubic-enter), visibility 0s;
 }
 
 .regionOptions {

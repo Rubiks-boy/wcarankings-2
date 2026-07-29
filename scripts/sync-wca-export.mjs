@@ -5,7 +5,7 @@ import { basename, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import mysql from "mysql2/promise";
 import * as unzipper from "unzipper";
-import { dropManagedObject, refreshMysqlSchema } from "./mysql-schema.mjs";
+import { dropManagedObject, promoteProjectionTables, refreshMysqlSchema } from "./mysql-schema.mjs";
 
 const EXPORT_API = "https://www.worldcubeassociation.org/api/v0/export/public";
 const force = process.argv.includes("--force");
@@ -117,6 +117,7 @@ async function dropRankingViews() {
       "ranking_entries_source",
       "ranking_entries_single_source",
       "ranking_entries_average_source",
+      "result_entries_single_source",
       "wca_best_single",
       "wca_best_average",
     ]) {
@@ -179,6 +180,7 @@ async function collectImportCounts() {
         (SELECT COUNT(*) FROM results) AS results,
         (SELECT COUNT(*) FROM ranking_entries_single_staging) +
           (SELECT COUNT(*) FROM ranking_entries_average_staging) AS rankings,
+        (SELECT COUNT(*) FROM result_entries_single_staging) AS result_entries,
         (SELECT COUNT(*) FROM (
           SELECT event_id FROM ranking_entries_single_staging
           UNION
@@ -189,15 +191,18 @@ async function collectImportCounts() {
           UNION
           SELECT country_id FROM ranking_entries_average_staging WHERE country_id <> ''
         ) AS ranking_regions) AS regions,
-        (SELECT COUNT(*) FROM ranking_counts_staging) AS aggregates
+        (SELECT COUNT(*) FROM ranking_counts_staging) AS aggregates,
+        (SELECT COUNT(*) FROM result_counts_staging) AS result_aggregates
     `);
     return {
       source_person_count: Number(coverage[0]?.people ?? 0),
       source_result_count: Number(coverage[0]?.results ?? 0),
       published_ranking_count: Number(coverage[0]?.rankings ?? 0),
+      published_result_count: Number(coverage[0]?.result_entries ?? 0),
       event_count: Number(coverage[0]?.events ?? 0),
       region_count: Number(coverage[0]?.regions ?? 0),
       aggregate_count: Number(coverage[0]?.aggregates ?? 0),
+      result_aggregate_count: Number(coverage[0]?.result_aggregates ?? 0),
     };
   } finally {
     await connection.end();
@@ -215,22 +220,13 @@ async function tableExists(connection, name) {
 async function promoteRankings() {
   const connection = await mysql.createConnection(databaseOptions());
   try {
-    const hasPublished = await tableExists(connection, "ranking_entries_single");
     const hasLegacyProjection = await tableExists(connection, "ranking_entries");
-    await connection.beginTransaction();
-    if (hasPublished) {
-      await connection.query("RENAME TABLE ranking_entries_single TO ranking_entries_single_previous, ranking_entries_single_staging TO ranking_entries_single, ranking_entries_average TO ranking_entries_average_previous, ranking_entries_average_staging TO ranking_entries_average, ranking_counts TO ranking_counts_previous, ranking_counts_staging TO ranking_counts");
-      await connection.query("DROP TABLE ranking_entries_single_previous, ranking_entries_average_previous, ranking_counts_previous");
-    } else if (hasLegacyProjection) {
-      await connection.query("RENAME TABLE ranking_entries TO ranking_entries_legacy_previous, ranking_counts TO ranking_counts_legacy_previous, ranking_entries_single_staging TO ranking_entries_single, ranking_entries_average_staging TO ranking_entries_average, ranking_counts_staging TO ranking_counts");
-      await connection.query("DROP TABLE ranking_entries_legacy_previous, ranking_counts_legacy_previous");
-    } else {
-      await connection.query("RENAME TABLE ranking_entries_single_staging TO ranking_entries_single, ranking_entries_average_staging TO ranking_entries_average, ranking_counts_staging TO ranking_counts");
+    if (hasLegacyProjection) {
+      await dropManagedObject(connection, "ranking_entries_legacy_previous");
+      await connection.query("RENAME TABLE ranking_entries TO ranking_entries_legacy_previous");
     }
-    await connection.commit();
-  } catch (error) {
-    await connection.rollback();
-    throw error;
+    await promoteProjectionTables(connection);
+    await dropManagedObject(connection, "ranking_entries_legacy_previous");
   } finally {
     await connection.end();
   }

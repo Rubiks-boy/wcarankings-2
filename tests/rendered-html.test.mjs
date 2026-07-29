@@ -13,12 +13,13 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
       "../components/RankingsExplorer/types.ts",
       "../components/RankingControls/RankingControls.tsx",
       "../components/RegionPicker/RegionPicker.tsx",
+      "../components/Dropdown/Dropdown.tsx",
       "../components/RankingRow/RankingRow.tsx",
       "../components/ResultsTable/ResultsTable.tsx",
       "../components/SearchInputs/SearchInputs.tsx",
       "../components/VimSearchInput/VimSearchInput.tsx",
       "../components/VimHelp/VimHelp.tsx",
-      "../components/JumpControls/JumpControls.tsx",
+      "../components/RankingsRail/RankingsRail.tsx",
       "../components/Icon/arrow-up.svg",
       "../components/Icon/arrow-down.svg",
       "../components/Icon/search.svg",
@@ -56,6 +57,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /result: rankingType/);
   assert.match(component, /eventId: nextEventId === "333" \? null : nextEventId/);
   assert.match(component, /result: nextRankingType === "single" \? null : nextRankingType/);
+  assert.doesNotMatch(component, /allEventRankingId|initialAllEventRankingId/);
   assert.match(component, /parseRegionQuery/);
   assert.doesNotMatch(component, /searchParams\.get\("scope"\)/);
   assert.match(component, /region: option\.scope === "world" \? null : option\.regionId/);
@@ -68,7 +70,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /className="selectInput(?: eventInput)?"/);
   assert.match(component, /findBar/);
   assert.match(component, /Search names or WCA IDs/);
-  assert.match(component, /openFind/);
+  assert.match(component, /activateFind/);
   assert.match(component, /RegionPicker/);
   assert.match(component, /className="regionPickerTrigger"/);
   assert.match(component, /initialRegions/);
@@ -82,7 +84,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.match(component, /Jump to end/);
   assert.match(component, /className="siteFooter"/);
   assert.match(component, /WCA export date unavailable/);
-  assert.match(component, /closeOnOutsideClick/);
+  assert.match(component, /closeOnOutsidePress/);
   assert.match(component, /document\.addEventListener\("pointerdown"/);
   assert.match(component, /loadPrevious/);
   assert.match(component, /window\.scrollBy/);
@@ -155,8 +157,9 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.doesNotMatch(component, /header-controls|collapsed-filter-summary|table-quick-jump/);
   assert.doesNotMatch(rankingsRoute, /SELECT (MIN|MAX|COUNT\(\*\))/);
   assert.doesNotMatch(rankingsRoute, /ROW_NUMBER\(\) OVER/);
-  assert.match(rankingsRoute, /person_name \$\{operator\}/);
-  assert.match(rankingsRoute, /person_id \$\{operator\}/);
+  assert.match(rankingsRoute, /searchPersonIds/);
+  assert.match(rankingsRoute, /person_id IN \(\$\{placeholders\}\)/);
+  assert.doesNotMatch(rankingsRoute, /person_name \$\{operator\}/);
   assert.match(rankingsRoute, /competition_id/);
   assert.match(rankingsRoute, /conditions\.push\(`\$\{rank\} > 0`\)/);
   assert.match(rankingsRoute, /fetchedAt/);
@@ -197,7 +200,7 @@ test("uses the copied WCA Rankings visual language", async () => {
     readFile(new URL("../app/styles/rankings.css", import.meta.url), "utf8"),
     readFile(new URL("../app/styles/search.css", import.meta.url), "utf8"),
     readFile(new URL("../app/styles/vim.css", import.meta.url), "utf8"),
-    readFile(new URL("../components/JumpControls/JumpControls.css", import.meta.url), "utf8"),
+    readFile(new URL("../components/RankingsRail/RankingsRail.css", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/manifest.ts", import.meta.url), "utf8"),
@@ -208,6 +211,7 @@ test("uses the copied WCA Rankings visual language", async () => {
   ]);
   const css = `${globalCss}\n${controlsCss}\n${rankingsCss}\n${searchCss}\n${vimCss}\n${jumpCss}`;
 
+  assert.match(rankingsCss, /\.rank\s*\{[^}]*flex:\s*0 0 7ch;[^}]*width:\s*7ch;/s);
   assert.match(page, /<RankingsExplorer/);
   assert.match(page, /initialData=\{initialRankings\}/);
   assert.match(page, /initialEventId=\{eventId\}/);
@@ -216,6 +220,8 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(page, /startPosition: firstPage\.startPosition/);
   assert.match(page, /lastRank: lastPage\.lastRank/);
   assert.match(page, /initialRegions=\{\{ continents, countries \}\}/);
+  assert.match(page, /showAllEventRankingOptions\s*\/>/);
+  assert.doesNotMatch(page, /showAllEventRankingOptions=\{projectionBrowsingEnabled\}/);
   assert.match(page, /fetchRegions\("continent"\)/);
   assert.match(page, /fetchRegions\("country"\)/);
   assert.match(page, /redirect/);
@@ -252,7 +258,9 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(pwaRegistration, /SKIP_WAITING/);
   assert.match(pwaRegistration, /PwaUpdatePrompt/);
   assert.match(pwaUpdatePrompt, /Update available/);
-  assert.doesNotMatch(pwaRegistration, /unregister\(\)/);
+  assert.match(pwaRegistration, /process\.env\.NODE_ENV !== "production"/);
+  assert.match(pwaRegistration, /getRegistrations\(\)/);
+  assert.match(pwaRegistration, /registration\.unregister\(\)/);
   assert.match(serviceWorker, /CACHE_NAME/);
   assert.match(serviceWorker, /cache\.match/);
   assert.match(serviceWorker, /event\.data\?\.type === "SKIP_WAITING"/);

@@ -55,9 +55,35 @@ jobs:
             exit 1
           fi
           echo "date=${export_date:0:10}" >> "$GITHUB_OUTPUT"
+          sql_url=$(curl --fail --silent --show-error \
+            https://www.worldcubeassociation.org/api/v0/export/public |
+            jq -r '.sql_url // .sqlUrl')
+          if [ -z "$sql_url" ] || [ "$sql_url" = "null" ]; then
+            echo "The WCA export API did not return a SQL URL." >&2
+            exit 1
+          fi
+          echo "sql_url=$sql_url" >> "$GITHUB_OUTPUT"
 
-      - name: Cache current WCA SQL export
-        uses: actions/cache@v4
+      - name: Restore current WCA SQL export
+        id: wca-export-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/wca-export-cache
+          key: wca-sql-export-${{ steps.wca-export.outputs.date }}
+
+      - name: Populate current WCA SQL export cache
+        if: steps.wca-export-cache.outputs.cache-hit != 'true'
+        env:
+          WCA_SQL_URL: ${{ steps.wca-export.outputs.sql_url }}
+        run: |
+          mkdir -p /tmp/wca-export-cache
+          destination="/tmp/wca-export-cache/wca-export-${{ steps.wca-export.outputs.date }}.sql.zip"
+          curl --fail --location --silent --show-error "$WCA_SQL_URL" --output "${destination}.part"
+          mv "${destination}.part" "$destination"
+
+      - name: Save current WCA SQL export
+        if: steps.wca-export-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
         with:
           path: /tmp/wca-export-cache
           key: wca-sql-export-${{ steps.wca-export.outputs.date }}
@@ -136,7 +162,17 @@ jobs:
           docker run --rm --entrypoint sh "wcarankings-flyway:${GITHUB_SHA}" -c \
             'test -f /flyway/migrations/V1__export_metadata.sql && test -f /flyway/migrations/V2__import_health.sql && test -f /flyway/migrations/V3__projection_build_timing.sql && test -f /flyway/migrations/V4__result_projection_health.sql'
 
+      - name: Restore generated projection transfer
+        id: projection-transfer-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            /tmp/projection-transfer.sql.gz
+            /tmp/projection-transfer.json
+          key: projection-transfer-v2-${{ steps.wca-export.outputs.date }}-${{ hashFiles('sql/ranking-projections/**', 'scripts/mysql-schema.mjs', 'scripts/prepare-projection-transfer.mjs') }}
+
       - name: Build and export projection generation
+        if: steps.projection-transfer-cache.outputs.cache-hit != 'true'
         id: projection-build
         run: |
           started_at=$(date +%s)
@@ -166,6 +202,26 @@ jobs:
             echo "### Projection build"
             echo "- WCA export: ${{ steps.wca-export.outputs.date }}"
             echo "- Build and dump: ${duration}s"
+            echo "- Compressed transfer: ${bytes} bytes"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save generated projection transfer
+        if: steps.projection-transfer-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            /tmp/projection-transfer.sql.gz
+            /tmp/projection-transfer.json
+          key: projection-transfer-v2-${{ steps.wca-export.outputs.date }}-${{ hashFiles('sql/ranking-projections/**', 'scripts/mysql-schema.mjs', 'scripts/prepare-projection-transfer.mjs') }}
+
+      - name: Report cached projection transfer
+        if: steps.projection-transfer-cache.outputs.cache-hit == 'true'
+        run: |
+          bytes=$(stat --format=%s /tmp/projection-transfer.sql.gz)
+          {
+            echo "### Projection build"
+            echo "- WCA export: ${{ steps.wca-export.outputs.date }}"
+            echo "- Reused validated projection artifact from Actions cache"
             echo "- Compressed transfer: ${bytes} bytes"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -238,7 +294,7 @@ jobs:
           {
             echo "### Production transfer"
             echo "- Upload, import, validation, and publish: ${duration}s"
-            echo "- End-to-end projection path: $((${{ steps.projection-build.outputs.duration_seconds }} + duration))s"
+            echo "- End-to-end projection path: $((${{ steps.projection-build.outputs.duration_seconds || '0' }} + duration))s"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Switch production services

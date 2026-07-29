@@ -35,7 +35,9 @@ test("reclaims obsolete deployment images before loading a new release", () => {
 });
 
 test("builds projection transfers on Actions before publishing them atomically", () => {
-  assert.match(workflow, /uses: actions\/cache@v4[\s\S]*wca-sql-export-/);
+  assert.match(workflow, /uses: actions\/cache\/restore@v4[\s\S]*wca-sql-export-/);
+  assert.match(workflow, /uses: actions\/cache\/save@v4[\s\S]*wca-sql-export-/);
+  assert.match(workflow, /key: projection-transfer-v2-/);
   assert.match(workflow, /node scripts\/sync-wca-export\.mjs --force/);
   assert.match(workflow, /node scripts\/prepare-projection-transfer\.mjs/);
   assert.match(workflow, /mariadb-dump[\s\S]*projection-transfer\.sql\.gz/);

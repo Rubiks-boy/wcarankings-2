@@ -405,15 +405,25 @@ indexes took approximately 1 minute 23 seconds. The optimized Sum of Ranks
 projection itself took 317.8 seconds and produced 1,737,062 rows. Competition
 podium members, event statistics, and competition statistics took 52.3, 42.0,
 and 59.9 seconds respectively. Compatibility projection work accounted for
-most of the remaining time. The generation reached validation after
-approximately 25 minutes 16 seconds.
+most of the remaining time. The first generation reached validation after
+approximately 25 minutes 16 seconds. A later complete build and dump took
+22 minutes 23 seconds; a repeat took 23 minutes 38 seconds and produced a
+432 MB compressed workflow artifact.
+
+Logical SQL replay on the VPS was worse. It exceeded 42 minutes before the
+experiment was canceled, so no transfer tables were published. The dump
+included secondary indexes in each table definition, causing MariaDB to
+maintain those indexes while loading millions of rows.
 
 Caching only the compressed WCA archive therefore does not remove the dominant
 cost: importing raw data and rebuilding compatibility projections and indexes
-inside a cold MariaDB instance. A future runner experiment should cache a
-validated imported database snapshot or build only the projection group being
-deployed. The failed experiment never imported or published tables on
-production.
+inside a cold MariaDB instance. Transfer artifacts are now cached by export
+date and projection-schema hash so unchanged deploys can reuse a validated
+generation. New artifacts omit secondary indexes during logical import and
+rebuild all indexes for a table together after its bulk data load. A future
+runner experiment may still benefit from caching a validated imported database
+snapshot or building only the projection group being deployed. The failed
+experiments never published tables on production.
 
 The published score table uses approximately 139.8 MiB of data and 117.3 MiB
 of indexes. Removing the 457 MiB published event-value table and narrowing the

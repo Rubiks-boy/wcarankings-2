@@ -60,6 +60,7 @@ test("keeps future grains registered while activating person metrics", async () 
   assert.match(sumScores, /kinch_score/);
   assert.match(sumScores, /kinch_position/);
   assert.match(sumScores, /idx_person_kinch_page/);
+  assert.doesNotMatch(sumScores, /kinch_coverage = 16/);
   assert.match(sumScores, /fallback_score AS SIGNED\)[\s\S]*person\.score_adjustment AS score/);
   assert.match(sumScores, /ENGINE = MEMORY/);
   assert.doesNotMatch(sumScores, /CROSS JOIN/);
@@ -171,4 +172,15 @@ test("person search resolves IDs before querying projections", async () => {
   assert.match(results, /person_id, competition_start_date DESC, result_id DESC/);
   assert.match(compatibilityResults, /person_id, competition_date DESC, result_id DESC/);
   assert.match(compatibilityResults, /person_id, event_id, world_sub_rank, result_id/);
+});
+
+test("rebuilds person metric scores without rescanning raw results", async () => {
+  const backfill = await readFile(
+    new URL("scripts/backfill-person-metric-scores.mjs", root),
+    "utf8",
+  );
+  assert.match(backfill, /const STAGING_TABLE = `\$\{TABLE\}_staging`/);
+  assert.match(backfill, /COUNT\(kinch_position\) AS kinch_row_count/);
+  assert.match(backfill, /RENAME TABLE/);
+  assert.doesNotMatch(backfill, /FROM results\b/);
 });

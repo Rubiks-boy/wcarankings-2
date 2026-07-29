@@ -327,13 +327,13 @@ regional cohort after representing that historical region in any included
 event. Equal totals use competition ranking (`1, 1, 3`), while positions break
 ties by WCA ID for stable positional paging.
 
-Kinch excludes Multi-Blind and requires results in all 16 remaining events.
-Each event contributes `100 × scope reference result ÷ personal result`; the
-user-facing overall score is the mean of those percentages and therefore
-ranges from 0 to 100, with higher scores ranking first. The stored sum is
-divided by the fixed 16-event coverage at read time, which preserves ordering
-without another projection or index. Its separate positional index supports
-the same bounded paging API without duplicating the person-event value grain.
+Kinch excludes Multi-Blind and uses the 16 remaining events. Each completed
+event contributes `100 × scope reference result ÷ personal result`; a missing
+event contributes zero. The user-facing overall score divides that sum by all
+16 events and therefore ranges from 0 to 100, with higher scores ranking first.
+This gives Kinch the same person cohort as Sum of Ranks while retaining a fixed,
+comparable denominator. Its separate positional index supports the same bounded
+paging API without duplicating the person-event value grain.
 
 Names and countries are joined only after selecting a score page. Counts use
 the score browse index rather than another persisted count grain.
@@ -358,8 +358,13 @@ MiB to 457 MiB. The score table remained approximately 201 MiB; its indexes
 increased from approximately 95 MiB to 179 MiB after adding the Kinch paging
 index. Local HTTP observations returned the first World Single Kinch page in
 21 ms, the final page in 7 ms, and a name search in 5 ms. The published
-projection contained 809 eligible World Single people and 165 eligible World
-Average people.
+complete-coverage subset contained 809 World Single people and 165 World
+Average people before missing events were changed to contribute zero.
+
+The score-only refresh for zero-valued missing Kinch events completed in 247.6
+seconds without rebuilding event values or scanning raw results. It published
+Kinch positions for all 1,735,888 score rows, including 291,763 World Single
+people and 286,535 World Average people.
 
 ### Inactive general metric projections
 
@@ -437,8 +442,8 @@ The v1 policy is:
 - Sum of Ranks Average includes all 16 current Average events.
 - If an event has 10 ranked competitors, a missing result contributes rank 11.
 - Fallbacks are calculated independently for World, continent, and country.
-- Kinch excludes Multi-Blind, requires all 16 remaining events for both result
-  types, and sums the event percentages for Overall.
+- Kinch excludes Multi-Blind, averages across all 16 remaining events for both
+  result types, and assigns zero percent to each missing event.
 
 Any event-set or missing-event policy change increments `metric_version` or
 `event_set_version`; it does not silently reinterpret stored v1 rows.

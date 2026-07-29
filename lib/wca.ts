@@ -114,14 +114,14 @@ export function isValidRegexPattern(value: string) {
 }
 
 export function formatWcaResult(eventId: string, value: number, rankingType: RankingType = "single") {
-  if (value <= 0) return value === -1 ? "DNF" : "—";
-  if (eventId === "SOR") return new Intl.NumberFormat().format(value);
   if (eventId === "sor-kinch") {
     return new Intl.NumberFormat(undefined, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(value);
   }
+  if (value <= 0) return value === -1 ? "DNF" : "—";
+  if (eventId === "SOR") return new Intl.NumberFormat().format(value);
 
   if (eventId === "333fm") {
     return rankingType === "average" ? (value / 100).toFixed(2) : `${value}`;

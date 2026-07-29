@@ -110,7 +110,7 @@ SELECT
   score,
   coverage,
   required_coverage,
-  CASE WHEN kinch_coverage = 16 THEN kinch_score END AS kinch_score,
+  kinch_score,
   RANK() OVER (
     PARTITION BY metric_version, event_set_version, result_type, scope, region_id
     ORDER BY score
@@ -119,23 +119,14 @@ SELECT
     PARTITION BY metric_version, event_set_version, result_type, scope, region_id
     ORDER BY score, person_id
   ) AS position,
-  CASE
-    WHEN kinch_coverage = 16 THEN RANK() OVER (
-      PARTITION BY metric_version, event_set_version, result_type, scope, region_id
-      ORDER BY
-        CASE WHEN kinch_coverage = 16 THEN 0 ELSE 1 END,
-        kinch_score DESC
-    )
-  END AS kinch_rank,
-  CASE
-    WHEN kinch_coverage = 16 THEN ROW_NUMBER() OVER (
-      PARTITION BY metric_version, event_set_version, result_type, scope, region_id
-      ORDER BY
-        CASE WHEN kinch_coverage = 16 THEN 0 ELSE 1 END,
-        kinch_score DESC,
-        person_id
-    )
-  END AS kinch_position
+  RANK() OVER (
+    PARTITION BY metric_version, event_set_version, result_type, scope, region_id
+    ORDER BY kinch_score DESC
+  ) AS kinch_rank,
+  ROW_NUMBER() OVER (
+    PARTITION BY metric_version, event_set_version, result_type, scope, region_id
+    ORDER BY kinch_score DESC, person_id
+  ) AS kinch_position
 FROM totals
 )
 SELECT * FROM ranked;

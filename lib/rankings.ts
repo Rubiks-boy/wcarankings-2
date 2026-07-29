@@ -120,7 +120,7 @@ async function queryPersonMetric(input: QueryInput) {
   const kinch = input.eventId === "sor-kinch";
   const rankColumn = kinch ? "kinch_rank" : "rank";
   const positionColumn = kinch ? "kinch_position" : "position";
-  const scoreColumn = kinch ? "kinch_score" : "score";
+  const scoreExpression = kinch ? "score.kinch_score / 16.0" : "score.score";
   const values: unknown[] = [input.type, input.scope, input.regionId];
   const conditions = [
     "score.metric_version = 1",
@@ -166,7 +166,7 @@ async function queryPersonMetric(input: QueryInput) {
        COALESCE(display_country.name, display_country.id, '') AS country_name,
        COALESCE(display_country.iso2, '') AS country_iso2,
        COALESCE(display_country.continent_id, '') AS continent_id,
-       score.${scoreColumn} AS best
+       ${scoreExpression} AS best
      FROM person_sum_of_ranks_scores score
      LEFT JOIN persons person ON person.wca_id = score.person_id AND person.sub_id = 1
      LEFT JOIN countries current_country ON current_country.id = person.country_id

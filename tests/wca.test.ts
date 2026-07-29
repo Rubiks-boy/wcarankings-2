@@ -8,5 +8,5 @@ test("treats Sum of Ranks metrics as ranking events", () => {
 });
 
 test("formats Kinch totals as fixed two-decimal scores", () => {
-  assert.equal(formatWcaResult("sor-kinch", 1082.06546), "1,082.07");
+  assert.equal(formatWcaResult("sor-kinch", 67.62909125), "67.63");
 });

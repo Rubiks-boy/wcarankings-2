@@ -122,6 +122,7 @@ test("exposes bounded resource APIs without projection name scans", async () => 
   assert.match(rankings, /input\.eventId === "SOR"/);
   assert.match(rankings, /input\.eventId === "sor-kinch"/);
   assert.match(rankings, /score\.\$\{positionColumn\} AS sub_rank/);
+  assert.match(rankings, /score\.kinch_score \/ 16\.0/);
   assert.match(entities, /FROM competition_event_stats stats/);
   assert.match(entities, /FROM city_event_stats stats/);
   assert.match(search, /FROM persons person/);

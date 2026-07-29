@@ -329,9 +329,11 @@ ties by WCA ID for stable positional paging.
 
 Kinch excludes Multi-Blind and requires results in all 16 remaining events.
 Each event contributes `100 × scope reference result ÷ personal result`; the
-overall score is the sum of those percentages, with higher scores ranking
-first. Its separate positional index supports the same bounded paging API
-without duplicating the person-event value grain.
+user-facing overall score is the mean of those percentages and therefore
+ranges from 0 to 100, with higher scores ranking first. The stored sum is
+divided by the fixed 16-event coverage at read time, which preserves ordering
+without another projection or index. Its separate positional index supports
+the same bounded paging API without duplicating the person-event value grain.
 
 Names and countries are joined only after selecting a score page. Counts use
 the score browse index rather than another persisted count grain.

@@ -161,7 +161,7 @@ export function RankingsPagerRail({ upArmed, downArmed, currentPosition, total, 
   const nearEnd = Number.isFinite(total) && currentPosition >= total - 5000;
   return <RankingsRail className="Jump--pager" direction="down" searchNavigation={searchActive}>
     <div className="Jump-pagerActions" aria-hidden={searchActive}>
-      <button className="Jump-pagerButton" onClick={onJumpUp} type="button" disabled={searchActive}><ArrowUpIcon /><span>{upArmed || nearTop ? "Jump to top" : `Up ${formatRankingNumber(5000)}`}</span></button>
+      <button className="Jump-pagerButton" onClick={onJumpUp} type="button" disabled={searchActive}><span>{upArmed || nearTop ? "Jump to top" : `Up ${formatRankingNumber(5000)}`}</span><ArrowUpIcon /></button>
       {wcaId && onFocusMe && <button className="Jump-pagerButton Jump-pagerButton--me" onClick={() => onFocusMe(wcaId)} type="button" disabled={searchActive} aria-label="Jump to my ranking"><span>My rank</span></button>}
       <button className="Jump-pagerButton" onClick={onJumpDown} type="button" disabled={searchActive}><ArrowDownIcon /><span>{downArmed || nearEnd ? "Jump to end" : `Down ${formatRankingNumber(5000)}`}</span></button>
     </div>

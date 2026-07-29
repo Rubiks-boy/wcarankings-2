@@ -133,7 +133,7 @@
 .Jump .findBar--rail .findStatus { padding-right: 0; }
 
 .Jump--pager { display: grid; overflow: hidden; }
-.Jump-pagerActions, .Jump-searchNavigationContent { display: flex; width: min(20em, calc(100vw - 2em)); min-width: 0; }
+.Jump-pagerActions, .Jump-searchNavigationContent { display: flex; width: min(26em, calc(100vw - 2em)); min-width: 0; }
 .Jump-pagerActions { grid-area: 1 / 1; opacity: 1; transition: opacity 150ms var(--cubic-move); }
 .Jump-pagerButton, .Jump-searchNavigationButton { flex: 1; }
 .Jump-pagerButton svg { flex: 0 0 auto; }

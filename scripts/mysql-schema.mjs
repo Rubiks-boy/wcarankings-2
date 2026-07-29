@@ -169,6 +169,18 @@ export const PUBLISHED_PROJECTION_TABLES = [
   ...COMPATIBILITY_PROJECTION_TABLES,
   ...ACTIVE_SEMANTIC_PROJECTION_TABLES,
 ];
+export const DEPLOYMENT_PROJECTION_GROUPS = [
+  {
+    name: "core",
+    projectionNames: DEFAULT_PROJECTION_NAMES.filter((name) => name !== "person-year-rankings"),
+    tables: PUBLISHED_PROJECTION_TABLES.filter((table) => !table.startsWith("person_year_")),
+  },
+  {
+    name: "yearly-person-rankings",
+    projectionNames: ["person-year-rankings"],
+    tables: ["person_year_ranking_cohorts", "person_year_rankings_single", "person_year_rankings_average", "person_year_ranking_counts"],
+  },
+];
 export const RETIRED_PROJECTION_TABLES = [
   "person_sum_of_ranks_event_values",
 ];
@@ -322,7 +334,10 @@ export async function promoteRegisteredProjections(
   for (const retired of RETIRED_PROJECTION_TABLES) await dropManagedObject(connection, retired);
 }
 
-export async function refreshMysqlSchema(connection, { projectionSuffix = "" } = {}) {
+export async function refreshMysqlSchema(
+  connection,
+  { projectionSuffix = "", projectionNames: selectedNames } = {},
+) {
   const entriesTables = {
     single: `ranking_entries_single${projectionSuffix}`,
     average: `ranking_entries_average${projectionSuffix}`,
@@ -395,7 +410,10 @@ export async function refreshMysqlSchema(connection, { projectionSuffix = "" } =
       .replaceAll("result_entries_single", resultEntriesTable)
       .replaceAll("result_counts", resultCountsTable),
   );
-  await buildRegisteredProjections(connection, { projectionSuffix });
+  await buildRegisteredProjections(connection, {
+    projectionSuffix,
+    projectionNames: selectedNames,
+  });
 }
 
 export async function refreshResultEntriesSchema(connection, { projectionSuffix = "" } = {}) {

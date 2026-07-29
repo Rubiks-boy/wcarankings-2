@@ -156,17 +156,26 @@ jobs:
           docker run --rm --entrypoint sh "wcarankings-flyway:${GITHUB_SHA}" -c \
             'test -f /flyway/migrations/V1__export_metadata.sql && test -f /flyway/migrations/V2__import_health.sql && test -f /flyway/migrations/V3__projection_build_timing.sql && test -f /flyway/migrations/V4__result_projection_health.sql'
 
-      - name: Restore generated projection transfer
-        id: projection-transfer-cache
+      - name: Restore core projection transfer
+        id: core-projection-cache
         uses: actions/cache/restore@v4
         with:
           path: |
-            /tmp/projection-transfer.sql.gz
-            /tmp/projection-transfer.json
-          key: projection-transfer-v2-${{ steps.wca-export.outputs.date }}-${{ hashFiles('sql/ranking-projections/**', 'scripts/mysql-schema.mjs', 'scripts/prepare-projection-transfer.mjs') }}
+            /tmp/core-projection-transfer.sql.gz
+            /tmp/core-projection-transfer.json
+          key: projection-transfer-core-v1-${{ steps.wca-export.outputs.date }}-${{ hashFiles('sql/ranking-projections/**', 'scripts/mysql-schema.mjs', 'scripts/prepare-projection-transfer.mjs') }}
+
+      - name: Restore yearly projection transfer
+        id: yearly-projection-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            /tmp/yearly-projection-transfer.sql.gz
+            /tmp/yearly-projection-transfer.json
+          key: projection-transfer-yearly-v1-${{ steps.wca-export.outputs.date }}-${{ hashFiles('sql/ranking-projections/person_year_*', 'scripts/mysql-schema.mjs', 'scripts/prepare-projection-transfer.mjs') }}
 
       - name: Build and export projection generation
-        if: steps.projection-transfer-cache.outputs.cache-hit != 'true'
+        if: steps.core-projection-cache.outputs.cache-hit != 'true' || steps.yearly-projection-cache.outputs.cache-hit != 'true'
         id: projection-build
         run: |
           started_at=$(date +%s)
@@ -175,21 +184,15 @@ jobs:
           docker compose run --rm flyway migrate
           node scripts/sync-wca-export.mjs --force
           node scripts/check-ranking-projections.mjs
-          node scripts/prepare-projection-transfer.mjs > /tmp/projection-transfer.json
-          mapfile -t transfer_tables < <(jq -r '.tables[]' /tmp/projection-transfer.json)
-          MYSQL_PWD="$MYSQL_PASSWORD" mariadb-dump \
-            --protocol=TCP \
-            --host=127.0.0.1 \
-            --port=13307 \
-            --user="$MYSQL_USER" \
-            --single-transaction \
-            --skip-lock-tables \
-            "$MYSQL_DATABASE" \
-            "${transfer_tables[@]}" |
-            gzip -1 > /tmp/projection-transfer.sql.gz
+          for group in core yearly-person-rankings; do
+            prefix=${group/yearly-person-rankings/yearly}
+            node scripts/prepare-projection-transfer.mjs --group="$group" > "/tmp/${prefix}-projection-transfer.json"
+            mapfile -t transfer_tables < <(jq -r '.tables[]' "/tmp/${prefix}-projection-transfer.json")
+            MYSQL_PWD="$MYSQL_PASSWORD" mariadb-dump --protocol=TCP --host=127.0.0.1 --port=13307 --user="$MYSQL_USER" --single-transaction --skip-lock-tables "$MYSQL_DATABASE" "${transfer_tables[@]}" | gzip -1 > "/tmp/${prefix}-projection-transfer.sql.gz"
+          done
           completed_at=$(date +%s)
           duration=$((completed_at - started_at))
-          bytes=$(stat --format=%s /tmp/projection-transfer.sql.gz)
+          bytes=$(du -bc /tmp/core-projection-transfer.sql.gz /tmp/yearly-projection-transfer.sql.gz | tail -1 | cut -f1)
           echo "duration_seconds=$duration" >> "$GITHUB_OUTPUT"
           echo "archive_bytes=$bytes" >> "$GITHUB_OUTPUT"
           {
@@ -199,19 +202,28 @@ jobs:
             echo "- Compressed transfer: ${bytes} bytes"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Save generated projection transfer
-        if: steps.projection-transfer-cache.outputs.cache-hit != 'true'
+      - name: Save generated core projection transfer
+        if: steps.core-projection-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
-            /tmp/projection-transfer.sql.gz
-            /tmp/projection-transfer.json
-          key: projection-transfer-v2-${{ steps.wca-export.outputs.date }}-${{ hashFiles('sql/ranking-projections/**', 'scripts/mysql-schema.mjs', 'scripts/prepare-projection-transfer.mjs') }}
+            /tmp/core-projection-transfer.sql.gz
+            /tmp/core-projection-transfer.json
+          key: projection-transfer-core-v1-${{ steps.wca-export.outputs.date }}-${{ hashFiles('sql/ranking-projections/**', 'scripts/mysql-schema.mjs', 'scripts/prepare-projection-transfer.mjs') }}
+
+      - name: Save generated yearly projection transfer
+        if: steps.yearly-projection-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            /tmp/yearly-projection-transfer.sql.gz
+            /tmp/yearly-projection-transfer.json
+          key: projection-transfer-yearly-v1-${{ steps.wca-export.outputs.date }}-${{ hashFiles('sql/ranking-projections/person_year_*', 'scripts/mysql-schema.mjs', 'scripts/prepare-projection-transfer.mjs') }}
 
       - name: Report cached projection transfer
-        if: steps.projection-transfer-cache.outputs.cache-hit == 'true'
+        if: steps.core-projection-cache.outputs.cache-hit == 'true' && steps.yearly-projection-cache.outputs.cache-hit == 'true'
         run: |
-          bytes=$(stat --format=%s /tmp/projection-transfer.sql.gz)
+          bytes=$(du -bc /tmp/core-projection-transfer.sql.gz /tmp/yearly-projection-transfer.sql.gz | tail -1 | cut -f1)
           {
             echo "### Projection build"
             echo "- WCA export: ${{ steps.wca-export.outputs.date }}"
@@ -224,8 +236,10 @@ jobs:
         with:
           name: projection-transfer-${{ github.sha }}
           path: |
-            /tmp/projection-transfer.sql.gz
-            /tmp/projection-transfer.json
+            /tmp/core-projection-transfer.sql.gz
+            /tmp/core-projection-transfer.json
+            /tmp/yearly-projection-transfer.sql.gz
+            /tmp/yearly-projection-transfer.json
           retention-days: 7
 
       - name: Copy deployment configuration
@@ -270,17 +284,15 @@ jobs:
         id: projection-import
         run: |
           started_at=$(date +%s)
-          scp -q -o BatchMode=yes /tmp/projection-transfer.sql.gz \
-            "$SERVER_USER@$SERVER_IP:/tmp/wcarankings-projection-transfer.sql.gz"
+          for group in core yearly; do scp -q -o BatchMode=yes "/tmp/${group}-projection-transfer.sql.gz" "$SERVER_USER@$SERVER_IP:/tmp/wcarankings-${group}-projection-transfer.sql.gz"; done
           ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
             'set -eu
             cd /srv/wcarankings
             (while sleep 30; do echo "Projection transfer import is still running…"; done) &
             heartbeat_pid=$!
-            trap "kill $heartbeat_pid 2>/dev/null || true; rm -f /tmp/wcarankings-projection-transfer.sql.gz" EXIT
-            gzip -dc /tmp/wcarankings-projection-transfer.sql.gz |
-              docker compose exec -T db sh -c '"'"'mariadb --user="$MARIADB_USER" --password="$MARIADB_PASSWORD" "$MARIADB_DATABASE"'"'"'
-            docker compose run --rm app node /app/scripts/publish-projection-transfer.mjs
+            trap "kill $heartbeat_pid 2>/dev/null || true; rm -f /tmp/wcarankings-core-projection-transfer.sql.gz /tmp/wcarankings-yearly-projection-transfer.sql.gz" EXIT
+            for group in core yearly; do gzip -dc "/tmp/wcarankings-${group}-projection-transfer.sql.gz" | docker compose exec -T db sh -c '"'"'mariadb --user="$MARIADB_USER" --password="$MARIADB_PASSWORD" "$MARIADB_DATABASE"'"'"'; done
+            docker compose run --rm app node /app/scripts/publish-projection-transfer.mjs --groups=core,yearly-person-rankings
             docker compose run --rm app node /app/scripts/check-ranking-projections.mjs'
           completed_at=$(date +%s)
           duration=$((completed_at - started_at))

@@ -55,6 +55,13 @@ export function parseStart(params: URLSearchParams) {
   return parsed;
 }
 
+export function parseYear(params: URLSearchParams) {
+  const value = params.get("year");
+  if (value === null || value === "") return null;
+  if (!/^\d{4}$/.test(value)) throw new ApiInputError("year must be a four-digit year.");
+  return Number(value);
+}
+
 export function parseEvent(params: URLSearchParams, { required = true } = {}) {
   const value = params.get("eventId") ?? params.get("event");
   if (!value && !required) return null;

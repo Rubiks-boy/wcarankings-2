@@ -117,6 +117,13 @@ const projectionDefinitions = [
   { name: "result-facts", dependencies: ["raw-wca"], files: ["result_facts.sql"], tables: ["result_facts"] },
   { name: "person-event-rankings", dependencies: ["result-facts"], files: ["person_event_rankings.sql"], tables: ["person_event_rankings"] },
   {
+    name: "person-year-rankings",
+    dependencies: ["result-facts"],
+    files: ["person_year_ranking_cohorts.sql", "person_year_rankings_single.sql", "person_year_rankings_average.sql", "person_year_ranking_counts.sql"],
+    tables: ["person_year_ranking_cohorts", "person_year_rankings_single", "person_year_rankings_average", "person_year_ranking_counts"],
+    enabledByDefault: true,
+  },
+  {
     name: "result-rankings",
     dependencies: ["raw-wca"],
     files: ["result_rankings_single.sql", "result_rankings_average.sql"],
@@ -169,7 +176,13 @@ export const RETIRED_PROJECTION_TABLES = [
 function projectionNames(sql, suffix) {
   return [...SEMANTIC_PROJECTION_TABLES, ...COMPATIBILITY_PROJECTION_TABLES]
     .sort((left, right) => right.length - left.length)
-    .reduce((renamed, table) => renamed.replaceAll(table, `${table}${suffix}`), sql);
+    .reduce(
+      (renamed, table) => renamed.replace(
+        new RegExp(`(?<![A-Za-z0-9_])${table}(?![A-Za-z0-9_])`, "g"),
+        `${table}${suffix}`,
+      ),
+      sql,
+    );
 }
 
 async function buildSqlProjection(connection, definition, suffix) {

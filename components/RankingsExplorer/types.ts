@@ -31,6 +31,7 @@ export type RankingPage = {
   total: number;
   exportDate?: string | null;
   offlineStale?: boolean;
+  availableYears?: number[];
 };
 
 export type InitialRankingData = Pick<
@@ -41,6 +42,7 @@ export type InitialRankingData = Pick<
   | "previousPageStart"
   | "total"
   | "exportDate"
+  | "availableYears"
 > & {
   startRank: number;
   startPosition: number;

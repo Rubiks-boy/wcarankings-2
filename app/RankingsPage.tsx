@@ -11,7 +11,6 @@ import { getRegions } from "@/lib/regions";
 import { loadRankings } from "@/lib/rankings";
 import { loadCompetitionRankings } from "@/lib/semantic-entity-rankings";
 import { loadResultRankings } from "@/lib/semantic-result-rankings";
-import { projectionBrowsingEnabled } from "@/lib/feature-flags";
 import { getAuthUser } from "@/lib/auth";
 
 const PAGE_SIZE = RESULTS_PAGE_SIZE;
@@ -98,6 +97,8 @@ async function getInitialRankings(
   const eventId = isRankingEventId(rawEventId) ? rawEventId : "333";
   const rankingType = eventId === "333mbf" ? "single" : isRankingType(rawRankingType) ? rawRankingType : "single";
   const { scope, regionId } = parseRegionQuery(getSearchParam(searchParams, "region"));
+  const year = getSearchParam(searchParams, "year");
+  const yearParams = /^\d{4}$/.test(year) ? { year } : {};
   const search = getSearchParam(searchParams, "search").trim().slice(0, 80);
   const regexSearch = getSearchParam(searchParams, "mode") === "vim" && isValidRegexPattern(search);
   const searchResult = search
@@ -109,6 +110,7 @@ async function getInitialRankings(
           searchLimit: "500",
           ...(regexSearch ? { mode: "vim" } : {}),
           ...(scope === "world" ? {} : { region: regionId }),
+          ...yearParams,
         }),
       )
     : null;
@@ -119,6 +121,7 @@ async function getInitialRankings(
           result: rankingType,
           locate: focusedWcaId,
           ...(scope === "world" ? {} : { region: regionId }),
+          ...yearParams,
         }),
       ) as unknown as { located: RankingEntry | null }
     : null;
@@ -141,6 +144,7 @@ async function getInitialRankings(
           limit: String(PAGE_SIZE),
           paged: "1",
           ...(scope === "world" ? {} : { region: regionId }),
+          ...yearParams,
         }),
       ),
     ),
@@ -164,6 +168,7 @@ async function getInitialRankings(
     lastRank: lastPage.lastRank ?? null,
     total: lastPage.total ?? 0,
     exportDate: lastPage.exportDate ?? null,
+    availableYears: lastPage.availableYears ?? [],
     startRank,
     searchMatches,
     initialMatchPersonId: firstMatch?.personId ?? "",
@@ -302,6 +307,9 @@ export async function RankingsPage({
       ? "single"
       : isRankingType(rawRankingType) ? rawRankingType : "single";
   const { scope, regionId } = parseRegionQuery(getSearchParam(resolvedSearchParams, "region"));
+  const initialYear = /^\d{4}$/.test(getSearchParam(resolvedSearchParams, "year"))
+    ? Number(getSearchParam(resolvedSearchParams, "year"))
+    : null;
   const requestedWcaId = getSearchParam(resolvedSearchParams, "wcaId")
     .trim()
     .toUpperCase();
@@ -370,18 +378,19 @@ export async function RankingsPage({
   const initialRegexSearch = getSearchParam(resolvedSearchParams, "mode") === "vim" && isValidRegexPattern(initialSearch);
   return (
     <RankingsExplorer
-      key={`${initialSubject}:${initialCompetitionRanking}`}
+      key={`${initialSubject}:${initialCompetitionRanking}:${initialYear ?? "all"}`}
       initialData={initialRankings}
       initialSearch={initialSearch}
       initialRegexSearch={initialRegexSearch}
       initialEventId={eventId}
       initialRankingType={rankingType}
+      initialYear={initialYear}
       initialRegionSelection={{ scope, regionId }}
       initialRegions={{ continents, countries }}
       initialSubject={initialSubject}
       initialCompetitionRanking={initialCompetitionRanking}
       initialLatitudeHemisphere={latitudeHemisphere}
-      showSubjectSwitch={projectionBrowsingEnabled}
+      showSubjectSwitch
       showAllEventRankingOptions
     />
   );

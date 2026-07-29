@@ -556,7 +556,7 @@ Any event-set or missing-event policy change increments `metric_version` or
 
 ## Time-based rankings
 
-### `person_year_event_rankings`
+### `person_year_rankings_single` and `person_year_rankings_average`
 
 Grain:
 
@@ -564,7 +564,13 @@ Grain:
 year + person + event + result type
 ```
 
-This represents each person's best result during a year.
+These physical projections represent each person's best valid result during a
+competition start year. Country bests are selected first using the country on
+the result, then continent and World bests are derived from those rows. The
+compact `person_year_ranking_cohorts` table maps World, continent, and country
+cohorts to numeric IDs; `person_year_ranking_counts` supplies available years
+and page totals without scanning raw results. Public rank uses `RANK()` and
+the deterministic internal position is never exposed in the UI.
 
 ### `result_year_rankings`
 

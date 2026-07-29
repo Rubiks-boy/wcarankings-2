@@ -158,7 +158,7 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.doesNotMatch(rankingsRoute, /SELECT (MIN|MAX|COUNT\(\*\))/);
   assert.doesNotMatch(rankingsRoute, /ROW_NUMBER\(\) OVER/);
   assert.match(rankingsRoute, /searchPersonIds/);
-  assert.match(rankingsRoute, /person_id IN \(\$\{placeholders\}\)/);
+  assert.match(rankingsRoute, /personColumn} IN \(\$\{placeholders\}\)/);
   assert.doesNotMatch(rankingsRoute, /person_name \$\{operator\}/);
   assert.match(rankingsRoute, /competition_id/);
   assert.match(rankingsRoute, /conditions\.push\(`\$\{rank\} > 0`\)/);
@@ -188,7 +188,7 @@ test("does not replace SQL failures with synthetic ranking data", async () => {
 
   assert.doesNotMatch(page, /demo-data|makeDemoRankings/);
   assert.doesNotMatch(rankingsService, /demo-data|makeDemoRankings/);
-  assert.match(rankingsRoute, /status: 503/);
+  assert.match(rankingsRoute, /inputError \? 400 : 503/);
   assert.doesNotMatch(readme, /preview rows/);
   await assert.rejects(access(new URL("../lib/demo-data.ts", import.meta.url)));
 });
@@ -221,7 +221,7 @@ test("uses the copied WCA Rankings visual language", async () => {
   assert.match(page, /lastRank: lastPage\.lastRank/);
   assert.match(page, /initialRegions=\{\{ continents, countries \}\}/);
   assert.match(page, /showAllEventRankingOptions\s*\/>/);
-  assert.doesNotMatch(page, /showAllEventRankingOptions=\{projectionBrowsingEnabled\}/);
+  assert.match(page, /showSubjectSwitch/);
   assert.match(page, /fetchRegions\("continent"\)/);
   assert.match(page, /fetchRegions\("country"\)/);
   assert.match(page, /redirect/);

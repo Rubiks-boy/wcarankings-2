@@ -71,6 +71,11 @@
   padding: 0.3rem;
 }
 
+.personYearDropdown .TextDropdown-options {
+  max-height: min(28em, 70vh);
+  overflow-y: auto;
+}
+
 .TextDropdown-options button {
   min-height: 40px;
   padding: 0.5rem 0.65rem;

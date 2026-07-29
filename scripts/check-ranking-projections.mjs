@@ -91,7 +91,7 @@ const COMPETITION_PODIUM_COLUMNS = [
 ];
 const COMPETITION_PODIUM_INDEXES = [
   "PRIMARY",
-  "idx_competition_podium_members_person",
+  "idx_comp_podium_members_person",
 ];
 
 function databaseOptions(connectionString = process.env.DATABASE_URL) {

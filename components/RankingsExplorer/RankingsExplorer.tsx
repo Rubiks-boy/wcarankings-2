@@ -2499,6 +2499,7 @@ export function RankingsExplorer({
     : WCA_EVENTS.find((event) => event.id === eventId)!;
   const changeRailEvent = (nextEventId: string) => {
     if (isAllEventRankingOption(nextEventId)) {
+      skipNextFindResetRef.current = true;
       setAllEventRankingId(nextEventId);
       setEventId(nextEventId === "SOR" ? "SOR" : "333");
       setStartRank(1);

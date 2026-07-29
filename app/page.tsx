@@ -205,7 +205,7 @@ export default async function Home({
       initialRegionSelection={{ scope, regionId }}
       initialRegions={{ continents, countries }}
       showSubjectSwitch={projectionBrowsingEnabled}
-      showAllEventRankingOptions={projectionBrowsingEnabled}
+      showAllEventRankingOptions
     />
   );
 }

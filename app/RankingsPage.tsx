@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { RankingsExplorer } from "@/components/RankingsExplorer/RankingsExplorer";
 import type {
@@ -275,11 +274,13 @@ export type SearchParams = Record<string, string | string[] | undefined>;
 export async function RankingsPage({
   searchParams,
   pathname = "/",
+  initialYearOverride,
   initialSubject = "people",
   initialCompetitionRanking = "best-result",
 }: {
   searchParams: Promise<SearchParams>;
   pathname?: string;
+  initialYearOverride?: number | null;
   initialSubject?: "people" | "results" | "competitions";
   initialCompetitionRanking?: "best-result" | "podiums" | "competitor-count" | "latitude";
 }) {
@@ -307,9 +308,9 @@ export async function RankingsPage({
       ? "single"
       : isRankingType(rawRankingType) ? rawRankingType : "single";
   const { scope, regionId } = parseRegionQuery(getSearchParam(resolvedSearchParams, "region"));
-  const initialYear = /^\d{4}$/.test(getSearchParam(resolvedSearchParams, "year"))
+  const initialYear = initialYearOverride ?? (/^\d{4}$/.test(getSearchParam(resolvedSearchParams, "year"))
     ? Number(getSearchParam(resolvedSearchParams, "year"))
-    : null;
+    : null);
   const requestedWcaId = getSearchParam(resolvedSearchParams, "wcaId")
     .trim()
     .toUpperCase();

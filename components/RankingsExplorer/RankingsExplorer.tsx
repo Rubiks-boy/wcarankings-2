@@ -283,6 +283,11 @@ export function orderSearchMatches(
   );
 }
 
+function activeYear() {
+  return window.location.pathname.match(/^\/persons\/year\/(\d{4})$/)?.[1]
+    ?? new URLSearchParams(window.location.search).get("year");
+}
+
 function getPage(
   eventId: string,
   rankingType: "single" | "average",
@@ -298,7 +303,7 @@ function getPage(
     limit: String(PAGE_SIZE),
     paged: "1",
   });
-  const year = new URLSearchParams(window.location.search).get("year");
+  const year = activeYear();
   if (resource === "people" && year) params.set("year", year);
   if (selection.scope !== "world") params.set("region", selection.regionId);
   if (resource === "podiums") params.set("ranking", "podium");
@@ -505,7 +510,7 @@ function searchRankings(
     searchLimit: "500",
   });
   if (regexSearch) params.set("mode", "vim");
-  const year = new URLSearchParams(window.location.search).get("year");
+  const year = activeYear();
   if (resource === "people" && year) params.set("year", year);
   if (selection.scope !== "world") params.set("region", selection.regionId);
 
@@ -532,7 +537,7 @@ function locateRanking(
     result: rankingType,
     locate: wcaId,
   });
-  const year = new URLSearchParams(window.location.search).get("year");
+  const year = activeYear();
   if (year) params.set("year", year);
   if (selection.scope !== "world") params.set("region", selection.regionId);
   return fetch(`/api/rankings?${params}`).then(async (response) => {
@@ -2890,12 +2895,12 @@ export function RankingsExplorer({
                     value={initialYear ? String(initialYear) : ""}
                     onChange={(year) => {
                       const params = new URLSearchParams(window.location.search);
-                      if (year) params.set("year", year);
-                      else params.delete("year");
                       params.delete("search");
                       params.delete("wcaId");
                       params.delete("focus");
-                      navigateToPage(`${window.location.pathname}${params.size ? `?${params}` : ""}`);
+                      navigateToPage(year
+                        ? `/persons/year/${year}${params.size ? `?${params}` : ""}`
+                        : `/${params.size ? `?${params}` : ""}`);
                     }}
                     ariaLabel="Person ranking period"
                     className="personYearDropdown"

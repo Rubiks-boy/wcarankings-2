@@ -11,3 +11,8 @@
 - Do not run ranking imports or projection refreshes merely to start or test the app. Inspect the existing database first and report what is missing.
 - Only run `sync:wca`, `sync:wca:local`, `db:refresh-rankings`, schema-refresh scripts, destructive SQL, or Docker volume/database recreation after the user explicitly authorizes that exact operation.
 - When local data is incomplete, prefer a clear readiness/error response and ask whether the user wants a targeted repair; state which tables or metadata would be changed before proceeding.
+
+## Pre-launch compatibility
+
+- This app has not launched. Do not preserve legacy URLs, APIs, data shapes, flags, or behavior by default.
+- Before adding compatibility code, ask the user whether the change needs to be backwards compatible. Remove superseded behavior when compatibility is not explicitly requested.

@@ -438,7 +438,11 @@ seconds; Sum of Ranks indexes took 15.6 seconds, person-event single and average
 indexes took 14.4 and 12.3 seconds, and competition indexes took less than three
 seconds. No application query used the compatibility result table's five
 secondary indexes; result browsing uses `result_rankings`. The unused indexes
-were subsequently removed, leaving the compatibility table's primary key.
+were subsequently removed, leaving the compatibility table's primary key. The
+next cold build and dump completed in 24 minutes 15 seconds, a 42.9% reduction,
+and production transfer and publication completed in 5 minutes 08 seconds, a
+27.2% reduction. Deferred-index work fell to 17 indexes and approximately 43
+seconds.
 
 Deployment projection builds use the export date already published on
 production, not the newest export advertised by the WCA API. This keeps raw

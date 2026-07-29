@@ -162,9 +162,19 @@ The cache is therefore the main steady-state optimization. The five
 `result_entries_single` secondary indexes had no runtime readers: current result
 browsing uses the separate `result_rankings` grain. They were removed after this
 benchmark, leaving the compatibility table's primary key and eliminating its
-125-second deferred-index phase. The next transfer optimization target is the
-compatibility table's data build and replay cost, or a physical backup/restore
-format that can preserve built indexes without row-by-row logical replay.
+125-second deferred-index phase.
+
+The first cold run without those indexes built and dumped the generation in
+24m 15s, 42.9% faster than the 42m 27s indexed run. Production transfer and
+publication took 5m 08s, 27.2% faster than the 7m 03s cache-hit indexed run.
+Deferred-index construction fell from 22 indexes and about 171 seconds to 17
+indexes and about 43 seconds. The compressed artifact remained approximately
+432.3 MB because secondary indexes were already omitted from the logical dump;
+the improvement comes from avoiding their initial and production construction.
+
+The next transfer optimization target is the compatibility table's data build
+and replay cost, or a physical backup/restore format that avoids row-by-row
+logical replay.
 
 ## Ranking performance verification
 

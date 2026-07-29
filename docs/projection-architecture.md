@@ -425,6 +425,12 @@ runner experiment may still benefit from caching a validated imported database
 snapshot or building only the projection group being deployed. The failed
 experiments never published tables on production.
 
+Deployment projection builds use the export date already published on
+production, not the newest export advertised by the WCA API. This keeps raw
+tables, display joins, and transferred projections on one generation. On a
+cache miss, Actions streams that exact dated archive from production's
+persistent WCA export cache.
+
 The published score table uses approximately 139.8 MiB of data and 117.3 MiB
 of indexes. Removing the 457 MiB published event-value table and narrowing the
 score schema reduced persistent SOR/Kinch storage from approximately 910.7 MiB

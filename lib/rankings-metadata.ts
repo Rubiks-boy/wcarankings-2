@@ -114,35 +114,22 @@ export function getYearRankingCount(metadata: RankingsMetadata, year: number, ev
 
 export async function assertRankingsReady() {
   if (!readiness) readiness = (async () => {
-    const tables = ["ranking_entries_single", "ranking_entries_average", "person_year_ranking_cohorts", "person_year_rankings_single", "person_year_rankings_average", "person_year_ranking_counts"];
+    // Yearly projections are published by their own targeted backfill. Keep
+    // all-time rankings ready while an older deployment has not received that
+    // optional projection group yet; yearly requests report an unavailable
+    // year until it is present.
+    const tables = ["ranking_entries_single", "ranking_entries_average"];
     const columns = ["event_id", "world_rank", "world_sub_rank", "continent_id", "continent_rank", "continent_sub_rank", "country_id", "country_rank", "country_sub_rank"];
     const indexes = ["idx_ranking_entries_world", "idx_ranking_entries_continent", "idx_ranking_entries_country"];
-    const [tableRows, columnRows, indexRows, yearlyRows] = await Promise.all([
+    const [tableRows, columnRows, indexRows] = await Promise.all([
       query<{ name: string }>(`SELECT table_name AS name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN (${tables.map(() => "?").join(", ")})`, tables),
       query<{ table_name: string; column_name: string }>("SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name IN (?, ?) AND column_name IN (?, ?, ?, ?, ?, ?, ?, ?, ?)", [...tables, ...columns]),
       query<{ table_name: string; index_name: string }>("SELECT table_name, index_name FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name IN (?, ?) AND index_name IN (?, ?, ?)", [...tables, ...indexes]),
-      query<{ table_name: string; column_name: string; index_name: string | null }>(`SELECT columns_table.table_name, columns_table.column_name, statistics.index_name
-        FROM information_schema.columns columns_table
-        LEFT JOIN information_schema.statistics statistics
-          ON statistics.table_schema = columns_table.table_schema
-         AND statistics.table_name = columns_table.table_name
-        WHERE columns_table.table_schema = DATABASE()
-          AND columns_table.table_name IN ('person_year_rankings_single', 'person_year_rankings_average', 'person_year_ranking_counts')
-          AND (columns_table.column_name IN ('year', 'event_id', 'cohort_id', 'person_id', 'result_id', 'result_value', 'public_rank', 'position', 'ranking_type', 'count')
-            OR statistics.index_name IN ('idx_person_year_single_browse', 'idx_person_year_single_person', 'idx_person_year_average_browse', 'idx_person_year_average_person'))`),
     ]);
     for (const table of tables) {
       if (!tableRows.rows.some((row) => row.name === table)) throw new Error(`Required projection ${table} is missing.`);
-      if (table.startsWith("person_year_")) continue;
       for (const column of columns) if (!columnRows.rows.some((row) => row.table_name === table && row.column_name === column)) throw new Error(`Required projection column ${table}.${column} is missing.`);
       for (const index of indexes) if (!indexRows.rows.some((row) => row.table_name === table && row.index_name === index)) throw new Error(`Required projection index ${table}.${index} is missing.`);
-    }
-    const yearlyColumns = ["year", "event_id", "cohort_id", "person_id", "result_id", "result_value", "public_rank", "position"];
-    for (const table of ["person_year_rankings_single", "person_year_rankings_average"]) {
-      for (const column of yearlyColumns) if (!yearlyRows.rows.some((row) => row.table_name === table && row.column_name === column)) throw new Error(`Required projection column ${table}.${column} is missing.`);
-    }
-    for (const [table, index] of [["person_year_rankings_single", "idx_person_year_single_browse"], ["person_year_rankings_single", "idx_person_year_single_person"], ["person_year_rankings_average", "idx_person_year_average_browse"], ["person_year_rankings_average", "idx_person_year_average_person"]] as const) {
-      if (!yearlyRows.rows.some((row) => row.table_name === table && row.index_name === index)) throw new Error(`Required projection index ${table}.${index} is missing.`);
     }
     await getRankingsMetadata();
   })().catch((error) => { readiness = null; throw error; });

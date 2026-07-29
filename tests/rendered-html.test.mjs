@@ -201,7 +201,7 @@ test("uses the copied WCA Rankings visual language", async () => {
     readFile(new URL("../app/styles/search.css", import.meta.url), "utf8"),
     readFile(new URL("../app/styles/vim.css", import.meta.url), "utf8"),
     readFile(new URL("../components/RankingsRail/RankingsRail.css", import.meta.url), "utf8"),
-    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/RankingsPage.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/manifest.ts", import.meta.url), "utf8"),
     readFile(new URL("../components/PwaRegistration/PwaRegistration.tsx", import.meta.url), "utf8"),

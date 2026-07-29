@@ -490,6 +490,27 @@ function searchRankings(
   });
 }
 
+function locateRanking(
+  eventId: string,
+  rankingType: "single" | "average",
+  selection: RegionSelection,
+  wcaId: string,
+) {
+  const params = new URLSearchParams({
+    eventId,
+    result: rankingType,
+    locate: wcaId,
+  });
+  if (selection.scope !== "world") params.set("region", selection.regionId);
+  return fetch(`/api/rankings?${params}`).then(async (response) => {
+    if (!response.ok) {
+      const body = (await response.json()) as { error?: string };
+      throw new Error(body.error ?? "Could not find this person in the rankings.");
+    }
+    return response.json() as Promise<{ located: RankingEntry | null }>;
+  });
+}
+
 export function RankingsExplorer({
   initialData,
   initialSearch = "",
@@ -646,6 +667,7 @@ export function RankingsExplorer({
   const moreRequestRef = useRef(false);
   const previousRequestRef = useRef(false);
   const navigationEpochRef = useRef(0);
+  const lastFocusRequestRef = useRef("");
   const pendingRankRef = useRef(1);
   const pendingFocusLastRef = useRef(false);
   const pendingScrollToTopRef = useRef(false);
@@ -1434,6 +1456,56 @@ export function RankingsExplorer({
     },
     [jumpToMatch]
   );
+
+  const focusWcaId = useCallback((wcaId: string) => {
+    if (subject !== "people") return;
+    setError("");
+    void locateRanking(eventId, rankingType, regionSelection, wcaId)
+      .then(({ located }) => {
+        if (!located) {
+          setError("This person has no ranking for the selected event and region.");
+          return;
+        }
+        jumpToMatch(located);
+      })
+      .catch((requestError: unknown) => {
+        setError(requestError instanceof Error ? requestError.message : "Could not find this person in the rankings.");
+      });
+  }, [eventId, jumpToMatch, rankingType, regionSelection, subject]);
+
+  const focusMyRanking = useCallback((wcaId: string) => {
+    updateQueryParams({ focus: "me", wcaId: null });
+    focusWcaId(wcaId);
+  }, [focusWcaId]);
+
+  useEffect(() => {
+    if (subject !== "people") return;
+    const url = new URL(window.location.href);
+    const explicitWcaId = url.searchParams.get("wcaId")?.trim().toUpperCase();
+    const focusMe = url.searchParams.get("focus") === "me";
+    const requestKey = [eventId, rankingType, regionSelection.scope, regionSelection.regionId, explicitWcaId ?? "", focusMe ? "me" : ""].join(":");
+    if ((!explicitWcaId && !focusMe) || lastFocusRequestRef.current === requestKey) return;
+    lastFocusRequestRef.current = requestKey;
+
+    if (explicitWcaId) {
+      const timer = window.setTimeout(() => focusWcaId(explicitWcaId), 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    const controller = new AbortController();
+    fetch("/api/auth/wca/me", { headers: { Accept: "application/json" }, signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not load your profile.");
+        const { profile } = await response.json() as { profile: { wcaId: string } | null };
+        if (!profile) throw new Error("Sign in with WCA to jump to your ranking.");
+        focusWcaId(profile.wcaId);
+      })
+      .catch((requestError: unknown) => {
+        if (requestError instanceof DOMException && requestError.name === "AbortError") return;
+        setError(requestError instanceof Error ? requestError.message : "Could not load your profile.");
+      });
+    return () => controller.abort();
+  }, [eventId, focusWcaId, rankingType, regionSelection, subject]);
 
   const resetFind = useCallback(() => {
     findMatchesRef.current = [];
@@ -2756,6 +2828,7 @@ export function RankingsExplorer({
             total={total}
             onJumpUp={handleJumpUp}
             onJumpDown={handleJumpDown}
+            onFocusMe={subject === "people" ? focusMyRanking : undefined}
             searchActive={findOpen && findMatches.length > 0}
             onSearchPrevious={() => cycleFind(-1)}
             onSearchNext={() => cycleFind(1)}

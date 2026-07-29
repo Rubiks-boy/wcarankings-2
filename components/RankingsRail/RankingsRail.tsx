@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { forwardRef, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { EventPicker, type EventPickerOption } from "../EventPicker/EventPicker";
 import { RegionPicker } from "../RegionPicker/RegionPicker";
 import ArrowDownIcon from "../Icon/arrow-down.svg?react";
@@ -10,6 +10,14 @@ import CompassIcon from "../Icon/compass.svg?react";
 import SearchIcon from "../Icon/search.svg?react";
 import { formatRankingNumber, type RankingEntry, type RegionOption, type RegionSelection } from "../RankingsExplorer/types";
 import { WCA_EVENTS } from "@/lib/wca";
+
+type AuthProfileResponse = {
+  profile: { wcaId: string } | null;
+};
+
+function PersonIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></svg>;
+}
 
 export const RankingsRail = forwardRef<HTMLDivElement, { children: ReactNode; className?: string; direction: "up" | "down"; searchNavigation?: boolean; compactResultType?: boolean }>(
   ({ children, className = "", direction, searchNavigation, compactResultType }, ref) => (
@@ -132,14 +140,33 @@ export function RankingsControlsRail<T extends EventPickerOption>({ event, event
   );
 }
 
-export function RankingsPagerRail({ upArmed, downArmed, currentPosition, total, onJumpUp, onJumpDown, searchActive, onSearchPrevious, onSearchNext }: {
-  upArmed: boolean; downArmed: boolean; currentPosition: number; total: number; onJumpUp: () => void; onJumpDown: () => void; searchActive: boolean; onSearchPrevious: () => void; onSearchNext: () => void;
+export function RankingsPagerRail({ upArmed, downArmed, currentPosition, total, onJumpUp, onJumpDown, onFocusMe, searchActive, onSearchPrevious, onSearchNext }: {
+  upArmed: boolean; downArmed: boolean; currentPosition: number; total: number; onJumpUp: () => void; onJumpDown: () => void; onFocusMe?: (wcaId: string) => void; searchActive: boolean; onSearchPrevious: () => void; onSearchNext: () => void;
 }) {
+  const [wcaId, setWcaId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!onFocusMe) return;
+    const controller = new AbortController();
+    fetch("/api/auth/wca/me", { headers: { Accept: "application/json" }, signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not load profile");
+        const { profile } = await response.json() as AuthProfileResponse;
+        setWcaId(profile?.wcaId ?? null);
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setWcaId(null);
+      });
+    return () => controller.abort();
+  }, [onFocusMe]);
+
   const nearTop = currentPosition <= 5000;
   const nearEnd = Number.isFinite(total) && currentPosition >= total - 5000;
   return <RankingsRail className="Jump--pager" direction="down" searchNavigation={searchActive}>
     <div className="Jump-pagerActions" aria-hidden={searchActive}>
       <button className="Jump-pagerButton" onClick={onJumpUp} type="button" disabled={searchActive}><ArrowUpIcon /><span>{upArmed || nearTop ? "Jump to top" : `Up ${formatRankingNumber(5000)}`}</span></button>
+      {wcaId && onFocusMe && <button className="Jump-pagerButton Jump-pagerButton--me" onClick={() => onFocusMe(wcaId)} type="button" disabled={searchActive} aria-label="Jump to my ranking"><PersonIcon /><span>My rank</span></button>}
       <button className="Jump-pagerButton" onClick={onJumpDown} type="button" disabled={searchActive}><ArrowDownIcon /><span>{downArmed || nearEnd ? "Jump to end" : `Down ${formatRankingNumber(5000)}`}</span></button>
     </div>
     <div className="Jump-searchNavigation" aria-hidden={!searchActive}><div className="Jump-searchNavigationContent">

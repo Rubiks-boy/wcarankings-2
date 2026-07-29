@@ -169,7 +169,13 @@ export const RETIRED_PROJECTION_TABLES = [
 function projectionNames(sql, suffix) {
   return [...SEMANTIC_PROJECTION_TABLES, ...COMPATIBILITY_PROJECTION_TABLES]
     .sort((left, right) => right.length - left.length)
-    .reduce((renamed, table) => renamed.replaceAll(table, `${table}${suffix}`), sql);
+    .reduce(
+      (renamed, table) => renamed.replace(
+        new RegExp(`(?<![A-Za-z0-9_])${table}(?![A-Za-z0-9_])`, "g"),
+        `${table}${suffix}`,
+      ),
+      sql,
+    );
 }
 
 async function buildSqlProjection(connection, definition, suffix) {

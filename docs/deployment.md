@@ -101,29 +101,36 @@ The deployment workflow does the following:
 
 1. Checks out the merged commit and calculates its Git tree SHA.
 2. Pulls the matching prebuilt application and Flyway images from GitHub Container Registry.
-3. Uses repository-configured SSH credentials and host verification to establish
+3. Restores the current dated WCA SQL archive from the GitHub Actions cache,
+   imports it into an ephemeral MariaDB instance, and builds and validates the
+   complete projection generation on the runner.
+4. Dumps the completed projections as transfer tables and retains the compressed
+   SQL plus its export-date manifest as a seven-day workflow artifact.
+5. Uses repository-configured SSH credentials and host verification to establish
    non-interactive access to the production host.
-4. Copies `docker-compose.yml` and `ops/Caddyfile` to the deployment directory.
-5. Preserves the current image as `wcarankings-app:previous`, then removes
+6. Copies `docker-compose.yml` and `ops/Caddyfile` to the deployment directory.
+7. Preserves the current image as `wcarankings-app:previous`, then removes
    obsolete application and Flyway image tags while retaining images used by
    running containers and the rollback image.
-6. Streams the new image directly to the server with
+8. Streams the new image directly to the server with
    `docker save | gzip | ssh ... 'gzip -d | docker load'`. There is no container
    registry involved.
-7. Tags the loaded application and Flyway images, then runs `docker compose run --rm flyway migrate`.
-8. Backfills a missing result-level projection from the existing raw export, then
-   checks all candidate projections before switching traffic.
-9. Starts the new application and proxy only after migrations and projection checks succeed.
-10. Verifies the app locally on the server and through the configured public host.
-11. Rolls back to `wcarankings-app:previous` if deployment health checks or
+9. Tags the loaded application and Flyway images, then runs `docker compose run --rm flyway migrate`.
+10. Uploads and imports the transfer tables beside the live projections. Production
+    verifies that the manifest date matches its raw WCA export, then publishes the
+    entire projection generation with one atomic table rename.
+11. Starts the new application and proxy only after projection publication and
+    readiness checks succeed.
+12. Verifies the app locally on the server and through the configured public host.
+13. Rolls back to `wcarankings-app:previous` if deployment health checks or
     migrations fail; otherwise removes the previous image after success.
 
 The deployment server needs the Compose file, Caddyfile, and `.env`, but does not
-need a checkout of the application source. Deployments do not download or import
-WCA data. Other than a one-time backfill for a newly introduced derived table,
-the daily systemd sync owns projection rebuilds. The app entrypoint only starts
-the server, so a fresh host should be imported before it is considered ready for
-ranking traffic.
+need a checkout of the application source. Deployments do not replace production
+raw WCA tables; transferred projections are accepted only when their source
+export date matches those tables. The daily systemd sync remains responsible for
+updating raw production data. The app entrypoint only starts the server, so a
+fresh host should be imported before it is considered ready for ranking traffic.
 
 ## Ranking performance verification
 
@@ -184,11 +191,11 @@ The GitHub Actions workflow expects these repository secrets:
 - `DEPLOY_SSH_KEY`: private key for the deployment account.
 - `DEPLOY_KNOWN_HOSTS`: SSH host verification entries.
 
-The workflow runs Flyway migrations and then checks the candidate image against the
-current ranking projections before replacing the app container. If the projection
-check fails, it prints the projection-only rebuild command and leaves traffic on the
-current app. The previous image remains available until health checks succeed. MariaDB,
-the export cache, Caddy certificates, and their data survive because they are stored
-in named Docker volumes. Deployments normally use images verified by the matching
-pull request; when those images are unavailable, the workflow builds the merged
-`main` tree before deploying it.
+The workflow builds and validates candidate projections in GitHub Actions before
+replacing the app container. A transfer or validation failure leaves the live
+projection tables and application traffic unchanged. The previous image remains
+available until health checks succeed. MariaDB, the export cache, Caddy
+certificates, and their data survive because they are stored in named Docker
+volumes. Deployments normally use images verified by the matching pull request;
+when those images are unavailable, the workflow builds the merged `main` tree
+before deploying it.

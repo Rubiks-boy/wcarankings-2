@@ -33,3 +33,15 @@ test("reclaims obsolete deployment images before loading a new release", () => {
   assert.match(workflow, /docker image rm "\$image_ref" \|\| true/);
   assert.match(workflow, /docker image prune -f/);
 });
+
+test("builds projection transfers on Actions before publishing them atomically", () => {
+  assert.match(workflow, /uses: actions\/cache@v4[\s\S]*wca-sql-export-/);
+  assert.match(workflow, /node scripts\/sync-wca-export\.mjs --force/);
+  assert.match(workflow, /node scripts\/prepare-projection-transfer\.mjs/);
+  assert.match(workflow, /mariadb-dump[\s\S]*projection-transfer\.sql\.gz/);
+  assert.match(workflow, /publish-projection-transfer\.mjs/);
+  assert.doesNotMatch(
+    workflow,
+    /docker compose run --rm app node \/app\/scripts\/backfill-result-entries\.mjs/,
+  );
+});

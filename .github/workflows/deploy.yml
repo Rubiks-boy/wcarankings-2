@@ -21,10 +21,46 @@ jobs:
       SERVER_IP: ${{ secrets.SERVER_IP }}
       SERVER_HOST: ${{ secrets.SERVER_HOST }}
       SERVER_USER: www
+      MYSQL_DATABASE: wcarankings
+      MYSQL_USER: wcarankings
+      MYSQL_PASSWORD: projection-build
+      MYSQL_ROOT_PASSWORD: projection-build-root
+      DATABASE_URL: mysql://wcarankings:projection-build@127.0.0.1:13307/wcarankings
+      WCA_EXPORT_CACHE_DIR: /tmp/wca-export-cache
 
     steps:
       - name: Check out main
         uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies and MariaDB client
+        run: |
+          npm ci
+          sudo apt-get update
+          sudo apt-get install -y mariadb-client
+
+      - name: Resolve current WCA export
+        id: wca-export
+        run: |
+          export_date=$(curl --fail --silent --show-error \
+            https://www.worldcubeassociation.org/api/v0/export/public |
+            jq -r '.export_date // .exportDate')
+          if [ -z "$export_date" ] || [ "$export_date" = "null" ]; then
+            echo "The WCA export API did not return an export date." >&2
+            exit 1
+          fi
+          echo "date=${export_date:0:10}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache current WCA SQL export
+        uses: actions/cache@v4
+        with:
+          path: /tmp/wca-export-cache
+          key: wca-sql-export-${{ steps.wca-export.outputs.date }}
 
       - name: Configure deployment SSH
         env:
@@ -93,12 +129,54 @@ jobs:
       - name: Verify production image contents
         run: |
           docker run --rm --entrypoint sh "wcarankings-app:${GITHUB_SHA}" -c \
-            'test -f /app/scripts/backfill-result-entries.mjs && test -f /app/scripts/check-ranking-projections.mjs && test -f /app/scripts/sync-wca-export.mjs && test -f /app/scripts/refresh-rankings.mjs && css=$(find /app/dist/standalone/dist/client -name "*.css" -type f -print -quit) && test -n "$css" && test -s "$css"'
+            'test -f /app/scripts/backfill-result-entries.mjs && test -f /app/scripts/check-ranking-projections.mjs && test -f /app/scripts/sync-wca-export.mjs && test -f /app/scripts/refresh-rankings.mjs && test -f /app/scripts/publish-projection-transfer.mjs && css=$(find /app/dist/standalone/dist/client -name "*.css" -type f -print -quit) && test -n "$css" && test -s "$css"'
 
       - name: Verify Flyway image contents
         run: |
           docker run --rm --entrypoint sh "wcarankings-flyway:${GITHUB_SHA}" -c \
             'test -f /flyway/migrations/V1__export_metadata.sql && test -f /flyway/migrations/V2__import_health.sql && test -f /flyway/migrations/V3__projection_build_timing.sql && test -f /flyway/migrations/V4__result_projection_health.sql'
+
+      - name: Build and export projection generation
+        id: projection-build
+        run: |
+          started_at=$(date +%s)
+          docker tag "wcarankings-flyway:${GITHUB_SHA}" wcarankings-flyway:latest
+          docker compose up -d db
+          docker compose run --rm flyway migrate
+          node scripts/sync-wca-export.mjs --force
+          node scripts/check-ranking-projections.mjs
+          node scripts/prepare-projection-transfer.mjs > /tmp/projection-transfer.json
+          mapfile -t transfer_tables < <(jq -r '.tables[]' /tmp/projection-transfer.json)
+          MYSQL_PWD="$MYSQL_PASSWORD" mariadb-dump \
+            --protocol=TCP \
+            --host=127.0.0.1 \
+            --port=13307 \
+            --user="$MYSQL_USER" \
+            --single-transaction \
+            --skip-lock-tables \
+            "$MYSQL_DATABASE" \
+            "${transfer_tables[@]}" |
+            gzip -1 > /tmp/projection-transfer.sql.gz
+          completed_at=$(date +%s)
+          duration=$((completed_at - started_at))
+          bytes=$(stat --format=%s /tmp/projection-transfer.sql.gz)
+          echo "duration_seconds=$duration" >> "$GITHUB_OUTPUT"
+          echo "archive_bytes=$bytes" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Projection build"
+            echo "- WCA export: ${{ steps.wca-export.outputs.date }}"
+            echo "- Build and dump: ${duration}s"
+            echo "- Compressed transfer: ${bytes} bytes"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload projection transfer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: projection-transfer-${{ github.sha }}
+          path: |
+            /tmp/projection-transfer.sql.gz
+            /tmp/projection-transfer.json
+          retention-days: 7
 
       - name: Copy deployment configuration
         run: |
@@ -138,17 +216,30 @@ jobs:
           ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
             "docker tag wcarankings-app:${GITHUB_SHA} wcarankings-app:latest && docker tag wcarankings-flyway:${GITHUB_SHA} wcarankings-flyway:latest && cd /srv/wcarankings && docker compose run --rm flyway migrate"
 
-      - name: Verify candidate ranking projections
+      - name: Import and publish candidate ranking projections
+        id: projection-import
         run: |
+          started_at=$(date +%s)
+          scp -q -o BatchMode=yes /tmp/projection-transfer.sql.gz \
+            "$SERVER_USER@$SERVER_IP:/tmp/wcarankings-projection-transfer.sql.gz"
           ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
             'set -eu
             cd /srv/wcarankings
-            (while sleep 30; do echo "Projection verification is still running…"; done) &
+            (while sleep 30; do echo "Projection transfer import is still running…"; done) &
             heartbeat_pid=$!
-            trap "kill $heartbeat_pid 2>/dev/null || true" EXIT
-            docker compose run --rm app node /app/scripts/backfill-result-entries.mjs
-            docker compose run --rm app node /app/scripts/backfill-sum-of-ranks.mjs
+            trap "kill $heartbeat_pid 2>/dev/null || true; rm -f /tmp/wcarankings-projection-transfer.sql.gz" EXIT
+            gzip -dc /tmp/wcarankings-projection-transfer.sql.gz |
+              docker compose exec -T db sh -c '"'"'mariadb --user="$MYSQL_USER" --password="$MYSQL_PASSWORD" "$MYSQL_DATABASE"'"'"'
+            docker compose run --rm app node /app/scripts/publish-projection-transfer.mjs
             docker compose run --rm app node /app/scripts/check-ranking-projections.mjs'
+          completed_at=$(date +%s)
+          duration=$((completed_at - started_at))
+          echo "duration_seconds=$duration" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Production transfer"
+            echo "- Upload, import, validation, and publish: ${duration}s"
+            echo "- End-to-end projection path: $((${{ steps.projection-build.outputs.duration_seconds }} + duration))s"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Switch production services
         run: |
@@ -192,3 +283,7 @@ jobs:
         run: |
           ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
             'docker image inspect wcarankings-app:previous >/dev/null 2>&1 && docker image rm wcarankings-app:previous || true'
+
+      - name: Clean up projection build database
+        if: always()
+        run: docker compose down --volumes --remove-orphans

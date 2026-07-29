@@ -30,14 +30,8 @@ const projectionDefinitions = [
   {
     name: "sum-of-ranks",
     dependencies: [],
-    files: [
-      "person_sum_of_ranks_event_values.sql",
-      "person_sum_of_ranks_scores.sql",
-    ],
-    tables: [
-      "person_sum_of_ranks_event_values",
-      "person_sum_of_ranks_scores",
-    ],
+    files: ["person_sum_of_ranks_scores.sql"],
+    tables: ["person_sum_of_ranks_scores"],
     enabledByDefault: true,
   },
   {
@@ -89,6 +83,9 @@ export const PUBLISHED_PROJECTION_TABLES = [
   ...COMPATIBILITY_PROJECTION_TABLES,
   ...ACTIVE_SEMANTIC_PROJECTION_TABLES,
 ];
+export const RETIRED_PROJECTION_TABLES = [
+  "person_sum_of_ranks_event_values",
+];
 
 function projectionNames(sql, suffix) {
   return [...SEMANTIC_PROJECTION_TABLES, ...COMPATIBILITY_PROJECTION_TABLES]
@@ -97,10 +94,20 @@ function projectionNames(sql, suffix) {
 }
 
 async function buildSqlProjection(connection, definition, suffix) {
+  const phases = [];
   for (const file of definition.files) {
     const sql = projectionNames(await projectionSql(file), suffix);
-    for (const statement of statements(sql)) await connection.query(statement);
+    for (const statement of statements(sql)) {
+      const phase = statement.match(/^\s*-- phase:\s*([^\n]+)/)?.[1]?.trim();
+      const startedAt = performance.now();
+      await connection.query(statement);
+      if (phase) phases.push({
+        name: phase,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+    }
   }
+  return phases;
 }
 
 async function validateProjection(connection, definition, suffix) {
@@ -144,10 +151,10 @@ export async function buildRegisteredProjections(connection, { projectionSuffix 
   for (const projection of orderedProjections(selectedNames)) {
     const startedAt = performance.now();
     for (const table of projection.tables) await dropManagedObject(connection, `${table}${projectionSuffix}`);
-    await projection.build(connection, projectionSuffix);
+    const phases = await projection.build(connection, projectionSuffix);
     const rowCounts = await projection.validate(connection, projectionSuffix);
     const durationMs = Math.round(performance.now() - startedAt);
-    timings.push({ name: projection.name, durationMs, rowCounts });
+    timings.push({ name: projection.name, durationMs, rowCounts, phases });
     process.stdout.write(`Built projection ${projection.name} in ${durationMs}ms (${JSON.stringify(rowCounts)})\n`);
   }
   return timings;
@@ -201,6 +208,7 @@ export async function promoteProjectionTables(connection, { projectionSuffix = "
   }
   await connection.query(`RENAME TABLE ${renames.join(", ")}`);
   if (obsolete.length > 0) await connection.query(`DROP TABLE ${obsolete.join(", ")}`);
+  for (const retired of RETIRED_PROJECTION_TABLES) await dropManagedObject(connection, retired);
 }
 
 export async function promoteRegisteredProjections(
@@ -221,6 +229,7 @@ export async function promoteRegisteredProjections(
   }
   if (renames.length > 0) await connection.query(`RENAME TABLE ${renames.join(", ")}`);
   if (obsolete.length > 0) await connection.query(`DROP TABLE ${obsolete.join(", ")}`);
+  for (const retired of RETIRED_PROJECTION_TABLES) await dropManagedObject(connection, retired);
 }
 
 export async function refreshMysqlSchema(connection, { projectionSuffix = "" } = {}) {

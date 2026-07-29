@@ -5,7 +5,7 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("keeps future grains registered while activating person metrics and competition bests", async () => {
-  const [schema, facts, people, results, metricValues, metricScores, sumValues, sumScores, podiums, competitionEvents, competitions, cities, counts, importer] =
+  const [schema, facts, people, results, metricValues, metricScores, sumScores, podiums, competitionEvents, competitions, cities, counts, importer] =
     await Promise.all([
       readFile(new URL("scripts/mysql-schema.mjs", root), "utf8"),
       readFile(new URL("sql/ranking-projections/result_facts.sql", root), "utf8"),
@@ -13,7 +13,6 @@ test("keeps future grains registered while activating person metrics and competi
       readFile(new URL("sql/ranking-projections/result_rankings.sql", root), "utf8"),
       readFile(new URL("sql/ranking-projections/person_metric_values.sql", root), "utf8"),
       readFile(new URL("sql/ranking-projections/person_metric_scores.sql", root), "utf8"),
-      readFile(new URL("sql/ranking-projections/person_sum_of_ranks_event_values.sql", root), "utf8"),
       readFile(new URL("sql/ranking-projections/person_sum_of_ranks_scores.sql", root), "utf8"),
       readFile(new URL("sql/ranking-projections/competition_podium_members.sql", root), "utf8"),
       readFile(new URL("sql/ranking-projections/competition_event_stats.sql", root), "utf8"),
@@ -29,6 +28,7 @@ test("keeps future grains registered while activating person metrics and competi
   assert.match(schema, /validate:/);
   assert.match(schema, /durationMs/);
   assert.match(schema, /rowCounts/);
+  assert.match(schema, /statement\.match\(\/\^\\s\*-- phase:/);
   assert.match(schema, /DEFAULT_PROJECTION_NAMES/);
   assert.match(schema, /\.\.\.SEMANTIC_PROJECTION_TABLES, \.\.\.COMPATIBILITY_PROJECTION_TABLES/);
   assert.match(schema, /name: "sum-of-ranks"/);
@@ -48,16 +48,22 @@ test("keeps future grains registered while activating person metrics and competi
   assert.doesNotMatch(results, /ROW_NUMBER\(\)/);
   assert.match(metricValues, /kinch_value/);
   assert.match(metricScores, /CREATE TABLE person_metric_counts AS/);
-  assert.match(sumValues, /CREATE TABLE person_sum_of_ranks_event_values AS/);
-  assert.match(sumValues, /result\.person_country_id/);
-  assert.match(sumValues, /result_value/);
-  assert.match(sumValues, /PARTITION BY result_type, event_id, country_id/);
-  assert.match(sumValues, /PARTITION BY result_type, event_id, continent_id/);
-  assert.match(sumScores, /CREATE TABLE person_sum_of_ranks_scores AS/);
+  assert.match(sumScores, /CREATE TEMPORARY TABLE sum_of_ranks_historical_bests/);
+  assert.match(sumScores, /result\.person_country_id/);
+  assert.match(sumScores, /MIN\(CASE WHEN result\.best > 0/);
+  assert.match(sumScores, /MIN\(CASE WHEN result\.average > 0/);
+  assert.match(sumScores, /FROM ranks_single rank/);
+  assert.match(sumScores, /FROM ranks_average rank/);
+  assert.match(sumScores, /CREATE TEMPORARY TABLE sum_of_ranks_event_values/);
+  assert.match(sumScores, /cohort_id SMALLINT UNSIGNED/);
+  assert.match(sumScores, /-- phase: aggregate historical Single and Average bests/);
+  assert.match(sumScores, /-- phase: index person scores/);
+  assert.doesNotMatch(sumScores, /CREATE TABLE person_sum_of_ranks_event_values/);
+  assert.match(sumScores, /CREATE TABLE person_sum_of_ranks_scores \(/);
   assert.match(sumScores, /RANK\(\) OVER/);
   assert.match(sumScores, /ROW_NUMBER\(\) OVER/);
-  assert.match(sumScores, /COUNT\(\*\) \+ 1 AS fallback_rank/);
-  assert.match(sumScores, /MIN\(result_value\) AS reference_result/);
+  assert.match(sumScores, /COUNT\(\*\) \+ 1/);
+  assert.match(sumScores, /MIN\(result_value\)/);
   assert.match(sumScores, /kinch_score/);
   assert.match(sumScores, /kinch_position/);
   assert.match(sumScores, /idx_person_kinch_page/);
@@ -113,7 +119,6 @@ test("does not introduce entries or sub-rank vocabulary in new schemas", async (
     "competition_stats.sql",
     "city_event_stats.sql",
     "entity_ranking_counts.sql",
-    "person_sum_of_ranks_event_values.sql",
     "person_sum_of_ranks_scores.sql",
   ];
   const sources = await Promise.all(files.map((file) =>
@@ -210,13 +215,14 @@ test("person search resolves IDs before querying projections", async () => {
   assert.match(compatibilityResults, /person_id, event_id, world_sub_rank, result_id/);
 });
 
-test("rebuilds person metric scores without rescanning raw results", async () => {
-  const backfill = await readFile(
-    new URL("scripts/backfill-person-metric-scores.mjs", root),
-    "utf8",
-  );
-  assert.match(backfill, /const STAGING_TABLE = `\$\{TABLE\}_staging`/);
-  assert.match(backfill, /COUNT\(kinch_position\) AS kinch_row_count/);
-  assert.match(backfill, /RENAME TABLE/);
-  assert.doesNotMatch(backfill, /FROM results\b/);
+test("builds Sum of Ranks as one published score projection", async () => {
+  const [schema, backfill] = await Promise.all([
+    readFile(new URL("scripts/mysql-schema.mjs", root), "utf8"),
+    readFile(new URL("scripts/backfill-sum-of-ranks.mjs", root), "utf8"),
+  ]);
+  assert.match(schema, /files: \["person_sum_of_ranks_scores\.sql"\]/);
+  assert.match(schema, /tables: \["person_sum_of_ranks_scores"\]/);
+  assert.match(schema, /RETIRED_PROJECTION_TABLES/);
+  assert.match(schema, /for \(const retired of RETIRED_PROJECTION_TABLES\)/);
+  assert.match(backfill, /projectionNames = \["sum-of-ranks"\]/);
 });

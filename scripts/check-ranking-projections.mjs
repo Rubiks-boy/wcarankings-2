@@ -50,6 +50,7 @@ const SUM_OF_RANKS_COLUMNS = [
   "rank",
   "position",
   "kinch_score",
+  "kinch_coverage",
   "kinch_rank",
   "kinch_position",
 ];
@@ -57,17 +58,6 @@ const SUM_OF_RANKS_INDEXES = [
   "PRIMARY",
   "idx_person_sum_of_ranks_page",
   "idx_person_kinch_page",
-];
-const SUM_OF_RANKS_VALUE_COLUMNS = [
-  "metric_version",
-  "event_set_version",
-  "result_type",
-  "scope",
-  "region_id",
-  "person_id",
-  "event_id",
-  "event_rank",
-  "result_value",
 ];
 const COMPETITION_EVENT_COLUMNS = [
   "competition_id",
@@ -129,16 +119,16 @@ async function main() {
       connection.query(
         `SELECT table_name, column_name FROM information_schema.columns
          WHERE table_schema = DATABASE()
-           AND table_name IN (?, ?, ?, ?, ?, ?, ?)
-           AND column_name IN (${[...ENTRY_COLUMNS, ...RESULT_ENTRY_COLUMNS, ...SUM_OF_RANKS_COLUMNS, ...SUM_OF_RANKS_VALUE_COLUMNS, ...COMPETITION_EVENT_COLUMNS, ...COMPETITION_PODIUM_COLUMNS].map(() => "?").join(", ")})`,
-        ["ranking_entries_single", "ranking_entries_average", "result_entries_single", "person_sum_of_ranks_scores", "person_sum_of_ranks_event_values", "competition_event_stats", "competition_podium_members", ...ENTRY_COLUMNS, ...RESULT_ENTRY_COLUMNS, ...SUM_OF_RANKS_COLUMNS, ...SUM_OF_RANKS_VALUE_COLUMNS, ...COMPETITION_EVENT_COLUMNS, ...COMPETITION_PODIUM_COLUMNS],
+           AND table_name IN (?, ?, ?, ?, ?, ?)
+           AND column_name IN (${[...ENTRY_COLUMNS, ...RESULT_ENTRY_COLUMNS, ...SUM_OF_RANKS_COLUMNS, ...COMPETITION_EVENT_COLUMNS, ...COMPETITION_PODIUM_COLUMNS].map(() => "?").join(", ")})`,
+        ["ranking_entries_single", "ranking_entries_average", "result_entries_single", "person_sum_of_ranks_scores", "competition_event_stats", "competition_podium_members", ...ENTRY_COLUMNS, ...RESULT_ENTRY_COLUMNS, ...SUM_OF_RANKS_COLUMNS, ...COMPETITION_EVENT_COLUMNS, ...COMPETITION_PODIUM_COLUMNS],
       ).then(([rows]) => rows),
       connection.query(
         `SELECT table_name, index_name FROM information_schema.statistics
          WHERE table_schema = DATABASE()
-           AND table_name IN (?, ?, ?, ?, ?, ?, ?)
+           AND table_name IN (?, ?, ?, ?, ?, ?)
            AND index_name IN (${[...ENTRY_INDEXES, ...RESULT_ENTRY_INDEXES, ...SUM_OF_RANKS_INDEXES, ...COMPETITION_EVENT_INDEXES, ...COMPETITION_PODIUM_INDEXES].map(() => "?").join(", ")})`,
-        ["ranking_entries_single", "ranking_entries_average", "result_entries_single", "person_sum_of_ranks_scores", "person_sum_of_ranks_event_values", "competition_event_stats", "competition_podium_members", ...ENTRY_INDEXES, ...RESULT_ENTRY_INDEXES, ...SUM_OF_RANKS_INDEXES, ...COMPETITION_EVENT_INDEXES, ...COMPETITION_PODIUM_INDEXES],
+        ["ranking_entries_single", "ranking_entries_average", "result_entries_single", "person_sum_of_ranks_scores", "competition_event_stats", "competition_podium_members", ...ENTRY_INDEXES, ...RESULT_ENTRY_INDEXES, ...SUM_OF_RANKS_INDEXES, ...COMPETITION_EVENT_INDEXES, ...COMPETITION_PODIUM_INDEXES],
       ).then(([rows]) => rows),
     ]);
     const metadataRows = tables.has("export_metadata")
@@ -153,7 +143,6 @@ async function main() {
       ),
       ...RESULT_ENTRY_COLUMNS.filter((column) => !columns.has(`result_entries_single.${column}`)).map((column) => `missing column result_entries_single.${column}`),
       ...SUM_OF_RANKS_COLUMNS.filter((column) => !columns.has(`person_sum_of_ranks_scores.${column}`)).map((column) => `missing column person_sum_of_ranks_scores.${column}`),
-      ...SUM_OF_RANKS_VALUE_COLUMNS.filter((column) => !columns.has(`person_sum_of_ranks_event_values.${column}`)).map((column) => `missing column person_sum_of_ranks_event_values.${column}`),
       ...COMPETITION_EVENT_COLUMNS.filter((column) => !columns.has(`competition_event_stats.${column}`)).map((column) => `missing column competition_event_stats.${column}`),
       ...COMPETITION_PODIUM_COLUMNS.filter((column) => !columns.has(`competition_podium_members.${column}`)).map((column) => `missing column competition_podium_members.${column}`),
       ...["ranking_entries_single", "ranking_entries_average"].flatMap((table) =>
@@ -161,7 +150,6 @@ async function main() {
       ),
       ...RESULT_ENTRY_INDEXES.filter((index) => !indexes.has(`result_entries_single.${index}`)).map((index) => `missing index result_entries_single.${index}`),
       ...SUM_OF_RANKS_INDEXES.filter((index) => !indexes.has(`person_sum_of_ranks_scores.${index}`)).map((index) => `missing index person_sum_of_ranks_scores.${index}`),
-      ...["PRIMARY"].filter((index) => !indexes.has(`person_sum_of_ranks_event_values.${index}`)).map((index) => `missing index person_sum_of_ranks_event_values.${index}`),
       ...COMPETITION_EVENT_INDEXES.filter((index) => !indexes.has(`competition_event_stats.${index}`)).map((index) => `missing index competition_event_stats.${index}`),
       ...COMPETITION_PODIUM_INDEXES.filter((index) => !indexes.has(`competition_podium_members.${index}`)).map((index) => `missing index competition_podium_members.${index}`),
       ...(metadataRows[0]?.value ? [] : ["missing export_metadata.fetched_at"]),

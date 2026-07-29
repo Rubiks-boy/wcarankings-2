@@ -1,55 +1,231 @@
+DROP TEMPORARY TABLE IF EXISTS sum_of_ranks_historical_results;
+
+CREATE TEMPORARY TABLE sum_of_ranks_historical_results (
+  event_id VARCHAR(6) CHARACTER SET ascii NOT NULL,
+  person_id VARCHAR(10) CHARACTER SET ascii NOT NULL,
+  country_id VARCHAR(50) CHARACTER SET ascii NOT NULL,
+  continent_id VARCHAR(50) CHARACTER SET ascii NOT NULL,
+  single_result INT UNSIGNED NULL,
+  average_result INT UNSIGNED NULL
+) ENGINE = InnoDB;
+
+-- phase: aggregate historical Single and Average bests
+INSERT INTO sum_of_ranks_historical_results
+  (event_id, person_id, country_id, continent_id, single_result, average_result)
+SELECT
+  result.event_id,
+  result.person_id,
+  result.person_country_id,
+  COALESCE(country.continent_id, ''),
+  MIN(CASE WHEN result.best > 0 THEN result.best END),
+  MIN(CASE WHEN result.average > 0 THEN result.average END)
+FROM results result
+LEFT JOIN countries country ON country.id = result.person_country_id
+WHERE result.person_country_id <> ''
+  AND result.event_id IN (
+    '333', '222', '444', '555', '666', '777', '333bf', '333fm',
+    '333oh', 'clock', 'minx', 'pyram', 'skewb', 'sq1', '444bf',
+    '555bf', '333mbf'
+  )
+  AND (result.best > 0 OR result.average > 0)
+GROUP BY
+  result.event_id, result.person_id,
+  result.person_country_id, country.continent_id;
+
+DROP TEMPORARY TABLE IF EXISTS sum_of_ranks_historical_bests;
+
+CREATE TEMPORARY TABLE sum_of_ranks_historical_bests (
+  result_type ENUM('single', 'average') NOT NULL,
+  event_id VARCHAR(6) CHARACTER SET ascii NOT NULL,
+  person_id VARCHAR(10) CHARACTER SET ascii NOT NULL,
+  country_id VARCHAR(50) CHARACTER SET ascii NOT NULL,
+  continent_id VARCHAR(50) CHARACTER SET ascii NOT NULL,
+  result_value INT UNSIGNED NOT NULL
+) ENGINE = InnoDB;
+
+-- phase: unpivot historical bests
+INSERT INTO sum_of_ranks_historical_bests
+  (result_type, event_id, person_id, country_id, continent_id, result_value)
+SELECT
+  'single', event_id, person_id, country_id, continent_id, single_result
+FROM sum_of_ranks_historical_results history
+WHERE single_result IS NOT NULL;
+
+INSERT INTO sum_of_ranks_historical_bests
+  (result_type, event_id, person_id, country_id, continent_id, result_value)
+SELECT
+  'average', event_id, person_id, country_id, continent_id, average_result
+FROM sum_of_ranks_historical_results history
+WHERE average_result IS NOT NULL;
+
+DROP TEMPORARY TABLE sum_of_ranks_historical_results;
+
+DROP TEMPORARY TABLE IF EXISTS sum_of_ranks_cohorts;
+
+CREATE TEMPORARY TABLE sum_of_ranks_cohorts (
+  cohort_id SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  scope ENUM('world', 'continent', 'country') NOT NULL,
+  region_id VARCHAR(50) CHARACTER SET ascii NOT NULL,
+  PRIMARY KEY (cohort_id),
+  UNIQUE KEY idx_sum_of_ranks_cohort (scope, region_id)
+) ENGINE = MEMORY;
+
+INSERT INTO sum_of_ranks_cohorts (scope, region_id)
+VALUES ('world', '');
+
+INSERT INTO sum_of_ranks_cohorts (scope, region_id)
+SELECT DISTINCT 'continent', continent_id
+FROM sum_of_ranks_historical_bests
+WHERE continent_id <> ''
+ORDER BY continent_id;
+
+INSERT INTO sum_of_ranks_cohorts (scope, region_id)
+SELECT DISTINCT 'country', country_id
+FROM sum_of_ranks_historical_bests
+ORDER BY country_id;
+
+DROP TEMPORARY TABLE IF EXISTS sum_of_ranks_event_values;
+
+CREATE TEMPORARY TABLE sum_of_ranks_event_values (
+  result_type ENUM('single', 'average') NOT NULL,
+  cohort_id SMALLINT UNSIGNED NOT NULL,
+  person_id VARCHAR(10) CHARACTER SET ascii NOT NULL,
+  event_id VARCHAR(6) CHARACTER SET ascii NOT NULL,
+  event_rank INT UNSIGNED NOT NULL,
+  result_value INT UNSIGNED NOT NULL
+) ENGINE = InnoDB;
+
+-- phase: load World Single event values
+INSERT INTO sum_of_ranks_event_values
+  (result_type, cohort_id, person_id, event_id, event_rank, result_value)
+SELECT
+  'single', 1, rank.person_id, rank.event_id, rank.world_rank, rank.best
+FROM ranks_single rank
+WHERE rank.event_id IN (
+    '333', '222', '444', '555', '666', '777', '333bf', '333fm',
+    '333oh', 'clock', 'minx', 'pyram', 'skewb', 'sq1', '444bf',
+    '555bf', '333mbf'
+  )
+  AND rank.best > 0
+  AND rank.world_rank > 0;
+
+-- phase: load World Average event values
+INSERT INTO sum_of_ranks_event_values
+  (result_type, cohort_id, person_id, event_id, event_rank, result_value)
+SELECT
+  'average', 1, rank.person_id, rank.event_id, rank.world_rank, rank.best
+FROM ranks_average rank
+WHERE rank.event_id IN (
+    '333', '222', '444', '555', '666', '777', '333bf', '333fm',
+    '333oh', 'clock', 'minx', 'pyram', 'skewb', 'sq1', '444bf', '555bf'
+  )
+  AND rank.best > 0
+  AND rank.world_rank > 0;
+
+-- phase: rank country event values
+INSERT INTO sum_of_ranks_event_values
+  (result_type, cohort_id, person_id, event_id, event_rank, result_value)
+SELECT
+  value.result_type,
+  cohort.cohort_id,
+  value.person_id,
+  value.event_id,
+  RANK() OVER (
+    PARTITION BY value.result_type, value.event_id, value.country_id
+    ORDER BY value.result_value
+  ),
+  value.result_value
+FROM sum_of_ranks_historical_bests value
+INNER JOIN sum_of_ranks_cohorts cohort
+  ON cohort.scope = 'country'
+  AND cohort.region_id = value.country_id;
+
+-- phase: rank continent event values
+INSERT INTO sum_of_ranks_event_values
+  (result_type, cohort_id, person_id, event_id, event_rank, result_value)
+WITH continent_bests AS (
+  SELECT
+    result_type,
+    event_id,
+    person_id,
+    continent_id,
+    MIN(result_value) AS result_value
+  FROM sum_of_ranks_historical_bests
+  WHERE continent_id <> ''
+  GROUP BY result_type, event_id, person_id, continent_id
+)
+SELECT
+  value.result_type,
+  cohort.cohort_id,
+  value.person_id,
+  value.event_id,
+  RANK() OVER (
+    PARTITION BY value.result_type, value.event_id, value.continent_id
+    ORDER BY value.result_value
+  ),
+  value.result_value
+FROM continent_bests value
+INNER JOIN sum_of_ranks_cohorts cohort
+  ON cohort.scope = 'continent'
+  AND cohort.region_id = value.continent_id;
+
 DROP TEMPORARY TABLE IF EXISTS sum_of_ranks_event_penalties;
 
-CREATE TEMPORARY TABLE sum_of_ranks_event_penalties
-ENGINE = MEMORY
-AS
+CREATE TEMPORARY TABLE sum_of_ranks_event_penalties (
+  result_type ENUM('single', 'average') NOT NULL,
+  cohort_id SMALLINT UNSIGNED NOT NULL,
+  event_id VARCHAR(6) CHARACTER SET ascii NOT NULL,
+  fallback_rank INT UNSIGNED NOT NULL,
+  reference_result INT UNSIGNED NOT NULL,
+  PRIMARY KEY (result_type, cohort_id, event_id)
+) ENGINE = MEMORY;
+
+-- phase: calculate event penalties and Kinch references
+INSERT INTO sum_of_ranks_event_penalties
+  (result_type, cohort_id, event_id, fallback_rank, reference_result)
 SELECT
-  metric_version,
-  event_set_version,
   result_type,
-  scope,
-  region_id,
+  cohort_id,
   event_id,
-  COUNT(*) + 1 AS fallback_rank,
-  MIN(result_value) AS reference_result
-FROM person_sum_of_ranks_event_values
-GROUP BY
-  metric_version,
-  event_set_version,
-  result_type,
-  scope,
-  region_id,
-  event_id;
+  COUNT(*) + 1,
+  MIN(result_value)
+FROM sum_of_ranks_event_values
+GROUP BY result_type, cohort_id, event_id;
 
-ALTER TABLE sum_of_ranks_event_penalties
-  ADD PRIMARY KEY (
-    metric_version, event_set_version, result_type,
-    scope, region_id, event_id
-  );
+CREATE TABLE person_sum_of_ranks_scores (
+  metric_version SMALLINT UNSIGNED NOT NULL,
+  event_set_version SMALLINT UNSIGNED NOT NULL,
+  result_type ENUM('single', 'average') NOT NULL,
+  scope ENUM('world', 'continent', 'country') NOT NULL,
+  region_id VARCHAR(50) CHARACTER SET ascii NOT NULL,
+  person_id VARCHAR(10) CHARACTER SET ascii NOT NULL,
+  score BIGINT UNSIGNED NOT NULL,
+  coverage TINYINT UNSIGNED NOT NULL,
+  required_coverage TINYINT UNSIGNED NOT NULL,
+  kinch_score DECIMAL(12, 5) UNSIGNED NOT NULL,
+  kinch_coverage TINYINT UNSIGNED NOT NULL,
+  rank INT UNSIGNED NOT NULL,
+  position INT UNSIGNED NOT NULL,
+  kinch_rank INT UNSIGNED NOT NULL,
+  kinch_position INT UNSIGNED NOT NULL
+);
 
-CREATE TABLE person_sum_of_ranks_scores AS
+-- phase: aggregate and rank person scores
+INSERT INTO person_sum_of_ranks_scores
 WITH baselines AS (
   SELECT
-    metric_version,
-    event_set_version,
     result_type,
-    scope,
-    region_id,
+    cohort_id,
     SUM(fallback_rank)
       + (CASE WHEN result_type = 'single' THEN 17 ELSE 16 END)
       - COUNT(*) AS fallback_score,
     CASE WHEN result_type = 'single' THEN 17 ELSE 16 END AS required_coverage
   FROM sum_of_ranks_event_penalties
-  GROUP BY
-    metric_version, event_set_version, result_type,
-    scope, region_id
+  GROUP BY result_type, cohort_id
 ), person_adjustments AS (
   SELECT
-    value.metric_version,
-    value.event_set_version,
     value.result_type,
-    value.scope,
-    value.region_id,
+    value.cohort_id,
     value.person_id,
     SUM(
       CAST(value.event_rank AS SIGNED)
@@ -63,28 +239,16 @@ WITH baselines AS (
       END
     ) AS kinch_score,
     SUM(value.event_id <> '333mbf') AS kinch_coverage
-  FROM person_sum_of_ranks_event_values value
+  FROM sum_of_ranks_event_values value
   INNER JOIN sum_of_ranks_event_penalties penalty
-    ON penalty.metric_version = value.metric_version
-    AND penalty.event_set_version = value.event_set_version
-    AND penalty.result_type = value.result_type
-    AND penalty.scope = value.scope
-    AND penalty.region_id = value.region_id
+    ON penalty.result_type = value.result_type
+    AND penalty.cohort_id = value.cohort_id
     AND penalty.event_id = value.event_id
-  GROUP BY
-    value.metric_version,
-    value.event_set_version,
-    value.result_type,
-    value.scope,
-    value.region_id,
-    value.person_id
+  GROUP BY value.result_type, value.cohort_id, value.person_id
 ), totals AS (
   SELECT
-    person.metric_version,
-    person.event_set_version,
     person.result_type,
-    person.scope,
-    person.region_id,
+    person.cohort_id,
     person.person_id,
     CAST(baseline.fallback_score AS SIGNED)
       + person.score_adjustment AS score,
@@ -94,43 +258,50 @@ WITH baselines AS (
     person.kinch_coverage
   FROM person_adjustments person
   INNER JOIN baselines baseline
-    ON baseline.metric_version = person.metric_version
-    AND baseline.event_set_version = person.event_set_version
-    AND baseline.result_type = person.result_type
-    AND baseline.scope = person.scope
-    AND baseline.region_id = person.region_id
+    ON baseline.result_type = person.result_type
+    AND baseline.cohort_id = person.cohort_id
 ), ranked AS (
-SELECT
-  metric_version,
-  event_set_version,
-  result_type,
-  scope,
-  region_id,
-  person_id,
-  score,
-  coverage,
-  required_coverage,
-  kinch_score,
-  RANK() OVER (
-    PARTITION BY metric_version, event_set_version, result_type, scope, region_id
-    ORDER BY score
-  ) AS rank,
-  ROW_NUMBER() OVER (
-    PARTITION BY metric_version, event_set_version, result_type, scope, region_id
-    ORDER BY score, person_id
-  ) AS position,
-  RANK() OVER (
-    PARTITION BY metric_version, event_set_version, result_type, scope, region_id
-    ORDER BY kinch_score DESC
-  ) AS kinch_rank,
-  ROW_NUMBER() OVER (
-    PARTITION BY metric_version, event_set_version, result_type, scope, region_id
-    ORDER BY kinch_score DESC, person_id
-  ) AS kinch_position
-FROM totals
+  SELECT
+    totals.*,
+    RANK() OVER (
+      PARTITION BY result_type, cohort_id
+      ORDER BY score
+    ) AS rank,
+    ROW_NUMBER() OVER (
+      PARTITION BY result_type, cohort_id
+      ORDER BY score, person_id
+    ) AS position,
+    RANK() OVER (
+      PARTITION BY result_type, cohort_id
+      ORDER BY kinch_score DESC
+    ) AS kinch_rank,
+    ROW_NUMBER() OVER (
+      PARTITION BY result_type, cohort_id
+      ORDER BY kinch_score DESC, person_id
+    ) AS kinch_position
+  FROM totals
 )
-SELECT * FROM ranked;
+SELECT
+  1,
+  1,
+  ranked.result_type,
+  cohort.scope,
+  cohort.region_id,
+  ranked.person_id,
+  ranked.score,
+  ranked.coverage,
+  ranked.required_coverage,
+  ranked.kinch_score,
+  ranked.kinch_coverage,
+  ranked.rank,
+  ranked.position,
+  ranked.kinch_rank,
+  ranked.kinch_position
+FROM ranked
+INNER JOIN sum_of_ranks_cohorts cohort
+  ON cohort.cohort_id = ranked.cohort_id;
 
+-- phase: index person scores
 ALTER TABLE person_sum_of_ranks_scores
   ADD PRIMARY KEY (
     metric_version, event_set_version, result_type,
@@ -146,3 +317,6 @@ ALTER TABLE person_sum_of_ranks_scores
   );
 
 DROP TEMPORARY TABLE sum_of_ranks_event_penalties;
+DROP TEMPORARY TABLE sum_of_ranks_event_values;
+DROP TEMPORARY TABLE sum_of_ranks_cohorts;
+DROP TEMPORARY TABLE sum_of_ranks_historical_bests;

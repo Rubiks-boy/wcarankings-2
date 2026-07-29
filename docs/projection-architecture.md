@@ -64,8 +64,8 @@ purpose. Existing `_entries` tables can remain temporarily for compatibility.
 The default import currently activates one new product projection:
 
 ```text
-ranking_entries_single + ranking_entries_average + historical results
-└── person_sum_of_ranks_event_values
+ranks_single + ranks_average + historical results
+└── temporary historical bests and ranked event values
     └── person_sum_of_ranks_scores
 ```
 
@@ -304,11 +304,12 @@ count
 
 ### Active Sum of Ranks and Kinch projections
 
-`person_sum_of_ranks_event_values` has one row per metric version, event-set
-version, result type, scope, region, person, and event. It stores only the
-official event rank and personal result needed to explain Sum of Ranks and
-Kinch totals. Scope-specific Kinch reference results are calculated once per
-event during the score build rather than repeated on every event-value row.
+Sum of Ranks uses temporary, import-only tables for historical bests, cohorts,
+ranked event values, and event penalties. Single and Average historical bests
+are aggregated in one scan of `results`, then unpivoted. World inputs come from
+the narrow canonical `ranks_single` and `ranks_average` tables. The temporary
+tables use explicit compact types and numeric cohort IDs so window sorts do not
+repeat scope and region strings across millions of rows.
 
 World values reuse the canonical person-event World ranks. Country and
 continent values are derived from `results.person_country_id`, which records
@@ -335,12 +336,17 @@ This gives Kinch the same person cohort as Sum of Ranks while retaining a fixed,
 comparable denominator. Its separate positional index supports the same bounded
 paging API without duplicating the person-event value grain.
 
-Names and countries are joined only after selecting a score page. Counts use
-the score browse index rather than another persisted count grain.
+The event-value intermediate is dropped after the score build. It is not a
+published schema or readiness dependency because the product currently shows
+only overall rankings; event-level values remain available from the existing
+person-event ranking projections. Names and countries are joined only after
+selecting a score page. Counts use the score browse index rather than another
+persisted count grain.
 
-### Local Sum of Ranks refresh benchmark
+### Legacy local Sum of Ranks refresh benchmark
 
-The targeted persistent-database refresh on 2026-07-28 completed in 738.9
+Before event values became temporary, the targeted persistent-database refresh
+on 2026-07-28 completed in 738.9
 seconds. It published 5,699,074 event-value rows and 1,735,888 score rows. The
 score projection occupied approximately 201 MiB of table data and 95 MiB of
 indexes; event values occupied approximately 433 MiB.
@@ -361,10 +367,42 @@ index. Local HTTP observations returned the first World Single Kinch page in
 complete-coverage subset contained 809 World Single people and 165 World
 Average people before missing events were changed to contribute zero.
 
-The score-only refresh for zero-valued missing Kinch events completed in 247.6
+The former score-only refresh for zero-valued missing Kinch events completed in 247.6
 seconds without rebuilding event values or scanning raw results. It published
 Kinch positions for all 1,735,888 score rows, including 291,763 World Single
-people and 286,535 World Average people.
+people and 286,535 World Average people. These measurements are retained as the
+baseline for benchmarking the temporary-intermediate implementation.
+
+### Temporary-intermediate Sum of Ranks benchmark
+
+The targeted local rebuild on 2026-07-28 completed in 317.3 seconds and
+published the same 1,735,888 score rows. This reduced build time by 57.1%
+compared with the 738.9-second persistent-event-value baseline.
+
+Measured phases were:
+
+| Phase | Duration |
+| --- | ---: |
+| Aggregate historical Single and Average bests | 86.8 s |
+| Unpivot historical bests | 1.3 s |
+| Load World Single event values | 1.5 s |
+| Load World Average event values | 1.4 s |
+| Rank country event values | 11.1 s |
+| Rank continent event values | 63.8 s |
+| Calculate event penalties and Kinch references | 3.6 s |
+| Aggregate and rank person scores | 132.6 s |
+| Index person scores | 12.3 s |
+
+The published score table uses approximately 139.8 MiB of data and 117.3 MiB
+of indexes. Removing the 457 MiB published event-value table and narrowing the
+score schema reduced persistent SOR/Kinch storage from approximately 910.7 MiB
+to 257.1 MiB, a 71.8% reduction.
+
+Pre- and post-build fingerprints matched exactly: total rows, total SOR score,
+total Kinch score, coverage, maximum positions, and the first ten World Single
+people under both SOR and Kinch ordering. Local HTTP observations returned the
+first 50-row SOR page in 6 ms, a page around position 250,000 in 21 ms, and the
+first Kinch page in 8 ms.
 
 ### Inactive general metric projections
 

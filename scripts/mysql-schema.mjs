@@ -114,7 +114,15 @@ const projectionDefinitions = [
     tables: ["competition_event_stats"],
     enabledByDefault: true,
   },
-  { name: "result-facts", dependencies: ["raw-wca"], files: ["result_facts.sql"], tables: ["result_facts"] },
+  {
+    name: "result-facts",
+    dependencies: ["raw-wca"],
+    files: ["result_facts.sql"],
+    tables: ["result_facts"],
+    // Yearly ranking rows retain a result ID and resolve its represented
+    // country, competition, and historical record code at read time.
+    enabledByDefault: true,
+  },
   { name: "person-event-rankings", dependencies: ["result-facts"], files: ["person_event_rankings.sql"], tables: ["person_event_rankings"] },
   {
     name: "person-year-rankings",

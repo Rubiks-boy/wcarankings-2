@@ -317,9 +317,12 @@ country changes from corrupting regional totals; see issue #50.
 `person_sum_of_ranks_scores` has one row per metric version, event-set version,
 result type, scope, region, and person. It stores the total, coverage,
 required coverage, public competition `rank`, and deterministic internal
-`position`. Single v1 requires 17 events and Average v1 requires 16. Equal
-totals use competition ranking (`1, 1, 3`), while positions break ties by WCA
-ID for stable positional paging.
+`position`. Missing events contribute a fallback rank equal to the number of
+ranked competitors for that event and region plus one. A person enters the
+World cohort after recording a result in any included event, and enters a
+regional cohort after representing that historical region in any included
+event. Equal totals use competition ranking (`1, 1, 3`), while positions break
+ties by WCA ID for stable positional paging.
 
 Names and countries are joined only after selecting a score page. Counts use
 the score browse index rather than another persisted count grain.
@@ -390,17 +393,18 @@ rank
 position
 ```
 
-Sum of Ranks v1 should require complete coverage of its versioned event set.
-Kinch must have an explicit, versioned missing-event and Overall aggregation
-policy.
+Sum of Ranks v1 includes people with partial coverage. Missing results use the
+event-specific fallback rank for the selected scope and region. Kinch must have
+an explicit, versioned missing-event and Overall aggregation policy.
 
 The v1 policy is:
 
-- Sum of Ranks Single requires all 17 current Single events.
-- Sum of Ranks Average requires all 16 current Average events.
+- Sum of Ranks Single includes all 17 current Single events.
+- Sum of Ranks Average includes all 16 current Average events.
+- If an event has 10 ranked competitors, a missing result contributes rank 11.
+- Fallbacks are calculated independently for World, continent, and country.
 - Kinch excludes Multi-Blind, requires all 16 remaining events for both result
   types, and sums the event percentages for Overall.
-- Missing events make a person ineligible for the corresponding v1 score.
 
 Any event-set or missing-event policy change increments `metric_version` or
 `event_set_version`; it does not silently reinterpret stored v1 rows.

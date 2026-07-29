@@ -54,7 +54,11 @@ test("keeps future grains registered while activating only Sum of Ranks", async 
   assert.match(sumScores, /CREATE TABLE person_sum_of_ranks_scores AS/);
   assert.match(sumScores, /RANK\(\) OVER/);
   assert.match(sumScores, /ROW_NUMBER\(\) OVER/);
-  assert.match(sumScores, /coverage = required_coverage/);
+  assert.match(sumScores, /COUNT\(\*\) \+ 1 AS fallback_rank/);
+  assert.match(sumScores, /fallback_score AS SIGNED\)[\s\S]*person\.score_adjustment AS score/);
+  assert.match(sumScores, /ENGINE = MEMORY/);
+  assert.doesNotMatch(sumScores, /CROSS JOIN/);
+  assert.doesNotMatch(sumScores, /coverage = required_coverage/);
   assert.match(podiums, /podium_position/);
   assert.match(podiums, /is_final_round = 1/);
   assert.match(competitionEvents, /fastest_single_result_id/);

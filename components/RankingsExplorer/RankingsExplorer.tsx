@@ -177,6 +177,11 @@ type SearchLayoutAnchor = {
   viewportTop: number;
 };
 
+type PendingPersonFocus = {
+  personId: string;
+  animate: boolean;
+};
+
 const CLIENT_PAGE_CACHE_CAPACITY_333 = 512;
 const CLIENT_PAGE_CACHE_CAPACITY_DEFAULT = 128;
 
@@ -668,8 +673,7 @@ export function RankingsExplorer({
   const previousRequestRef = useRef(false);
   const navigationEpochRef = useRef(0);
   const lastFocusRequestRef = useRef("");
-  const pendingFocusedPersonIdRef = useRef<string | null>(null);
-  const pendingFocusedPersonAnimatedRef = useRef(false);
+  const pendingPersonFocusRef = useRef<PendingPersonFocus | null>(null);
   const pendingRankRef = useRef(1);
   const pendingFocusLastRef = useRef(false);
   const pendingScrollToTopRef = useRef(false);
@@ -735,6 +739,10 @@ export function RankingsExplorer({
     settleTimer: null,
   });
   const scrollVelocityRef = useRef({ top: 0, timestamp: 0, downwardPixelsPerMs: 0 });
+  const queuePersonFocus = useCallback((personId: string, animate: boolean) => {
+    setHighlightedPersonId(personId);
+    pendingPersonFocusRef.current = { personId, animate };
+  }, []);
 
   const rowVirtualizer = useWindowVirtualizer({
     count: entries.length + 1,
@@ -1065,10 +1073,9 @@ export function RankingsExplorer({
         setTotal(data.total);
         setExportDate(data.exportDate ?? null);
         setOfflineStale(Boolean(data.offlineStale));
-        const focusedPersonId = pendingFocusedPersonIdRef.current;
-        const focusedPersonAnimated = pendingFocusedPersonAnimatedRef.current;
-        const focusedTargetIndex = focusedPersonId
-          ? loadedEntries.findIndex((entry) => entry.personId === focusedPersonId)
+        const personFocus = pendingPersonFocusRef.current;
+        const focusedTargetIndex = personFocus
+          ? loadedEntries.findIndex((entry) => entry.personId === personFocus.personId)
           : -1;
         const requestedTargetIndex = focusLast
           ? Math.max(0, loadedEntries.length - 1)
@@ -1090,8 +1097,7 @@ export function RankingsExplorer({
             appendNavigation ||
             focusedTargetIndex >= 0
         );
-        pendingFocusedPersonIdRef.current = null;
-        pendingFocusedPersonAnimatedRef.current = false;
+        if (focusedTargetIndex >= 0) pendingPersonFocusRef.current = null;
         pendingScrollDirectionRef.current = null;
         if (scrollToTop) {
           animateScrollTo(
@@ -1123,7 +1129,7 @@ export function RankingsExplorer({
                   : "top",
               bottomOffset: focusLast ? END_MARKER_PEEK : 0,
               requestedBehavior:
-                focusedTargetIndex >= 0 && !focusedPersonAnimated
+                focusedTargetIndex >= 0 && !personFocus?.animate
                   ? "auto"
                   : "smooth",
               requestedDuration: getScrollAnimationDuration(
@@ -2057,8 +2063,8 @@ export function RankingsExplorer({
       );
       navigationTargetRankRef.current = normalizedRank;
       pendingRankRef.current = normalizedRank;
-      pendingFocusedPersonIdRef.current = focusedPersonId;
-      pendingFocusedPersonAnimatedRef.current = Boolean(focusedPersonId && animate);
+      if (focusedPersonId) queuePersonFocus(focusedPersonId, animate);
+      else pendingPersonFocusRef.current = null;
       if (normalizedRank === 1) {
         if (findQuery.trim()) skipNextFindResetRef.current = true;
         resetFind();
@@ -2126,7 +2132,7 @@ export function RankingsExplorer({
           targetOffset: () =>
             rowVirtualizer.getOffsetForIndex(targetIndex, "start")?.[0],
         });
-        pendingFocusedPersonIdRef.current = null;
+        pendingPersonFocusRef.current = null;
         pendingScrollDirectionRef.current = null;
         return;
       }
@@ -2138,6 +2144,7 @@ export function RankingsExplorer({
       entries,
       findQuery,
       lastRank,
+      queuePersonFocus,
       resetFind,
       rowVirtualizer,
       startRank,
@@ -2154,7 +2161,6 @@ export function RankingsExplorer({
           setError("This person has no ranking for the selected event and region.");
           return;
         }
-        setHighlightedPersonId(located.personId);
         resetToRank(
           located.subRank,
           animate,

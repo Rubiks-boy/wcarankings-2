@@ -369,11 +369,11 @@ async function getEndWindow(
   };
 }
 
-async function getSearchWindow(
+async function getPersonWindow(
   eventId: string,
   rankingType: "single" | "average",
   selection: RegionSelection,
-  match: RankingEntry
+  match: Pick<RankingEntry, "personId" | "subRank">
 ) {
   const targetPageStart = pageStartForSubRank(match.subRank);
   const pageFirstSubRanks = Array.from(
@@ -469,7 +469,7 @@ function prefetchSearchResultPages(
       const requestKey = pageStartForSubRank(match.subRank);
       if (requested.has(requestKey)) continue;
       requested.add(requestKey);
-      void getSearchWindow(eventId, rankingType, selection, match).catch(
+      void getPersonWindow(eventId, rankingType, selection, match).catch(
         () => undefined
       );
     }
@@ -983,9 +983,15 @@ export function RankingsExplorer({
     previousRequestRef.current = false;
     const focusLast = pendingFocusLastRef.current;
     pendingFocusLastRef.current = false;
+    const personFocus = pendingPersonFocusRef.current;
+    const focusMatch = personFocus
+      ? { personId: personFocus.personId, subRank: pendingRankRef.current }
+      : null;
     const resource = rankingResource(subject, competitionRanking, latitudeHemisphere);
     const pageRequest = focusLast
       ? getEndWindow(eventId, rankingType, regionSelection, startRank, resource)
+      : focusMatch
+        ? getPersonWindow(eventId, rankingType, regionSelection, focusMatch)
       : getPage(eventId, rankingType, startRank, regionSelection, resource);
     pageRequest
       .then((data) => {
@@ -1029,6 +1035,7 @@ export function RankingsExplorer({
           pendingNavigationAppendRef.current &&
           !scrollToTop &&
           !focusLast &&
+          !focusMatch &&
           Boolean(pendingDirection);
         const previousEntries = entriesRef.current;
         const previousStartPosition = startPositionRef.current;
@@ -1078,7 +1085,6 @@ export function RankingsExplorer({
         setTotal(data.total);
         setExportDate(data.exportDate ?? null);
         setOfflineStale(Boolean(data.offlineStale));
-        const personFocus = pendingPersonFocusRef.current;
         const focusedTargetIndex = personFocus
           ? loadedEntries.findIndex((entry) => entry.personId === personFocus.personId)
           : -1;
@@ -1299,7 +1305,7 @@ export function RankingsExplorer({
               match,
               scrollDirection
             )
-          : getSearchWindow(eventId, rankingType, regionSelection, match);
+          : getPersonWindow(eventId, rankingType, regionSelection, match);
 
       void pageRequest
         .then((data) => {

@@ -5,7 +5,7 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("builds a result-level compatibility projection without unused secondary indexes", async () => {
-  const [source, indexes, counts, schema, importer, preflight, backfill, deploy, fixture] = await Promise.all([
+  const [source, indexes, counts, schema, importer, preflight, backfill, resultBackfill, dockerfile, deploy, fixture] = await Promise.all([
     readFile(new URL("sql/ranking-projections/result_entries_single_source.sql", root), "utf8"),
     readFile(new URL("sql/ranking-projections/result_entries_single_indexes.sql", root), "utf8"),
     readFile(new URL("sql/ranking-projections/result_counts.sql", root), "utf8"),
@@ -13,6 +13,8 @@ test("builds a result-level compatibility projection without unused secondary in
     readFile(new URL("scripts/sync-wca-export.mjs", root), "utf8"),
     readFile(new URL("scripts/check-ranking-projections.mjs", root), "utf8"),
     readFile(new URL("scripts/backfill-result-entries.mjs", root), "utf8"),
+    readFile(new URL("scripts/backfill-result-rankings.mjs", root), "utf8"),
+    readFile(new URL("Dockerfile", root), "utf8"),
     readFile(new URL(".github/workflows/deploy.yml", root), "utf8"),
     readFile(new URL("tests/fixtures/visual-smoke.sql", root), "utf8"),
   ]);
@@ -43,7 +45,10 @@ test("builds a result-level compatibility projection without unused secondary in
   assert.doesNotMatch(preflight, /idx_result_entries_single_world/);
   assert.match(backfill, /refreshMysqlSchema/);
   assert.match(backfill, /promoteProjectionTables/);
+  assert.match(resultBackfill, /result-ranking-counts/);
+  assert.match(dockerfile, /backfill-result-rankings\.mjs/);
   assert.match(deploy, /backfill-result-entries\.mjs/);
+  assert.match(deploy, /backfill-result-rankings\.mjs/);
   assert.match(fixture, /year SMALLINT/);
   assert.match(fixture, /month TINYINT/);
   assert.match(fixture, /day TINYINT/);

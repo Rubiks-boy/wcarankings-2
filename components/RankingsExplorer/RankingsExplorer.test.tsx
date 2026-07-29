@@ -73,10 +73,10 @@ test("gives each non-default subject and competition ranking a page", () => {
   assert.equal(competitionRankingPath("latitude"), "/competitions/latitude");
 });
 
-test("launches competition browsing without exposing inactive result rankings", () => {
+test("exposes active person, result, and competition ranking subjects", () => {
   assert.deepEqual(
     EXPLORER_SUBJECTS.map(({ id }) => id),
-    ["people", "competitions"],
+    ["people", "results", "competitions"],
   );
 });
 

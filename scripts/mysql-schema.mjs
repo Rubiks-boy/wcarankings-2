@@ -26,6 +26,72 @@ async function projectionSql(file) {
   return readFile(join(projectionDirectory, file), "utf8");
 }
 
+function elapsedMs(startedAt) {
+  return Math.round(performance.now() - startedAt);
+}
+
+function writeBuildLog(message) {
+  process.stdout.write(`[projection-build] ${message}\n`);
+}
+
+export async function runTimedBuildStep(label, build) {
+  const startedAt = performance.now();
+  writeBuildLog(`Starting ${label}…`);
+  try {
+    const result = await build();
+    const durationMs = elapsedMs(startedAt);
+    writeBuildLog(`Finished ${label} in ${durationMs}ms.`);
+    return { result, durationMs };
+  } catch (error) {
+    writeBuildLog(`Failed ${label} after ${elapsedMs(startedAt)}ms.`);
+    throw error;
+  }
+}
+
+function createdTableName(statement) {
+  return statement.match(
+    /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMPORARY\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([a-zA-Z0-9_]+)`?/i,
+  )?.[1];
+}
+
+async function executeTableStatements(connection, sql, phases = []) {
+  let activeTable;
+  let activeTableStartedAt;
+
+  function finishActiveTable() {
+    if (!activeTable) return;
+    writeBuildLog(`Finished table ${activeTable} in ${elapsedMs(activeTableStartedAt)}ms.`);
+    activeTable = undefined;
+    activeTableStartedAt = undefined;
+  }
+
+  try {
+    for (const statement of statements(sql)) {
+      const table = createdTableName(statement);
+      if (table) {
+        finishActiveTable();
+        activeTable = table;
+        activeTableStartedAt = performance.now();
+        writeBuildLog(`Starting table ${table}…`);
+      }
+
+      const phase = statement.match(/^\s*-- phase:\s*([^\n]+)/)?.[1]?.trim();
+      const startedAt = performance.now();
+      await connection.query(statement);
+      if (phase) phases.push({
+        name: phase,
+        durationMs: elapsedMs(startedAt),
+      });
+    }
+    finishActiveTable();
+  } catch (error) {
+    if (activeTable) {
+      writeBuildLog(`Failed table ${activeTable} after ${elapsedMs(activeTableStartedAt)}ms.`);
+    }
+    throw error;
+  }
+}
+
 const projectionDefinitions = [
   {
     name: "sum-of-ranks",
@@ -50,8 +116,21 @@ const projectionDefinitions = [
   },
   { name: "result-facts", dependencies: ["raw-wca"], files: ["result_facts.sql"], tables: ["result_facts"] },
   { name: "person-event-rankings", dependencies: ["result-facts"], files: ["person_event_rankings.sql"], tables: ["person_event_rankings"] },
-  { name: "result-rankings", dependencies: ["result-facts"], files: ["result_rankings.sql"], tables: ["result_rankings"] },
-  { name: "person-ranking-counts", dependencies: ["person-event-rankings", "result-rankings"], files: ["projection_counts.sql"], tables: ["person_ranking_counts", "result_ranking_counts"] },
+  {
+    name: "result-rankings",
+    dependencies: ["raw-wca"],
+    files: ["result_rankings_single.sql", "result_rankings_average.sql"],
+    tables: ["result_rankings_single", "result_rankings_average"],
+    enabledByDefault: true,
+  },
+  {
+    name: "result-ranking-counts",
+    dependencies: ["result-rankings"],
+    files: ["result_ranking_counts.sql"],
+    tables: ["result_ranking_counts"],
+    enabledByDefault: true,
+  },
+  { name: "person-ranking-counts", dependencies: ["person-event-rankings"], files: ["projection_counts.sql"], tables: ["person_ranking_counts"] },
   { name: "person-metric-values", dependencies: ["person-event-rankings"], files: ["person_metric_values.sql"], tables: ["person_metric_values"] },
   { name: "person-metric-scores", dependencies: ["person-metric-values"], files: ["person_metric_scores.sql"], tables: ["person_metric_scores", "person_metric_counts"] },
   {
@@ -97,15 +176,7 @@ async function buildSqlProjection(connection, definition, suffix) {
   const phases = [];
   for (const file of definition.files) {
     const sql = projectionNames(await projectionSql(file), suffix);
-    for (const statement of statements(sql)) {
-      const phase = statement.match(/^\s*-- phase:\s*([^\n]+)/)?.[1]?.trim();
-      const startedAt = performance.now();
-      await connection.query(statement);
-      if (phase) phases.push({
-        name: phase,
-        durationMs: Math.round(performance.now() - startedAt),
-      });
-    }
+    await executeTableStatements(connection, sql, phases);
   }
   return phases;
 }
@@ -150,12 +221,18 @@ export async function buildRegisteredProjections(connection, { projectionSuffix 
   const timings = [];
   for (const projection of orderedProjections(selectedNames)) {
     const startedAt = performance.now();
-    for (const table of projection.tables) await dropManagedObject(connection, `${table}${projectionSuffix}`);
-    const phases = await projection.build(connection, projectionSuffix);
-    const rowCounts = await projection.validate(connection, projectionSuffix);
-    const durationMs = Math.round(performance.now() - startedAt);
-    timings.push({ name: projection.name, durationMs, rowCounts, phases });
-    process.stdout.write(`Built projection ${projection.name} in ${durationMs}ms (${JSON.stringify(rowCounts)})\n`);
+    writeBuildLog(`Starting projection ${projection.name}…`);
+    try {
+      for (const table of projection.tables) await dropManagedObject(connection, `${table}${projectionSuffix}`);
+      const phases = await projection.build(connection, projectionSuffix);
+      const rowCounts = await projection.validate(connection, projectionSuffix);
+      const durationMs = elapsedMs(startedAt);
+      timings.push({ name: projection.name, durationMs, rowCounts, phases });
+      writeBuildLog(`Finished projection ${projection.name} in ${durationMs}ms (${JSON.stringify(rowCounts)}).`);
+    } catch (error) {
+      writeBuildLog(`Failed projection ${projection.name} after ${elapsedMs(startedAt)}ms.`);
+      throw error;
+    }
   }
   return timings;
 }
@@ -279,30 +356,32 @@ export async function refreshMysqlSchema(connection, { projectionSuffix = "" } =
   for (const type of ["single", "average"]) {
     const entriesTable = entriesTables[type];
     const entriesSource = entriesSources[type];
-    await connection.query(`CREATE TABLE \`${entriesTable}\` AS SELECT * FROM \`${entriesSource}\``);
-    for (const statement of statements(await projectionSql("ranking_entries_indexes.sql"))) {
-      await connection.query(statement.replace(/^ALTER TABLE ranking_entries\b/, `ALTER TABLE \`${entriesTable}\``));
+    await runTimedBuildStep(`table ${entriesTable}`, async () => {
+      await connection.query(`CREATE TABLE \`${entriesTable}\` AS SELECT * FROM \`${entriesSource}\``);
+      for (const statement of statements(await projectionSql("ranking_entries_indexes.sql"))) {
+        await connection.query(statement.replace(/^ALTER TABLE ranking_entries\b/, `ALTER TABLE \`${entriesTable}\``));
+      }
+    });
+  }
+  await runTimedBuildStep(`table ${resultEntriesTable}`, async () => {
+    await connection.query(`CREATE TABLE \`${resultEntriesTable}\` AS SELECT * FROM \`${resultEntriesSource}\``);
+    for (const statement of statements(await projectionSql("result_entries_single_indexes.sql"))) {
+      await connection.query(statement.replace(/^ALTER TABLE result_entries_single\b/, `ALTER TABLE \`${resultEntriesTable}\``));
     }
-  }
-  await connection.query(`CREATE TABLE \`${resultEntriesTable}\` AS SELECT * FROM \`${resultEntriesSource}\``);
-  for (const statement of statements(await projectionSql("result_entries_single_indexes.sql"))) {
-    await connection.query(statement.replace(/^ALTER TABLE result_entries_single\b/, `ALTER TABLE \`${resultEntriesTable}\``));
-  }
-  for (const statement of statements(await projectionSql("ranking_counts.sql"))) {
-    await connection.query(
-      statement
-        .replaceAll("ranking_entries_single", entriesTables.single)
-        .replaceAll("ranking_entries_average", entriesTables.average)
-        .replaceAll("ranking_counts", countsTable),
-    );
-  }
-  for (const statement of statements(await projectionSql("result_counts.sql"))) {
-    await connection.query(
-      statement
-        .replaceAll("result_entries_single", resultEntriesTable)
-        .replaceAll("result_counts", resultCountsTable),
-    );
-  }
+  });
+  await executeTableStatements(
+    connection,
+    (await projectionSql("ranking_counts.sql"))
+      .replaceAll("ranking_entries_single", entriesTables.single)
+      .replaceAll("ranking_entries_average", entriesTables.average)
+      .replaceAll("ranking_counts", countsTable),
+  );
+  await executeTableStatements(
+    connection,
+    (await projectionSql("result_counts.sql"))
+      .replaceAll("result_entries_single", resultEntriesTable)
+      .replaceAll("result_counts", resultCountsTable),
+  );
   await buildRegisteredProjections(connection, { projectionSuffix });
 }
 
@@ -319,17 +398,18 @@ export async function refreshResultEntriesSchema(connection, { projectionSuffix 
 
   const source = await projectionSql("result_entries_single_source.sql");
   await connection.query(source.replaceAll("result_entries_single_source", resultEntriesSource));
-  await connection.query(`CREATE TABLE \`${resultEntriesTable}\` AS SELECT * FROM \`${resultEntriesSource}\``);
-  for (const statement of statements(await projectionSql("result_entries_single_indexes.sql"))) {
-    await connection.query(statement.replace(/^ALTER TABLE result_entries_single\b/, `ALTER TABLE \`${resultEntriesTable}\``));
-  }
-  for (const statement of statements(await projectionSql("result_counts.sql"))) {
-    await connection.query(
-      statement
-        .replaceAll("result_entries_single", resultEntriesTable)
-        .replaceAll("result_counts", resultCountsTable),
-    );
-  }
+  await runTimedBuildStep(`table ${resultEntriesTable}`, async () => {
+    await connection.query(`CREATE TABLE \`${resultEntriesTable}\` AS SELECT * FROM \`${resultEntriesSource}\``);
+    for (const statement of statements(await projectionSql("result_entries_single_indexes.sql"))) {
+      await connection.query(statement.replace(/^ALTER TABLE result_entries_single\b/, `ALTER TABLE \`${resultEntriesTable}\``));
+    }
+  });
+  await executeTableStatements(
+    connection,
+    (await projectionSql("result_counts.sql"))
+      .replaceAll("result_entries_single", resultEntriesTable)
+      .replaceAll("result_counts", resultCountsTable),
+  );
 }
 
 export async function promoteResultEntriesSchema(connection, { projectionSuffix = "_staging" } = {}) {

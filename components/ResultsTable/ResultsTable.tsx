@@ -1,5 +1,5 @@
 import { RankingRow } from "../RankingRow/RankingRow";
-import type { RankingEntry } from "../RankingsExplorer/types";
+import { rankingEntryKey, type RankingEntry } from "../RankingsExplorer/types";
 import type { Key, Ref } from "react";
 
 export type RenderedTableRow = {
@@ -67,8 +67,8 @@ export function ResultsTable({
               rankingType={rankingType}
               hideIdentityId={hideIdentityIds}
               animationIndex={virtualRow.index}
-              searchMatched={searchMatchPersonIds?.has(entry.personId)}
-              highlighted={entry.personId === highlightedPersonId}
+              searchMatched={searchMatchPersonIds?.has(rankingEntryKey(entry))}
+              highlighted={rankingEntryKey(entry) === highlightedPersonId}
               rankIsDuplicate={
                 virtualRow.index > 0 &&
                 entries[virtualRow.index - 1]?.rank === entry.rank

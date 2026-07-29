@@ -4,13 +4,43 @@ import test from "node:test";
 
 const root = new URL("../", import.meta.url);
 
+test("logs projection build step starts, completions, failures, and elapsed time", async () => {
+  const { runTimedBuildStep } = await import(new URL("scripts/mysql-schema.mjs", root));
+  const messages = [];
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk) => {
+    messages.push(String(chunk));
+    return true;
+  };
+  try {
+    const { result, durationMs } = await runTimedBuildStep("table example_staging", async () => "built");
+    assert.equal(result, "built");
+    assert.ok(durationMs >= 0);
+    await assert.rejects(
+      runTimedBuildStep("table broken_staging", async () => {
+        throw new Error("expected failure");
+      }),
+      /expected failure/,
+    );
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+
+  const output = messages.join("");
+  assert.match(output, /\[projection-build\] Starting table example_staging/);
+  assert.match(output, /\[projection-build\] Finished table example_staging in \d+ms/);
+  assert.match(output, /\[projection-build\] Starting table broken_staging/);
+  assert.match(output, /\[projection-build\] Failed table broken_staging after \d+ms/);
+});
+
 test("keeps future grains registered while activating person metrics and competition bests", async () => {
-  const [schema, facts, people, results, metricValues, metricScores, sumScores, podiums, competitionEvents, competitions, cities, counts, importer] =
+  const [schema, facts, people, resultSingles, resultAverages, metricValues, metricScores, sumScores, podiums, competitionEvents, competitions, cities, counts, importer] =
     await Promise.all([
       readFile(new URL("scripts/mysql-schema.mjs", root), "utf8"),
       readFile(new URL("sql/ranking-projections/result_facts.sql", root), "utf8"),
       readFile(new URL("sql/ranking-projections/person_event_rankings.sql", root), "utf8"),
-      readFile(new URL("sql/ranking-projections/result_rankings.sql", root), "utf8"),
+      readFile(new URL("sql/ranking-projections/result_rankings_single.sql", root), "utf8"),
+      readFile(new URL("sql/ranking-projections/result_rankings_average.sql", root), "utf8"),
       readFile(new URL("sql/ranking-projections/person_metric_values.sql", root), "utf8"),
       readFile(new URL("sql/ranking-projections/person_metric_scores.sql", root), "utf8"),
       readFile(new URL("sql/ranking-projections/person_sum_of_ranks_scores.sql", root), "utf8"),
@@ -21,6 +51,7 @@ test("keeps future grains registered while activating person metrics and competi
       readFile(new URL("sql/ranking-projections/entity_ranking_counts.sql", root), "utf8"),
       readFile(new URL("scripts/sync-wca-export.mjs", root), "utf8"),
     ]);
+  const results = `${resultSingles}\n${resultAverages}`;
 
   assert.match(schema, /PROJECTION_REGISTRY/);
   assert.match(schema, /dependencies/);
@@ -43,9 +74,15 @@ test("keeps future grains registered while activating person metrics and competi
   assert.match(facts, /idx_result_facts_average_ranking_cover/);
   assert.match(people, /CREATE TABLE person_event_rankings AS/);
   assert.match(people, /world_position/);
-  assert.match(results, /CREATE TABLE result_rankings AS/);
-  assert.match(results, /competition_start_date/);
-  assert.doesNotMatch(results, /ROW_NUMBER\(\)/);
+  assert.match(results, /CREATE TABLE result_rankings_single AS/);
+  assert.match(results, /CREATE TABLE result_rankings_average AS/);
+  assert.doesNotMatch(results, /competition_start_date/);
+  assert.match(results, /ROW_NUMBER\(\)/);
+  assert.match(results, /RANK\(\) OVER/);
+  assert.doesNotMatch(results, /DENSE_RANK\(\) OVER/);
+  assert.match(results, /world_position/);
+  assert.match(results, /continent_position/);
+  assert.match(results, /country_position/);
   assert.match(metricValues, /kinch_value/);
   assert.match(metricScores, /CREATE TABLE person_metric_counts AS/);
   assert.match(sumScores, /CREATE TEMPORARY TABLE sum_of_ranks_historical_bests/);
@@ -111,7 +148,8 @@ test("keeps future grains registered while activating person metrics and competi
 test("does not introduce entries or sub-rank vocabulary in new schemas", async () => {
   const files = [
     "person_event_rankings.sql",
-    "result_rankings.sql",
+    "result_rankings_single.sql",
+    "result_rankings_average.sql",
     "person_metric_values.sql",
     "person_metric_scores.sql",
     "competition_podium_members.sql",
@@ -143,8 +181,10 @@ test("exposes bounded resource APIs without projection name scans", async () => 
   assert.match(shared, /ApiInputError/);
   assert.match(people, /WITH page AS/);
   assert.match(people, /FROM person_event_rankings ranking/);
-  assert.match(results, /FROM result_rankings ranking/);
-  assert.match(results, /afterCompetitionId/);
+  assert.match(results, /FROM \$\{table\} ranking/);
+  assert.match(results, /positionColumn/);
+  assert.match(results, /ranking\.\$\{positionColumn\} > \?/);
+  assert.match(results, /entryKey: `result:/);
   assert.match(rankings, /FROM person_sum_of_ranks_scores score/);
   assert.match(rankings, /input\.eventId === "SOR"/);
   assert.match(rankings, /input\.eventId === "sor-kinch"/);
@@ -168,11 +208,11 @@ test("only exposes APIs backed by active projections", async () => {
   const activeRoutes = [
     "app/api/people/search/route.ts",
     "app/api/rankings/route.ts",
+    "app/api/rankings/results/route.ts",
     "app/api/rankings/competitions/route.ts",
   ];
   const inactiveRoutes = [
     "app/api/rankings/people/route.ts",
-    "app/api/rankings/results/route.ts",
     "app/api/rankings/podiums/route.ts",
     "app/api/rankings/cities/route.ts",
     "app/api/rankings/metrics/route.ts",
@@ -200,7 +240,7 @@ test("person search resolves IDs before querying projections", async () => {
   const [search, rankings, results, compatibilityResults] = await Promise.all([
     readFile(new URL("lib/person-search.ts", root), "utf8"),
     readFile(new URL("lib/rankings.ts", root), "utf8"),
-    readFile(new URL("sql/ranking-projections/result_rankings.sql", root), "utf8"),
+    readFile(new URL("sql/ranking-projections/result_rankings_single.sql", root), "utf8"),
     readFile(new URL("sql/ranking-projections/result_entries_single_indexes.sql", root), "utf8"),
   ]);
 
@@ -210,7 +250,7 @@ test("person search resolves IDs before querying projections", async () => {
   assert.match(rankings, /searchPersonIds/);
   assert.match(rankings, /person_id IN/);
   assert.doesNotMatch(rankings, /person_name \$\{operator\}/);
-  assert.match(results, /person_id, competition_start_date DESC, result_id DESC/);
+  assert.match(results, /person_id, event_id, world_position, result_id/);
   assert.match(compatibilityResults, /PRIMARY KEY \(result_id\)/);
   assert.doesNotMatch(compatibilityResults, /ADD INDEX/);
 });

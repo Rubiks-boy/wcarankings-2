@@ -1,5 +1,5 @@
 import { formatWcaResult, flagEmoji, RECORD_BADGE_LABELS } from "@/lib/wca";
-import { formatRankingNumber, type RankingEntry } from "../RankingsExplorer/types";
+import { formatRankingNumber, rankingEntryKey, type RankingEntry } from "../RankingsExplorer/types";
 
 export function RankingRow({
   entry,
@@ -41,6 +41,7 @@ export function RankingRow({
     <li
       className="listItem"
       data-person-id={entry.personId}
+      data-entry-key={rankingEntryKey(entry)}
       data-row-index={rowIndex}
       style={style}
       tabIndex={0}

@@ -60,6 +60,7 @@ import {
 import { TextDropdown } from "../Dropdown/TextDropdown";
 import {
   formatRankingsFreshness,
+  rankingEntryKey,
   type InitialRankingData,
   type RankingEntry,
   type RankingPage,
@@ -87,6 +88,7 @@ const COMPETITION_RANKING_OPTIONS = [
 type CompetitionRanking = (typeof COMPETITION_RANKING_OPTIONS)[number]["value"];
 type RankingResource =
   | "people"
+  | "results"
   | "competitions"
   | "podiums"
   | "competitor-count"
@@ -115,7 +117,8 @@ function rankingResource(
   competitionRanking: CompetitionRanking,
   latitudeHemisphere: "north" | "south" = "north",
 ): RankingResource {
-  if (subject !== "competitions") return "people";
+  if (subject === "people") return "people";
+  if (subject === "results") return "results";
   if (competitionRanking === "latitude") return `latitude-${latitudeHemisphere}`;
   if (competitionRanking === "competitor-count") return "competitor-count";
   return competitionRanking === "podiums" ? "podiums" : "competitions";
@@ -173,7 +176,7 @@ function setSearchQueryParam(value: string) {
 
 type SearchLayoutAnchor = {
   requestEpoch: number;
-  personId: string;
+  entryKey: string;
   viewportTop: number;
 };
 
@@ -307,15 +310,19 @@ function getPage(
   const cached = pageCache.get(cachePool, cacheKey);
   if (cached) return cached;
 
-  const endpoint = resource !== "people"
-    ? "/api/rankings/competitions"
-    : "/api/rankings";
+  const endpoint = resource === "people"
+    ? "/api/rankings"
+    : resource === "results"
+      ? "/api/rankings/results"
+      : "/api/rankings/competitions";
   const request = fetchRankingPage(`${endpoint}?${params}`).then(async (response) => {
     if (!response.ok) {
       const body = (await response.json()) as { error?: string };
       throw new Error(body.error ?? "Rankings are unavailable.");
     }
-    const data = (await response.json()) as RankingPage;
+    const data = (await response.json()) as RankingPage & {
+      snapshot?: { exportDate?: string | null };
+    };
     return {
       entries: data.entries,
       hasMore: data.hasMore,
@@ -324,7 +331,7 @@ function getPage(
       startPosition: data.startPosition,
       lastRank: data.lastRank,
       total: data.total,
-      exportDate: data.exportDate ?? null,
+      exportDate: data.exportDate ?? data.snapshot?.exportDate ?? null,
       offlineStale: response.headers.get("X-Rankings-Offline-Stale") === "1",
     };
   });
@@ -353,14 +360,15 @@ async function getEndWindow(
   );
   const firstPage = pages[0];
   const lastPage = pages.at(-1) ?? firstPage;
-  const seenPersonIds = new Set<string>();
+  const seenEntryKeys = new Set<string>();
 
   return {
     ...lastPage,
     entries: pages.flatMap((page) =>
       page.entries.filter((entry) => {
-        if (seenPersonIds.has(entry.personId)) return false;
-        seenPersonIds.add(entry.personId);
+        const entryKey = rankingEntryKey(entry);
+        if (seenEntryKeys.has(entryKey)) return false;
+        seenEntryKeys.add(entryKey);
         return true;
       })
     ),
@@ -369,11 +377,12 @@ async function getEndWindow(
   };
 }
 
-async function getPersonWindow(
+async function getSearchWindow(
   eventId: string,
   rankingType: "single" | "average",
   selection: RegionSelection,
-  match: Pick<RankingEntry, "personId" | "subRank">
+  match: Pick<RankingEntry, "personId" | "subRank">,
+  resource: RankingResource = "people",
 ) {
   const targetPageStart = pageStartForSubRank(match.subRank);
   const pageFirstSubRanks = Array.from(
@@ -385,11 +394,11 @@ async function getPersonWindow(
     .filter((start, index, starts) => starts.indexOf(start) === index);
   const pages = await Promise.all(
     pageFirstSubRanks.map((start) =>
-      getPage(eventId, rankingType, start, selection)
+      getPage(eventId, rankingType, start, selection, resource)
     )
   );
   const entries = pages.flatMap((page) => page.entries);
-  if (!entries.some((entry) => entry.personId === match.personId))
+  if (!entries.some((entry) => rankingEntryKey(entry) === rankingEntryKey(match)))
     throw new Error("Could not locate the selected ranking result.");
 
   const firstPage = pages[0];
@@ -409,7 +418,8 @@ async function getDistantSearchWindow(
   selection: RegionSelection,
   currentPageStart: number,
   match: RankingEntry,
-  direction: -1 | 1
+  direction: -1 | 1,
+  resource: RankingResource = "people",
 ) {
   const targetPageStart = pageStartForSubRank(match.subRank);
   const pageStarts = [
@@ -430,12 +440,12 @@ async function getDistantSearchWindow(
   const pages = (
     await Promise.all(
       pageStarts.map((start) =>
-        getPage(eventId, rankingType, start + 1, selection)
+        getPage(eventId, rankingType, start + 1, selection, resource)
       )
     )
   ).filter((page) => page.entries.length > 0);
   const entries = pages.flatMap((page) => page.entries);
-  if (!entries.some((entry) => entry.personId === match.personId))
+  if (!entries.some((entry) => rankingEntryKey(entry) === rankingEntryKey(match)))
     throw new Error("Could not locate the selected ranking result.");
 
   const firstPage = pages[0];
@@ -454,7 +464,8 @@ function prefetchSearchResultPages(
   rankingType: "single" | "average",
   selection: RegionSelection,
   matches: Array<RankingEntry | null | undefined>,
-  currentMatchIndex: number
+  currentMatchIndex: number,
+  resource: RankingResource = "people",
 ) {
   if (matches.length < 2 || currentMatchIndex < 0) return;
   const requested = new Set<number>();
@@ -469,7 +480,7 @@ function prefetchSearchResultPages(
       const requestKey = pageStartForSubRank(match.subRank);
       if (requested.has(requestKey)) continue;
       requested.add(requestKey);
-      void getPersonWindow(eventId, rankingType, selection, match).catch(
+      void getSearchWindow(eventId, rankingType, selection, match, resource).catch(
         () => undefined
       );
     }
@@ -482,7 +493,8 @@ function searchRankings(
   selection: RegionSelection,
   search: string,
   regexSearch: boolean,
-  signal: AbortSignal
+  signal: AbortSignal,
+  resource: RankingResource = "people",
 ) {
   const params = new URLSearchParams({
     eventId,
@@ -493,7 +505,10 @@ function searchRankings(
   if (regexSearch) params.set("mode", "vim");
   if (selection.scope !== "world") params.set("region", selection.regionId);
 
-  return fetch(`/api/rankings?${params}`, { signal }).then(async (response) => {
+  const endpoint = resource === "results"
+    ? "/api/rankings/results"
+    : "/api/rankings";
+  return fetch(`${endpoint}?${params}`, { signal }).then(async (response) => {
     if (!response.ok) {
       const body = (await response.json()) as { error?: string };
       throw new Error(body.error ?? "Search is unavailable.");
@@ -740,7 +755,7 @@ export function RankingsExplorer({
   const rankingListRef = useRef<HTMLOListElement>(null);
   const railEventPickerTriggerRef = useRef<HTMLButtonElement>(null);
   const pendingRowFocusRef = useRef<{
-    anchorPersonId: string;
+    anchorEntryKey: string;
     direction: -1 | 1;
   } | null>(null);
   const rowFocusFrameRef = useRef<number | null>(null);
@@ -782,7 +797,7 @@ export function RankingsExplorer({
     pendingSearchLayoutAnchorRef.current = null;
     if (anchor.requestEpoch !== navigationEpochRef.current) return;
     const anchoredIndex = entries.findIndex(
-      (entry) => entry.personId === anchor.personId
+      (entry) => rankingEntryKey(entry) === anchor.entryKey
     );
     if (anchoredIndex < 0) return;
     const list = rankingListRef.current;
@@ -836,7 +851,7 @@ export function RankingsExplorer({
     )
       return;
     const targetIndex = entries.findIndex(
-      (entry) => entry.personId === initialData.initialMatchPersonId
+      (entry) => rankingEntryKey(entry) === initialData.initialMatchPersonId
     );
     if (targetIndex < 0) return;
     let secondFrame: number | null = null;
@@ -1007,7 +1022,7 @@ export function RankingsExplorer({
     const pageRequest = focusLast
       ? getEndWindow(eventId, rankingType, regionSelection, startRank, resource)
       : focusMatch
-        ? getPersonWindow(eventId, rankingType, regionSelection, focusMatch)
+        ? getSearchWindow(eventId, rankingType, regionSelection, focusMatch)
       : getPage(eventId, rankingType, startRank, regionSelection, resource);
     pageRequest
       .then((data) => {
@@ -1065,16 +1080,16 @@ export function RankingsExplorer({
                 ...data.entries.filter(
                   (entry) =>
                     !previousEntries.some(
-                      (currentEntry) => currentEntry.personId === entry.personId
+                      (currentEntry) => rankingEntryKey(currentEntry) === rankingEntryKey(entry)
                     )
                 ),
               ]
             : [
                 ...data.entries.filter(
                   (entry) =>
-                    !previousEntries.some(
-                      (currentEntry) => currentEntry.personId === entry.personId
-                    )
+                  !previousEntries.some(
+                    (currentEntry) => rankingEntryKey(currentEntry) === rankingEntryKey(entry)
+                  )
                 ),
                 ...previousEntries,
               ]
@@ -1242,14 +1257,14 @@ export function RankingsExplorer({
         if (!currentMatch) return null;
         const mountedRow = Array.from(
           document.querySelectorAll<HTMLElement>(
-            ".listItem[data-person-id]"
+            ".listItem[data-entry-key]"
           )
         ).find(
-          (row) => row.dataset.personId === currentMatch.personId
+          (row) => row.dataset.entryKey === rankingEntryKey(currentMatch)
         );
         if (mountedRow) return mountedRow.getBoundingClientRect().top;
         const currentEntryIndex = entriesRef.current.findIndex(
-          (entry) => entry.personId === currentMatch.personId
+          (entry) => rankingEntryKey(entry) === rankingEntryKey(currentMatch)
         );
         if (currentEntryIndex < 0) return null;
         const measuredTop =
@@ -1269,7 +1284,8 @@ export function RankingsExplorer({
         rankingType,
         regionSelection,
         findMatchesRef.current,
-        findIndexRef.current
+        findIndexRef.current,
+        rankingResource(subject, competitionRanking, latitudeHemisphere),
       );
       setError("");
       setLoading(true);
@@ -1319,22 +1335,29 @@ export function RankingsExplorer({
               regionSelection,
               currentPageStart,
               match,
-              scrollDirection
+              scrollDirection,
+              rankingResource(subject, competitionRanking, latitudeHemisphere),
             )
-          : getPersonWindow(eventId, rankingType, regionSelection, match);
+          : getSearchWindow(
+              eventId,
+              rankingType,
+              regionSelection,
+              match,
+              rankingResource(subject, competitionRanking, latitudeHemisphere),
+            );
 
       void pageRequest
         .then((data) => {
           if (navigationEpochRef.current !== requestEpoch) return;
           const targetIndex = data.entries.findIndex(
-            (entry) => entry.personId === match.personId
+            (entry) => rankingEntryKey(entry) === rankingEntryKey(match)
           );
           if (targetIndex < 0)
             throw new Error("Could not locate the selected ranking result.");
 
           const currentIndex = currentMatch
             ? data.entries.findIndex(
-                (entry) => entry.personId === currentMatch.personId
+                (entry) => rankingEntryKey(entry) === rankingEntryKey(currentMatch)
               )
             : -1;
           if (
@@ -1344,13 +1367,13 @@ export function RankingsExplorer({
           ) {
             pendingSearchLayoutAnchorRef.current = {
               requestEpoch,
-              personId: currentMatch.personId,
+              entryKey: rankingEntryKey(currentMatch),
               viewportTop: currentMatchViewportTop,
             };
           }
 
           const nextSearchStart = data.entries[0]?.subRank ?? 1;
-          setHighlightedPersonId(match.personId);
+          setHighlightedPersonId(rankingEntryKey(match));
           setEntries(data.entries);
           if (nextSearchStart !== startRankRef.current) {
             skipPageLoadStartRef.current = nextSearchStart;
@@ -1393,9 +1416,9 @@ export function RankingsExplorer({
               const centerRenderedMatch = () => {
                 const targetRow = Array.from(
                   document.querySelectorAll<HTMLElement>(
-                    ".listItem[data-person-id]"
+                    ".listItem[data-entry-key]"
                   )
-                ).find((row) => row.dataset.personId === match.personId);
+                ).find((row) => row.dataset.entryKey === rankingEntryKey(match));
                 if (!targetRow) return false;
                 const targetRect = targetRow.getBoundingClientRect();
                 window.scrollTo({
@@ -1486,7 +1509,14 @@ export function RankingsExplorer({
           finishSearchNavigation();
         });
     },
-    [eventId, rankingType, regionSelection]
+    [
+      competitionRanking,
+      eventId,
+      latitudeHemisphere,
+      rankingType,
+      regionSelection,
+      subject,
+    ]
   );
 
   const cycleFind = useCallback(
@@ -1608,7 +1638,8 @@ export function RankingsExplorer({
           regionSelection,
           normalizedQuery,
           regexSearch,
-          controller.signal
+          controller.signal,
+          rankingResource(subject, competitionRanking, latitudeHemisphere),
         )
           .then((data) => {
             if (controller.signal.aborted) return;
@@ -1653,6 +1684,8 @@ export function RankingsExplorer({
     regionSelection,
     regexSearch,
     jumpToMatch,
+    latitudeHemisphere,
+    subject,
   ]);
 
   useEffect(() => {
@@ -1785,7 +1818,9 @@ export function RankingsExplorer({
       setEntries((current) => [
         ...current,
         ...data.entries.filter(
-          (entry) => !current.some((item) => item.personId === entry.personId)
+          (entry) => !current.some(
+            (item) => rankingEntryKey(item) === rankingEntryKey(entry)
+          )
         ),
       ]);
       setNextPageStart(data.nextPageStart);
@@ -1837,7 +1872,9 @@ export function RankingsExplorer({
         return;
       const newEntries = data.entries.filter(
         (entry) =>
-          !entriesRef.current.some((item) => item.personId === entry.personId)
+          !entriesRef.current.some(
+            (item) => rankingEntryKey(item) === rankingEntryKey(entry)
+          )
       );
       setEntries((current) => [...newEntries, ...current]);
       setStartPosition(data.startPosition);
@@ -1916,7 +1953,7 @@ export function RankingsExplorer({
       if (direction === 1 && !hasMore) return;
 
       pendingRowFocusRef.current = {
-        anchorPersonId: anchor.personId,
+        anchorEntryKey: rankingEntryKey(anchor),
         direction,
       };
       if (direction === -1) void loadPrevious();
@@ -1936,7 +1973,7 @@ export function RankingsExplorer({
     const pending = pendingRowFocusRef.current;
     if (!pending) return;
     const anchorIndex = entries.findIndex(
-      (entry) => entry.personId === pending.anchorPersonId,
+      (entry) => rankingEntryKey(entry) === pending.anchorEntryKey,
     );
     const targetIndex = anchorIndex + pending.direction;
     if (anchorIndex < 0 || targetIndex < 0 || targetIndex >= entries.length)
@@ -2797,7 +2834,7 @@ export function RankingsExplorer({
     () =>
       new Set(
         findResolvedQuery
-          ? findMatches.map((match) => match.personId)
+          ? findMatches.map((match) => rankingEntryKey(match))
           : []
       ),
     [findMatches, findResolvedQuery]

@@ -10,6 +10,7 @@ import { isEventId, isRankingEventId, isRankingType, isValidRegexPattern, parseR
 import { getRegions } from "@/lib/regions";
 import { loadRankings } from "@/lib/rankings";
 import { loadCompetitionRankings } from "@/lib/semantic-entity-rankings";
+import { loadResultRankings } from "@/lib/semantic-result-rankings";
 import { projectionBrowsingEnabled } from "@/lib/feature-flags";
 import { getAuthUser } from "@/lib/auth";
 
@@ -209,6 +210,61 @@ async function getInitialCompetitionRankings(
   };
 }
 
+async function getInitialResultRankings(
+  searchParams: Record<string, string | string[] | undefined>,
+  eventId: (typeof WCA_EVENTS)[number]["id"],
+  rankingType: "single" | "average",
+  regionId: string,
+) {
+  const search = getSearchParam(searchParams, "search").trim().slice(0, 80);
+  const regexSearch = getSearchParam(searchParams, "mode") === "vim" && isValidRegexPattern(search);
+  const common = {
+    eventId,
+    result: rankingType,
+    ...(regionId ? { region: regionId } : {}),
+  };
+  const searched = search
+    ? await loadResultRankings(new URLSearchParams({
+        ...common,
+        search,
+        searchLimit: "500",
+        ...(regexSearch ? { mode: "vim" } : {}),
+      }))
+    : null;
+  const searchMatches = searched
+    ? (searched.data.entries as RankingEntry[])
+    : [];
+  const firstMatch = searchMatches[0];
+  const targetPageStart = pageFirstSubRank(firstMatch?.subRank ?? 1);
+  const pageStarts = firstMatch
+    ? [targetPageStart - PAGE_SIZE, targetPageStart, targetPageStart + PAGE_SIZE]
+        .filter((start) => start > 0)
+    : [1];
+  const pages = await Promise.all(pageStarts.map((startRank) =>
+    loadResultRankings(new URLSearchParams({
+      ...common,
+      start: String(startRank - 1),
+      limit: String(PAGE_SIZE),
+    }))));
+  const pageData = pages.map((page) => page.data as RankingsResponse);
+  const firstPage = pageData[0];
+  const lastPage = pageData.at(-1) ?? firstPage;
+  return {
+    entries: pageData.flatMap((page) => page.entries),
+    hasMore: lastPage.hasMore ?? false,
+    nextPageStart: lastPage.nextPageStart ?? null,
+    previousPageStart: firstPage.previousPageStart ?? null,
+    startPosition: firstPage.startPosition ?? Math.max(0, pageStarts[0] - 1),
+    lastRank: lastPage.lastRank ?? null,
+    total: lastPage.total ?? 0,
+    exportDate: lastPage.exportDate ?? null,
+    startRank: pageStarts[0],
+    searchMatches,
+    initialMatchPersonId: firstMatch?.entryKey ?? firstMatch?.personId ?? "",
+    regexSearch,
+  };
+}
+
 export type SearchParams = Record<string, string | string[] | undefined>;
 
 export async function RankingsPage({
@@ -285,8 +341,15 @@ export async function RankingsPage({
     const query = canonicalParams.toString();
     redirect(query ? `${pathname}?${query}` : pathname);
   }
-  const initialRankingsRequest = initialSubject !== "competitions"
+  const initialRankingsRequest = initialSubject === "people"
     ? getInitialRankings(resolvedSearchParams, focusedWcaId)
+    : initialSubject === "results"
+      ? getInitialResultRankings(
+          resolvedSearchParams,
+          eventId as (typeof WCA_EVENTS)[number]["id"],
+          rankingType,
+          regionId,
+        )
     : initialSubject === "competitions"
       ? getInitialCompetitionRankings(
           eventId as (typeof WCA_EVENTS)[number]["id"],

@@ -45,9 +45,9 @@ docker compose run --rm app node /app/scripts/sync-wca-export.mjs
 
 The import downloads one SQL archive per export date into the persistent cache,
 streams the SQL dump into MariaDB, and then builds the compatibility rankings
-plus the dependency-ordered semantic projections documented in
-`docs/projection-architecture.md`. The shared `result_facts` table is
-the only new general-purpose layer that scans raw `results`.
+plus the active Sum of Ranks projection documented in
+`docs/projection-architecture.md`. Other registered semantic projections are
+inactive and do not extend the default import.
 Use `--force` to re-import an already recorded export.
 For a manually downloaded archive, set `WCA_SQL_EXPORT_PATH` in the environment or
 pass `--sql-path=/path/to/WCA_export.sql.zip`.
@@ -55,14 +55,13 @@ pass `--sql-path=/path/to/WCA_export.sql.zip`.
 Flyway migrations and ranking projection refreshes are separate operations. To
 inspect or validate app-owned migrations without importing WCA data, run
 `docker compose run --rm flyway info` or `docker compose run --rm flyway validate`.
-To rebuild every ranking projection from raw WCA tables already present in MariaDB,
+To rebuild the compatibility and active ranking projections from raw WCA tables already present in MariaDB,
 run `docker compose run --rm app node /app/scripts/refresh-rankings.mjs`. The
-deployment workflow also performs a staged full-generation backfill when any
-managed projection is absent. It builds dependencies in registry order,
-validates row counts, and atomically publishes all compatibility and semantic
-tables together. To run that
-operation manually, use `docker compose run --rm app node /app/scripts/backfill-result-entries.mjs`;
-add `--force` only when deliberately rebuilding the complete generation.
+deployment workflow backfills missing active groups before checking readiness.
+To build or replace only Sum of Ranks against the current imported export, run
+`docker compose run --rm app node /app/scripts/backfill-sum-of-ranks.mjs`;
+add `--force` to replace an existing Sum of Ranks generation. This targeted
+operation does not import or replace raw WCA tables.
 
 To keep the self-hosted database current, install the included systemd timer and
 failure alert as root after copying the repository to the deployment directory:

@@ -14,7 +14,7 @@ corresponding update here.
   raw WCA export tables.
 - Preserve the result IDs and component rows needed to explain every statistic.
 - Add indexes only for product-supported filtering, ordering, and keyset paging.
-- Publish every projection from one export generation atomically.
+- Publish each active projection group from one export generation atomically.
 - Keep names predictable as yearly, weekly, competition, city, cohort, and
   metric features are added.
 
@@ -59,34 +59,20 @@ migration rather than exposing either name in the UI.
 Do not include `_entries` in new table names. It does not identify a grain or
 purpose. Existing `_entries` tables can remain temporarily for compatibility.
 
-## Projection graph
+## Active projection graph
 
-The core graph implemented by the projection registry is:
-
-```text
-raw WCA export
-└── result_facts
-    ├── person_event_rankings
-    │   ├── person_metric_values
-    │   └── person_metric_scores
-    ├── result_rankings
-    ├── competition_stats
-    ├── competition_event_stats
-    │   └── competition_podium_members
-    └── city_event_stats
-```
-
-Counts are derived after their corresponding ranking projection:
+The default import currently activates one new product projection:
 
 ```text
-person_ranking_counts
-result_ranking_counts
-person_metric_counts
+ranking_entries_single + ranking_entries_average + historical results
+└── person_sum_of_ranks_event_values
+    └── person_sum_of_ranks_scores
 ```
 
-The time-based grains documented below are planned extensions of this graph.
-They are not part of the published generation until their registry entries,
-validations, and product semantics are implemented.
+The result, general person-metric, competition, city, and time-based grains
+documented below remain registered or planned extensions. Registration does
+not activate a projection: inactive projections are not built, published,
+required by readiness checks, or exposed through public route handlers.
 
 ## Core fact table
 
@@ -315,6 +301,31 @@ count
 ```
 
 ## Person metrics
+
+### Active Sum of Ranks projections
+
+`person_sum_of_ranks_event_values` has one row per metric version, event-set
+version, result type, scope, region, person, and event. It stores only the
+official event rank needed to explain a Sum of Ranks total.
+
+World values reuse the canonical person-event World ranks. Country and
+continent values are derived from `results.person_country_id`, which records
+the region represented when the result occurred. They must not be reassigned
+through the person's current country. This historical-region rule prevents
+country changes from corrupting regional totals or matrix cells; see issue
+#50.
+
+`person_sum_of_ranks_scores` has one row per metric version, event-set version,
+result type, scope, region, and person. It stores the total, coverage,
+required coverage, public competition `rank`, and deterministic internal
+`position`. Single v1 requires 17 events and Average v1 requires 16. Equal
+totals use competition ranking (`1, 1, 3`), while positions break ties by WCA
+ID for stable positional paging.
+
+Names and countries are joined only after selecting a score page. Counts use
+the score browse index rather than another persisted count grain.
+
+### Inactive general metric projections
 
 ### `person_metric_values`
 
@@ -605,29 +616,27 @@ materialized cohort rankings after measurement.
 
 ## Ranking API contract
 
-The semantic projections are exposed through resource routes:
+The active semantic surface is exposed through:
 
 ```text
 GET /api/people/search
-GET /api/rankings/people
-GET /api/rankings/results
 GET /api/rankings/metrics
-GET /api/rankings/competitions
-GET /api/rankings/podiums
-GET /api/rankings/cities
 ```
 
 `/api/rankings` remains the compatibility endpoint for the current person
-ranking UI. New clients should search `persons` first and pass the selected
-`personId` to the appropriate ranking resource. Semantic projection requests
-must not apply name searches to projection tables.
+ranking UI. Sum of Ranks is represented as the synthetic event
+`eventId=SOR`; the metrics resource currently accepts only that event ID.
+Result, general person, competition, podium, city, and Kinch handlers remain
+unexposed until their projection groups are activated.
+Clients search `persons` first and pass the selected `personId` to the metrics
+resource. Semantic requests must not apply name searches to projection tables.
 
 New endpoints return `entries`, `context`, bounded `page` metadata, `total`, and
 an export `snapshot`. They use a default limit of 50 and a maximum of 100.
-Deep result and entity pages use explicit value and stable-identifier cursor
-fields matching their browse indexes. Person and metric pages use their
-materialized positions internally but never serialize position or sub-rank
-fields in entries.
+Sum of Ranks pages accept one-based `start` and use materialized positions
+internally, but never serialize position or sub-rank fields in entries.
+Person lookup returns the containing page. Ineligible people return their
+coverage and an `incomplete_coverage` reason.
 
 All display joins occur after the projection page has been selected. Podium and
 metric matrices join only the selected page to their component rows, avoiding
@@ -635,17 +644,15 @@ raw-result scans and per-row queries.
 
 ## Publication
 
-Build order:
+Default full-import build order:
 
 ```text
 1. Import raw WCA tables
-2. Build result_facts
-3. Build independent base rankings and statistics
-4. Build metrics and time aggregates from those projections
-5. Add browse indexes
-6. Calculate counts and validation data
-7. Publish the complete generation in one RENAME TABLE statement
-8. Remove the previous generation
+2. Build compatibility person and result projections
+3. Build Sum of Ranks event values and scores
+4. Add browse indexes and validate row counts
+5. Atomically publish the active generation
+6. Remove the previous generation
 ```
 
 The declarative registry should define:
@@ -660,8 +667,11 @@ The declarative registry should define:
 }
 ```
 
-It should support dependency ordering, selective backfills, per-projection
-timing, row counts, validation, and controlled concurrency.
+The registry supports dependency ordering, selective backfills, per-projection
+timing, row counts, validation, and controlled concurrency. Its explicit
+default set is the activation boundary. A targeted Sum of Ranks backfill
+stages and swaps only its two tables; failures leave the previously published
+group intact.
 
 ## Future architecture decisions
 

@@ -39,6 +39,7 @@ function getCanonicalSearchParams(
   eventId: string,
   rankingType: "single" | "average",
   regionId: string,
+  allEventRankingId: "SOR" | null,
 ) {
   const params = new URLSearchParams();
   Object.entries(searchParams).forEach(([key, value]) => {
@@ -49,7 +50,8 @@ function getCanonicalSearchParams(
   params.delete("type");
   params.delete("scope");
   params.delete("regex");
-  if (eventId === "333") params.delete("eventId");
+  if (allEventRankingId) params.set("eventId", allEventRankingId);
+  else if (eventId === "333") params.delete("eventId");
   else params.set("eventId", eventId);
   if (rankingType === "single") params.delete("result");
   else params.set("result", rankingType);
@@ -165,9 +167,17 @@ export default async function Home({
   const rawEventId = getSearchParamWithLegacyKey(resolvedSearchParams, "eventId", "event");
   const rawRankingType = getSearchParamWithLegacyKey(resolvedSearchParams, "result", "type");
   const eventId = isEventId(rawEventId) ? rawEventId : "333";
+  const initialAllEventRankingId =
+    rawEventId === "SOR" ? rawEventId : null;
   const rankingType = eventId === "333mbf" ? "single" : isRankingType(rawRankingType) ? rawRankingType : "single";
   const { scope, regionId } = parseRegionQuery(getSearchParam(resolvedSearchParams, "region"));
-  const canonicalParams = getCanonicalSearchParams(resolvedSearchParams, eventId, rankingType, regionId);
+  const canonicalParams = getCanonicalSearchParams(
+    resolvedSearchParams,
+    eventId,
+    rankingType,
+    regionId,
+    initialAllEventRankingId,
+  );
   const currentParams = new URLSearchParams();
   Object.entries(resolvedSearchParams).forEach(([key, value]) => {
     if (Array.isArray(value)) value.forEach((item) => currentParams.append(key, item));
@@ -191,9 +201,12 @@ export default async function Home({
       initialRegexSearch={initialRegexSearch}
       initialEventId={eventId}
       initialRankingType={rankingType}
+      initialAllEventRankingId={initialAllEventRankingId}
+      initialMetricPersonId={getSearchParam(resolvedSearchParams, "personId")}
       initialRegionSelection={{ scope, regionId }}
       initialRegions={{ continents, countries }}
       showSubjectSwitch={projectionBrowsingEnabled}
+      showAllEventRankingOptions={projectionBrowsingEnabled}
     />
   );
 }

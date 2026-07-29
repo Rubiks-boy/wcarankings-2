@@ -2,7 +2,7 @@ import type { EventPickerOption } from "./EventPicker";
 
 export const ALL_EVENT_RANKING_OPTIONS = [
   {
-    id: "sum-of-ranks",
+    id: "SOR",
     name: "Sum of Ranks",
     shortName: "Sum of Ranks",
     symbol: "Σ",

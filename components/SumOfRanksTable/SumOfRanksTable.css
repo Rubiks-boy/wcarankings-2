@@ -1,0 +1,172 @@
+.sumOfRanks {
+  width: 100%;
+  max-width: 100%;
+}
+
+.sumOfRanks-summary,
+.sumOfRanks-selection {
+  display: flex;
+  position: relative;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem var(--page-gutter);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.sumOfRanks-summary strong {
+  color: var(--text);
+}
+
+.sumOfRanks-search {
+  position: relative;
+  min-width: min(18rem, 45vw);
+}
+
+.sumOfRanks-search input {
+  width: 100%;
+  min-height: 40px;
+}
+
+.sumOfRanks-searchStatus {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.sumOfRanks-searchResults {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  width: min(24rem, 90vw);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  box-shadow: 0 8px 24px var(--shadow);
+}
+
+.sumOfRanks-searchResults button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.sumOfRanks-searchResults button:hover {
+  background: var(--surface-hover);
+}
+
+.sumOfRanks-searchResults small,
+.sumOfRanks-stickyPerson small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.75em;
+}
+
+.sumOfRanks-selection button {
+  min-height: 40px;
+}
+
+.sumOfRanks-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.sumOfRanks table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.sumOfRanks th,
+.sumOfRanks td {
+  height: 58px;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.sumOfRanks thead th {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.sumOfRanks tbody tr:nth-child(even) > * {
+  background: var(--surface-muted);
+}
+
+.sumOfRanks tbody tr.isSelected > * {
+  background: var(--search-match);
+}
+
+.sumOfRanks .sumOfRanks-stickyRank {
+  position: sticky;
+  z-index: 3;
+  left: 0;
+  min-width: 4.5rem;
+}
+
+.sumOfRanks .sumOfRanks-stickyPerson {
+  position: sticky;
+  z-index: 3;
+  left: 4.5rem;
+  min-width: 14rem;
+  max-width: 18rem;
+  text-align: left;
+  box-shadow: 1px 0 var(--border-subtle);
+}
+
+.sumOfRanks thead .sumOfRanks-stickyRank,
+.sumOfRanks thead .sumOfRanks-stickyPerson {
+  z-index: 4;
+}
+
+.sumOfRanks-personFlag {
+  display: inline-block;
+  margin-right: 0.45rem;
+}
+
+.sumOfRanks-overall {
+  font-weight: 700;
+}
+
+.sumOfRanks-sentinel {
+  min-height: 4rem;
+  padding: 1rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+@media (max-width: 759px) {
+  .sumOfRanks-summary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sumOfRanks-search {
+    min-width: 0;
+  }
+
+  .sumOfRanks .sumOfRanks-stickyPerson {
+    min-width: 11rem;
+    max-width: 11rem;
+  }
+}

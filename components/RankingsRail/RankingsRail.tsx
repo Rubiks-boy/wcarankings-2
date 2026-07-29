@@ -81,7 +81,7 @@ function RailSearch({ searchInputRef, findOpen, findQuery, findError, findLoadin
   );
 }
 
-export function RankingsControlsRail<T extends EventPickerOption>({ event, eventOptions, additionalEventOptions, onEventChange, rankingType, onRankingTypeChange, regions, regionSelection, onRegionChange, onEventPickerTrigger, compactResultType = false, showResultType = true, showEventPicker = true, hemisphere, onHemisphereChange, ...searchProps }: {
+export function RankingsControlsRail<T extends EventPickerOption>({ event, eventOptions, additionalEventOptions, onEventChange, rankingType, onRankingTypeChange, regions, regionSelection, onRegionChange, onEventPickerTrigger, compactResultType = false, showResultType = true, showEventPicker = true, showSearch = true, hemisphere, onHemisphereChange, ...searchProps }: {
   event: T;
   eventOptions?: readonly T[];
   additionalEventOptions?: readonly T[];
@@ -95,6 +95,7 @@ export function RankingsControlsRail<T extends EventPickerOption>({ event, event
   compactResultType?: boolean;
   showResultType?: boolean;
   showEventPicker?: boolean;
+  showSearch?: boolean;
   hemisphere?: "north" | "south";
   onHemisphereChange?: (hemisphere: "north" | "south") => void;
 } & Parameters<typeof RailSearch>[0]) {
@@ -125,7 +126,7 @@ export function RankingsControlsRail<T extends EventPickerOption>({ event, event
         </div>}
         <RegionPicker className="Jump-regionPicker" options={regions} selected={regionSelection} onChange={onRegionChange} />
       </div>
-      <RailSearch {...searchProps} />
+      {showSearch && <RailSearch {...searchProps} />}
     </RankingsRail>
   );
 }

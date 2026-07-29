@@ -156,8 +156,9 @@ test("builds the original WCA Rankings UI on the self-hosted API", async () => {
   assert.doesNotMatch(component, /header-controls|collapsed-filter-summary|table-quick-jump/);
   assert.doesNotMatch(rankingsRoute, /SELECT (MIN|MAX|COUNT\(\*\))/);
   assert.doesNotMatch(rankingsRoute, /ROW_NUMBER\(\) OVER/);
-  assert.match(rankingsRoute, /person_name \$\{operator\}/);
-  assert.match(rankingsRoute, /person_id \$\{operator\}/);
+  assert.match(rankingsRoute, /searchPersonIds/);
+  assert.match(rankingsRoute, /person_id IN \(\$\{placeholders\}\)/);
+  assert.doesNotMatch(rankingsRoute, /person_name \$\{operator\}/);
   assert.match(rankingsRoute, /competition_id/);
   assert.match(rankingsRoute, /conditions\.push\(`\$\{rank\} > 0`\)/);
   assert.match(rankingsRoute, /fetchedAt/);

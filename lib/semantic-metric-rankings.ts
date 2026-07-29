@@ -39,9 +39,9 @@ type ScoreLocation = {
 };
 
 export async function loadMetricRankings(params: URLSearchParams) {
-  const metric = params.get("metric");
-  if (metric !== "sum_of_ranks") {
-    throw new ApiInputError("metric must be sum_of_ranks.");
+  const eventId = params.get("eventId") ?? params.get("event");
+  if (eventId !== "SOR") {
+    throw new ApiInputError("eventId must be SOR.");
   }
   const resultType = parseResultType(params);
   const { scope, regionId } = parseScope(params);
@@ -118,7 +118,7 @@ export async function loadMetricRankings(params: URLSearchParams) {
         entries: [],
         context: {
           resource: "metrics",
-          metric,
+          eventId,
           metricVersion: 1,
           eventSetVersion: 1,
           eventIds,
@@ -151,14 +151,19 @@ export async function loadMetricRankings(params: URLSearchParams) {
      )
      SELECT page.position, page.person_id,
        COALESCE(person.name, page.person_id) AS person_name,
-       COALESCE(person.country_id, '') AS country_id,
-       COALESCE(country.name, person.country_id, '') AS country_name,
-       COALESCE(country.iso2, '') AS country_iso2,
+       COALESCE(display_country.id, '') AS country_id,
+       COALESCE(display_country.name, display_country.id, '') AS country_name,
+       COALESCE(display_country.iso2, '') AS country_iso2,
        page.rank, page.score, page.coverage, page.required_coverage,
        value.event_id, value.event_rank
      FROM page
      LEFT JOIN persons person ON person.wca_id = page.person_id AND person.sub_id = 1
-     LEFT JOIN countries country ON country.id = person.country_id
+     LEFT JOIN countries current_country ON current_country.id = person.country_id
+     LEFT JOIN countries display_country ON display_country.id = CASE
+       WHEN ? = 'country' THEN ?
+       WHEN ? = 'continent' AND current_country.continent_id <> ? THEN NULL
+       ELSE person.country_id
+     END
      INNER JOIN person_sum_of_ranks_event_values value
        ON value.metric_version = 1
        AND value.event_set_version = 1
@@ -167,7 +172,11 @@ export async function loadMetricRankings(params: URLSearchParams) {
        AND value.region_id = ?
        AND value.person_id = page.person_id
      ORDER BY page.position, page.person_id, value.event_id`,
-    [resultType, scope, regionId, start, limit + 1, resultType, scope, regionId],
+    [
+      resultType, scope, regionId, start, limit + 1,
+      scope, regionId, scope, regionId,
+      resultType, scope, regionId,
+    ],
   );
   timings.push(rows.timings);
   returnedRows += rows.rows.length;
@@ -206,10 +215,19 @@ export async function loadMetricRankings(params: URLSearchParams) {
   );
   const pagePeople = [...byPerson.values()];
   const hasMore = pagePeople.length > limit;
-  const entries = pagePeople.slice(0, limit).map(({ position: _position, ...entry }) => {
+  const entries = pagePeople.slice(0, limit).map((entry) => {
     entry.events.sort((left, right) =>
       (eventOrder.get(left.eventId) ?? 999) - (eventOrder.get(right.eventId) ?? 999));
-    return entry;
+    return {
+      rank: entry.rank,
+      personId: entry.personId,
+      personName: entry.personName,
+      country: entry.country,
+      score: entry.score,
+      coverage: entry.coverage,
+      requiredCoverage: entry.requiredCoverage,
+      events: entry.events,
+    };
   });
 
   return {
@@ -217,7 +235,7 @@ export async function loadMetricRankings(params: URLSearchParams) {
       entries,
       context: {
         resource: "metrics",
-        metric,
+        eventId,
         metricVersion: 1,
         eventSetVersion: 1,
         eventIds,

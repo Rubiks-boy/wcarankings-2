@@ -47,6 +47,7 @@ import {
 import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVisibility";
 import { ResultsTable } from "../ResultsTable/ResultsTable";
 import { SubjectMockRows } from "./SubjectMockRows";
+import { SumOfRanksTable } from "../SumOfRanksTable/SumOfRanksTable";
 import { ThemeToggle } from "../ThemeToggle/ThemeToggle";
 import { VimHelp } from "../VimHelp/VimHelp";
 import { VimSearchInput } from "../VimSearchInput/VimSearchInput";
@@ -445,6 +446,8 @@ export function RankingsExplorer({
   initialSubject = "people",
   initialCompetitionRanking = "best-result",
   initialLatitudeHemisphere = "north",
+  initialAllEventRankingId = null,
+  initialMetricPersonId = "",
   mockSubjectRows = false,
   initialRegions = {
     continents: FALLBACK_CONTINENTS,
@@ -462,6 +465,8 @@ export function RankingsExplorer({
   initialSubject?: ExplorerSubject;
   initialCompetitionRanking?: CompetitionRanking;
   initialLatitudeHemisphere?: "north" | "south";
+  initialAllEventRankingId?: "SOR" | null;
+  initialMetricPersonId?: string;
   mockSubjectRows?: boolean;
   initialRegions?: {
     continents: Array<{ id: string; name: string }>;
@@ -470,7 +475,7 @@ export function RankingsExplorer({
 }) {
   const normalizedInitialSearch = initialSearch.trim();
   const [eventId, setEventId] = useState(initialEventId);
-  const [allEventRankingId, setAllEventRankingId] = useState<string | null>(null);
+  const [allEventRankingId, setAllEventRankingId] = useState<string | null>(initialAllEventRankingId);
   const [subject, setSubject] = useState<ExplorerSubject>(initialSubject);
   const [competitionRanking, setCompetitionRanking] = useState<CompetitionRanking>(initialCompetitionRanking);
   const [latitudeHemisphere, setLatitudeHemisphere] = useState<"north" | "south">(initialLatitudeHemisphere);
@@ -784,7 +789,11 @@ export function RankingsExplorer({
         url.searchParams.get("result") ?? url.searchParams.get("type");
       const nextRegion = url.searchParams.get("region");
       const search = url.searchParams.get("search") ?? "";
-      const resolvedEventId = isEventId(nextEventId) ? nextEventId : "333";
+      const nextAllEventRankingId = nextEventId === "SOR" ? "SOR" : null;
+      const resolvedEventId =
+        nextAllEventRankingId === null && isEventId(nextEventId)
+          ? nextEventId
+          : "333";
       const resolvedRankingType =
         resolvedEventId === "333mbf"
           ? "single"
@@ -793,6 +802,7 @@ export function RankingsExplorer({
           : "single";
       const { scope, regionId } = parseRegionQuery(nextRegion);
       setEventId(resolvedEventId);
+      setAllEventRankingId(nextAllEventRankingId);
       setRankingType(resolvedRankingType);
       setRegionSelection({ scope, regionId });
       setFindQuery(search);
@@ -802,7 +812,9 @@ export function RankingsExplorer({
       setVimSearchQuery(nextRegexSearch ? search : "");
       setFindOpen(Boolean(search.trim() && !nextRegexSearch));
       updateQueryParams({
-        eventId: resolvedEventId === "333" ? null : resolvedEventId,
+        eventId:
+          nextAllEventRankingId ??
+          (resolvedEventId === "333" ? null : resolvedEventId),
         result: resolvedRankingType === "single" ? null : resolvedRankingType,
         event: null,
         type: null,
@@ -2478,9 +2490,14 @@ export function RankingsExplorer({
   const changeRailEvent = (nextEventId: string) => {
     if (isAllEventRankingOption(nextEventId)) {
       setAllEventRankingId(nextEventId);
+      updateQueryParams({
+        eventId: nextEventId,
+        event: null,
+      });
       return;
     }
     setAllEventRankingId(null);
+    updateQueryParams({ personId: null });
     changeEvent(nextEventId as (typeof WCA_EVENTS)[number]["id"]);
   };
 
@@ -2529,7 +2546,7 @@ export function RankingsExplorer({
         <RankingsControlsRail
           event={currentEvent}
           eventOptions={WCA_EVENTS}
-          additionalEventOptions={showAllEventRankingOptions ? ALL_EVENT_RANKING_OPTIONS : undefined}
+          additionalEventOptions={showAllEventRankingOptions ? ALL_EVENT_RANKING_OPTIONS.filter((option) => option.id === "SOR") : undefined}
           onEventChange={changeRailEvent}
           rankingType={rankingType}
           onRankingTypeChange={changeRankingType}
@@ -2540,6 +2557,7 @@ export function RankingsExplorer({
           compactResultType={topRailProgress >= 1}
           showResultType={!(subject === "competitions" && (competitionRanking === "podiums" || competitionRanking === "latitude"))}
           showEventPicker={!(subject === "competitions" && competitionRanking === "latitude")}
+          showSearch={allEventRankingId !== "SOR"}
           hemisphere={subject === "competitions" && competitionRanking === "latitude" ? latitudeHemisphere : undefined}
           onHemisphereChange={setLatitudeHemisphere}
           searchInputRef={setRailFindInputRef}
@@ -2563,7 +2581,13 @@ export function RankingsExplorer({
             {loadingPrevious && (
               <div className="listMessage">Loading earlier rankings…</div>
             )}
-            {error ? (
+            {allEventRankingId === "SOR" ? (
+              <SumOfRanksTable
+                resultType={rankingType}
+                regionSelection={regionSelection}
+                initialPersonId={initialMetricPersonId}
+              />
+            ) : error ? (
               <div className="listMessage">{error}</div>
             ) : mockSubjectRows ? (
               <SubjectMockRows
@@ -2594,7 +2618,7 @@ export function RankingsExplorer({
           </div>
         </div>
 
-        <JumpControlsVisibility
+        {allEventRankingId !== "SOR" && <JumpControlsVisibility
           progress={jumpUpArmed || jumpDownArmed ? 1 : bottomRailProgress}
         >
           <RankingsPagerRail
@@ -2608,7 +2632,7 @@ export function RankingsExplorer({
             onSearchPrevious={() => cycleFind(-1)}
             onSearchNext={() => cycleFind(1)}
           />
-        </JumpControlsVisibility>
+        </JumpControlsVisibility>}
       </main>
       {(vimMode || vimSearchActive) && (
         <VimSearchInput

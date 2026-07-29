@@ -111,6 +111,7 @@ test("exposes bounded resource APIs without semantic ordering fields", async () 
   assert.match(results, /afterCompetitionId/);
   assert.match(metrics, /FROM person_sum_of_ranks_scores/);
   assert.match(metrics, /INNER JOIN person_sum_of_ranks_event_values value/);
+  assert.match(metrics, /eventId !== "SOR"/);
   assert.match(metrics, /reason: "incomplete_coverage"/);
   assert.match(metrics, /previous:/);
   assert.match(entities, /FROM competition_event_stats stats/);

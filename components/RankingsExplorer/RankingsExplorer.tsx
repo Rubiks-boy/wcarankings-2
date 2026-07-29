@@ -689,7 +689,6 @@ export function RankingsExplorer({
   const previousRequestRef = useRef(false);
   const navigationEpochRef = useRef(0);
   const activeListKeyRef = useRef(activeListKey);
-  activeListKeyRef.current = activeListKey;
   const focusResolutionEpochRef = useRef(0);
   const focusedWcaIdRef = useRef("");
   const lastFocusRequestRef = useRef("");
@@ -771,6 +770,10 @@ export function RankingsExplorer({
     scrollMargin: listOffset,
   });
   const rowVirtualizerRef = useRef(rowVirtualizer);
+
+  useEffect(() => {
+    activeListKeyRef.current = activeListKey;
+  }, [activeListKey]);
   const virtualRows = rowVirtualizer.getVirtualItems();
 
   useLayoutEffect(() => {
@@ -2238,13 +2241,20 @@ export function RankingsExplorer({
 
     if (explicitWcaId) {
       lastFocusRequestRef.current = requestKey;
-      focusWcaId(explicitWcaId, false);
+      void Promise.resolve().then(() => {
+        if (lastFocusRequestRef.current === requestKey)
+          focusWcaId(explicitWcaId, false);
+      });
       return;
     }
 
     if (focusedWcaIdRef.current) {
       lastFocusRequestRef.current = requestKey;
-      focusWcaId(focusedWcaIdRef.current, false);
+      const wcaId = focusedWcaIdRef.current;
+      void Promise.resolve().then(() => {
+        if (lastFocusRequestRef.current === requestKey)
+          focusWcaId(wcaId, false);
+      });
       return;
     }
 

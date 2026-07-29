@@ -393,6 +393,28 @@ Measured phases were:
 | Aggregate and rank person scores | 132.6 s |
 | Index person scores | 12.3 s |
 
+### GitHub Actions transfer experiment
+
+On 2026-07-29, a GitHub-hosted runner restored the dated WCA export archive,
+imported it into fresh MariaDB, and attempted to build the complete active
+projection generation for transfer to production. It did not beat the
+20-minute VPS-side comparison threshold.
+
+The raw export import took approximately 2 minutes 54 seconds. Required raw
+indexes took approximately 1 minute 23 seconds. The optimized Sum of Ranks
+projection itself took 317.8 seconds and produced 1,737,062 rows. Competition
+podium members, event statistics, and competition statistics took 52.3, 42.0,
+and 59.9 seconds respectively. Compatibility projection work accounted for
+most of the remaining time. The generation reached validation after
+approximately 25 minutes 16 seconds.
+
+Caching only the compressed WCA archive therefore does not remove the dominant
+cost: importing raw data and rebuilding compatibility projections and indexes
+inside a cold MariaDB instance. A future runner experiment should cache a
+validated imported database snapshot or build only the projection group being
+deployed. The failed experiment never imported or published tables on
+production.
+
 The published score table uses approximately 139.8 MiB of data and 117.3 MiB
 of indexes. Removing the 457 MiB published event-value table and narrowing the
 score schema reduced persistent SOR/Kinch storage from approximately 910.7 MiB

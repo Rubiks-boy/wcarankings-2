@@ -37,6 +37,6 @@ ALTER TABLE competition_podium_members
   ADD PRIMARY KEY (
     competition_id, event_id, result_type, podium_position, result_id
   ),
-  ADD INDEX idx_competition_podium_members_person (
+  ADD INDEX idx_comp_podium_members_person (
     person_id, event_id, result_type, competition_id
   );

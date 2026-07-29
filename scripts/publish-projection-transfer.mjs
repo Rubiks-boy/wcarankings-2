@@ -4,6 +4,7 @@ import {
   dropManagedObject,
   promoteProjectionTables,
 } from "./mysql-schema.mjs";
+import { normalizeExportDate } from "./projection-transfer-date.mjs";
 
 function databaseOptions(connectionString = process.env.DATABASE_URL) {
   if (!connectionString) throw new Error("DATABASE_URL is required");
@@ -40,7 +41,12 @@ try {
   ]);
   const transferDate = manifest[0]?.export_date;
   const publishedDate = published[0]?.export_date;
-  if (!transferDate || transferDate !== publishedDate) {
+  const normalizedTransferDate = normalizeExportDate(transferDate);
+  const normalizedPublishedDate = normalizeExportDate(publishedDate);
+  if (
+    !normalizedTransferDate
+    || normalizedTransferDate !== normalizedPublishedDate
+  ) {
     throw new Error(
       `Projection export date ${transferDate || "(missing)"} does not match production raw export date ${publishedDate || "(missing)"}.`,
     );
@@ -91,7 +97,7 @@ try {
   await promoteProjectionTables(connection);
   await dropManagedObject(connection, "projection_transfer_indexes");
   await dropManagedObject(connection, "projection_transfer_manifest");
-  process.stdout.write(`Published transferred projection generation for ${transferDate}.\n`);
+  process.stdout.write(`Published transferred projection generation for ${normalizedTransferDate}.\n`);
 } finally {
   await connection.end();
 }

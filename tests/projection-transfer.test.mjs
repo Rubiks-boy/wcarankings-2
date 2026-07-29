@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { normalizeExportDate } from "../scripts/projection-transfer-date.mjs";
 
 const prepare = await readFile(
   new URL("../scripts/prepare-projection-transfer.mjs", import.meta.url),
@@ -18,4 +19,16 @@ test("defers secondary projection indexes until after bulk transfer import", () 
   assert.match(publish, /Building \$\{deferredIndexes\.length\} deferred projection indexes/);
   assert.match(publish, /indexes\.map\(\(index\) => index\.index_sql\)\.join/);
   assert.match(publish, /promoteProjectionTables/);
+});
+
+test("normalizes equivalent export date representations", () => {
+  const expected = "2026-07-29T00:00:23.000Z";
+  assert.equal(normalizeExportDate("2026-07-29T00:00:23Z"), expected);
+  assert.equal(normalizeExportDate("2026-07-29 00:00:23 UTC"), expected);
+  assert.equal(normalizeExportDate(new Date(expected)), expected);
+});
+
+test("rejects missing and invalid export dates", () => {
+  assert.equal(normalizeExportDate(null), null);
+  assert.equal(normalizeExportDate("not-a-date"), null);
 });

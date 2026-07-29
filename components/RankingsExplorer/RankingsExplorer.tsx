@@ -679,6 +679,7 @@ export function RankingsExplorer({
   const moreRequestRef = useRef(false);
   const previousRequestRef = useRef(false);
   const navigationEpochRef = useRef(0);
+  const focusResolutionEpochRef = useRef(0);
   const lastFocusRequestRef = useRef("");
   const pendingPersonFocusRef = useRef<PendingPersonFocus | null>(null);
   const pendingRankRef = useRef(1);
@@ -2175,9 +2176,12 @@ export function RankingsExplorer({
 
   const focusWcaId = useCallback((wcaId: string, animate = true) => {
     if (subject !== "people") return;
+    const resolutionEpoch = focusResolutionEpochRef.current + 1;
+    focusResolutionEpochRef.current = resolutionEpoch;
     setError("");
     void locateRanking(eventId, rankingType, regionSelection, wcaId)
       .then(({ located }) => {
+        if (resolutionEpoch !== focusResolutionEpochRef.current) return;
         if (!located) {
           resetToRank(1, false);
           return;
@@ -2189,6 +2193,7 @@ export function RankingsExplorer({
         );
       })
       .catch((requestError: unknown) => {
+        if (resolutionEpoch !== focusResolutionEpochRef.current) return;
         setError(requestError instanceof Error ? requestError.message : "Could not find this person in the rankings.");
       });
   }, [eventId, rankingType, regionSelection, resetToRank, subject]);

@@ -669,6 +669,7 @@ export function RankingsExplorer({
   const navigationEpochRef = useRef(0);
   const lastFocusRequestRef = useRef("");
   const pendingFocusedPersonIdRef = useRef<string | null>(null);
+  const pendingFocusedPersonAnimatedRef = useRef(false);
   const pendingRankRef = useRef(1);
   const pendingFocusLastRef = useRef(false);
   const pendingScrollToTopRef = useRef(false);
@@ -1065,6 +1066,7 @@ export function RankingsExplorer({
         setExportDate(data.exportDate ?? null);
         setOfflineStale(Boolean(data.offlineStale));
         const focusedPersonId = pendingFocusedPersonIdRef.current;
+        const focusedPersonAnimated = pendingFocusedPersonAnimatedRef.current;
         const focusedTargetIndex = focusedPersonId
           ? loadedEntries.findIndex((entry) => entry.personId === focusedPersonId)
           : -1;
@@ -1085,9 +1087,11 @@ export function RankingsExplorer({
           scrollToTop ||
             focusLast ||
             pendingDirection ||
-            appendNavigation
+            appendNavigation ||
+            focusedTargetIndex >= 0
         );
         pendingFocusedPersonIdRef.current = null;
+        pendingFocusedPersonAnimatedRef.current = false;
         pendingScrollDirectionRef.current = null;
         if (scrollToTop) {
           animateScrollTo(
@@ -1118,7 +1122,10 @@ export function RankingsExplorer({
                   ? "center"
                   : "top",
               bottomOffset: focusLast ? END_MARKER_PEEK : 0,
-              requestedBehavior: "smooth",
+              requestedBehavior:
+                focusedTargetIndex >= 0 && !focusedPersonAnimated
+                  ? "auto"
+                  : "smooth",
               requestedDuration: getScrollAnimationDuration(
                 Math.abs(rankForStep - currentSubRank)
               ),
@@ -2051,6 +2058,7 @@ export function RankingsExplorer({
       navigationTargetRankRef.current = normalizedRank;
       pendingRankRef.current = normalizedRank;
       pendingFocusedPersonIdRef.current = focusedPersonId;
+      pendingFocusedPersonAnimatedRef.current = Boolean(focusedPersonId && animate);
       if (normalizedRank === 1) {
         if (findQuery.trim()) skipNextFindResetRef.current = true;
         resetFind();
@@ -2150,7 +2158,7 @@ export function RankingsExplorer({
         resetToRank(
           located.subRank,
           animate,
-          animate ? located.personId : null,
+          located.personId,
         );
       })
       .catch((requestError: unknown) => {

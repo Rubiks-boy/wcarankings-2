@@ -298,6 +298,8 @@ function getPage(
     limit: String(PAGE_SIZE),
     paged: "1",
   });
+  const year = new URLSearchParams(window.location.search).get("year");
+  if (resource === "people" && year) params.set("year", year);
   if (selection.scope !== "world") params.set("region", selection.regionId);
   if (resource === "podiums") params.set("ranking", "podium");
   if (resource === "competitor-count") params.set("ranking", "competitor-count");
@@ -503,6 +505,8 @@ function searchRankings(
     searchLimit: "500",
   });
   if (regexSearch) params.set("mode", "vim");
+  const year = new URLSearchParams(window.location.search).get("year");
+  if (resource === "people" && year) params.set("year", year);
   if (selection.scope !== "world") params.set("region", selection.regionId);
 
   const endpoint = resource === "results"
@@ -528,6 +532,8 @@ function locateRanking(
     result: rankingType,
     locate: wcaId,
   });
+  const year = new URLSearchParams(window.location.search).get("year");
+  if (year) params.set("year", year);
   if (selection.scope !== "world") params.set("region", selection.regionId);
   return fetch(`/api/rankings?${params}`).then(async (response) => {
     if (!response.ok) {
@@ -544,6 +550,7 @@ export function RankingsExplorer({
   initialRegexSearch = initialData?.regexSearch ?? false,
   initialEventId = "333",
   initialRankingType = "single",
+  initialYear = null,
   initialRegionSelection = { scope: "world", regionId: "" },
   showAllEventRankingOptions = false,
   showSubjectSwitch = false,
@@ -561,6 +568,7 @@ export function RankingsExplorer({
   initialRegexSearch?: boolean;
   initialEventId?: (typeof WCA_EVENTS)[number]["id"] | "SOR" | "sor-kinch";
   initialRankingType?: "single" | "average";
+  initialYear?: number | null;
   initialRegionSelection?: RegionSelection;
   showAllEventRankingOptions?: boolean;
   showSubjectSwitch?: boolean;
@@ -585,6 +593,7 @@ export function RankingsExplorer({
   const [regionSelection, setRegionSelection] = useState<RegionSelection>(
     initialRegionSelection
   );
+  const availableYears = initialData?.availableYears ?? [];
   const navigateToPage = useCallback((path: string) => {
     const navigate = () => router.push(path);
     const reduceMotion = window.matchMedia(
@@ -2872,6 +2881,26 @@ export function RankingsExplorer({
                   onChange={changeSubject}
                   variant="text"
                 />
+                {subject === "people" && availableYears.length > 0 && (
+                  <TextDropdown
+                    options={[
+                      { value: "", label: "All time" },
+                      ...availableYears.map((year) => ({ value: String(year), label: String(year) })),
+                    ]}
+                    value={initialYear ? String(initialYear) : ""}
+                    onChange={(year) => {
+                      const params = new URLSearchParams(window.location.search);
+                      if (year) params.set("year", year);
+                      else params.delete("year");
+                      params.delete("search");
+                      params.delete("wcaId");
+                      params.delete("focus");
+                      navigateToPage(`${window.location.pathname}${params.size ? `?${params}` : ""}`);
+                    }}
+                    ariaLabel="Person ranking period"
+                    className="personYearDropdown"
+                  />
+                )}
                 {subject === "competitions" && (
                   <TextDropdown
                     options={COMPETITION_RANKING_OPTIONS}

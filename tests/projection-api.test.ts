@@ -9,6 +9,7 @@ import {
   parseResultType,
   parseScope,
   parseStart,
+  parseYear,
 } from "../lib/projection-api";
 
 test("parses bounded semantic ranking parameters", () => {
@@ -26,6 +27,11 @@ test("parses bounded semantic ranking parameters", () => {
   assert.equal(parsePersonId(params), "2010TEST01");
   assert.equal(parseStart(params), 101);
   assert.equal(parseLimit(params), 50);
+  assert.equal(parseYear(new URLSearchParams({ year: "2025" })), 2025);
+});
+
+test("rejects malformed yearly ranking parameters", () => {
+  assert.throws(() => parseYear(new URLSearchParams({ year: "25" })), ApiInputError);
 });
 
 test("rejects invalid limits and unsupported Multi-Blind averages", () => {

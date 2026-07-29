@@ -1,15 +1,16 @@
 import { query } from "@/db";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
-import { getCurrentRankingsMetadata, getRankingCount, type RankingsMetadata } from "@/lib/rankings-metadata";
+import { getCurrentRankingsMetadata, getRankingCount, getYearRankingCount, type RankingsMetadata } from "@/lib/rankings-metadata";
 import { normalPageKey, rankingsPageCache } from "@/lib/rankings-cache";
 import { searchPersonIds } from "@/lib/person-search";
+import { ApiInputError, parseYear } from "@/lib/projection-api";
 import { getRecordBadges, isRankingEventId, isRankingType, isValidRegexPattern, parseRegionQuery, type RankingEntry, type RankingType, type RegionScope } from "@/lib/wca";
 
 const PAGE_SIZE = RESULTS_PAGE_SIZE;
 const MAX_SEARCH_RESULTS = 500;
 
 type RankingRow = { rank: number; sub_rank: number; person_id: string; person_name: string; country_id: string; country_name: string; country_iso2: string; continent_id: string; best: number; competition_id: string; competition_name: string; is_world_record: number; is_continent_record: number; is_country_record: number };
-type QueryInput = { eventId: string; type: RankingType; scope: RegionScope; regionId: string; startRank: number; cursorRank: number | null; cursorId: string; limit: number; locate: string; search: string; regexSearch: boolean; searchLimit: number; paged: boolean };
+type QueryInput = { eventId: string; type: RankingType; scope: RegionScope; regionId: string; year: number | null; startRank: number; cursorRank: number | null; cursorId: string; limit: number; locate: string; search: string; regexSearch: boolean; searchLimit: number; paged: boolean };
 type PersonMetricRow = {
   rank: number;
   sub_rank: number;
@@ -33,6 +34,7 @@ function shape(scope: RegionScope) {
 }
 
 function table(type: RankingType) { return type === "average" ? "ranking_entries_average" : "ranking_entries_single"; }
+function yearlyTable(type: RankingType) { return type === "average" ? "person_year_rankings_average" : "person_year_rankings_single"; }
 function columns(rank: string, subRank: string) {
   return `${rank} AS rank, ${subRank} AS sub_rank, person_id, person_name, country_id, country_name, country_iso2, continent_id, best, competition_id, competition_name, is_world_record, is_continent_record, is_country_record`;
 }
@@ -46,14 +48,50 @@ function filters(input: QueryInput) {
 }
 
 function normalPageResponse(rows: RankingRow[], input: QueryInput, metadata: RankingsMetadata) {
-  const total = getRankingCount(metadata, input.eventId, input.type, input.scope, input.regionId);
+  const total = input.year === null
+    ? getRankingCount(metadata, input.eventId, input.type, input.scope, input.regionId)
+    : getYearRankingCount(metadata, input.year, input.eventId, input.type, input.scope, input.regionId);
   const entries = rows.map(toRankingEntry);
   const startPosition = Math.min(Math.max(0, input.startRank - 1), total);
   const hasMore = input.startRank + entries.length <= total;
-  return { entries, hasMore, nextPageStart: hasMore ? input.startRank + PAGE_SIZE : null, previousPageStart: input.startRank > 1 && total > 0 ? Math.max(1, input.startRank - PAGE_SIZE) : null, startPosition, lastRank: entries.at(-1)?.subRank ?? null, total, exportDate: metadata.exportDate };
+  return { entries, hasMore, nextPageStart: hasMore ? input.startRank + PAGE_SIZE : null, previousPageStart: input.startRank > 1 && total > 0 ? Math.max(1, input.startRank - PAGE_SIZE) : null, startPosition, lastRank: entries.at(-1)?.subRank ?? null, total, exportDate: metadata.exportDate, availableYears: metadata.availableYears };
+}
+
+function yearlyColumns(type: RankingType) {
+  const recordColumn = type === "average" ? "facts.regional_average_record" : "facts.regional_single_record";
+  return `ranking.public_rank AS rank, ranking.position AS sub_rank, ranking.person_id,
+    COALESCE(person.name, ranking.person_id) AS person_name,
+    COALESCE(country.id, '') AS country_id, COALESCE(country.name, country.id, '') AS country_name,
+    COALESCE(country.iso2, '') AS country_iso2, COALESCE(country.continent_id, '') AS continent_id,
+    ranking.result_value AS best, COALESCE(facts.competition_id, '') AS competition_id,
+    COALESCE(competition.name, '') AS competition_name,
+    ${recordColumn} = 'WR' AS is_world_record,
+    ${recordColumn} IN ('AfR', 'AsR', 'ER', 'NaR', 'OcR', 'SaR') AS is_continent_record,
+    ${recordColumn} = 'NR' AS is_country_record`;
+}
+
+function yearlyFilters(input: QueryInput) {
+  const values: unknown[] = [input.year, input.eventId, input.scope, input.regionId];
+  return {
+    conditions: ["ranking.year = ?", "ranking.event_id = ?", "cohort.scope = ?", "cohort.region_id = ?"],
+    values,
+  };
 }
 
 async function queryNormalPage(input: QueryInput, metadata: RankingsMetadata) {
+  if (input.year !== null) {
+    const { conditions, values } = yearlyFilters(input);
+    const result = await query<RankingRow>(`SELECT ${yearlyColumns(input.type)}
+      FROM ${yearlyTable(input.type)} ranking
+      JOIN person_year_ranking_cohorts cohort ON cohort.cohort_id = ranking.cohort_id
+      LEFT JOIN persons person ON person.wca_id = ranking.person_id AND person.sub_id = 1
+      LEFT JOIN result_facts facts ON facts.result_id = ranking.result_id
+      LEFT JOIN countries country ON country.id = facts.person_country_id
+      LEFT JOIN competitions competition ON competition.id = facts.competition_id
+      WHERE ${conditions.join(" AND ")} AND ranking.position >= ? AND ranking.position < ?
+      ORDER BY ranking.position`, [...values, input.startRank, input.startRank + PAGE_SIZE], { rankingStatementTimeout: true });
+    return { data: normalPageResponse(result.rows, input, metadata), timings: result.timings, queryCount: 1, returnedRows: result.rows.length };
+  }
   const { rank, subRank, conditions, values } = filters(input);
   const pageValues = [...values, input.startRank, input.startRank + PAGE_SIZE];
   const result = await query<RankingRow>(`SELECT ${columns(rank, subRank)} FROM ${table(input.type)} WHERE ${conditions.join(" AND ")} AND ${subRank} >= ? AND ${subRank} < ? ORDER BY ${subRank}`, pageValues, { rankingStatementTimeout: true });
@@ -63,10 +101,18 @@ async function queryNormalPage(input: QueryInput, metadata: RankingsMetadata) {
 export async function queryMysql(input: QueryInput) {
   if (input.eventId === "SOR" || input.eventId === "sor-kinch")
     return queryPersonMetric(input);
-  const { rank, subRank, conditions, values } = filters(input);
-  const source = table(input.type);
+  const yearly = input.year !== null;
+  const { rank, subRank, conditions, values } = yearly ? { rank: "public_rank", subRank: "position", ...yearlyFilters(input) } : filters(input);
+  const source = yearly ? yearlyTable(input.type) : table(input.type);
+  const selectColumns = yearly ? yearlyColumns(input.type) : columns(rank, subRank);
+  const from = yearly
+    ? `FROM ${source} ranking JOIN person_year_ranking_cohorts cohort ON cohort.cohort_id = ranking.cohort_id LEFT JOIN persons person ON person.wca_id = ranking.person_id AND person.sub_id = 1 LEFT JOIN result_facts facts ON facts.result_id = ranking.result_id LEFT JOIN countries country ON country.id = facts.person_country_id LEFT JOIN competitions competition ON competition.id = facts.competition_id`
+    : `FROM ${source}`;
+  const predicate = yearly ? conditions.join(" AND ") : conditions.join(" AND ");
+  const qualifiedSubRank = yearly ? `ranking.${subRank}` : subRank;
+  const personColumn = yearly ? "ranking.person_id" : "person_id";
   if (input.locate) {
-    const result = await query<RankingRow>(`SELECT ${columns(rank, subRank)} FROM ${source} WHERE ${conditions.join(" AND ")} AND person_id = ? LIMIT 1`, [...values, input.locate]);
+    const result = await query<RankingRow>(`SELECT ${selectColumns} ${from} WHERE ${predicate} AND ${personColumn} = ? LIMIT 1`, [...values, input.locate]);
     return { data: { located: result.rows[0] ? toRankingEntry(result.rows[0]) : null }, timings: result.timings, queryCount: 1, returnedRows: result.rows.length };
   }
   if (input.search) {
@@ -76,7 +122,7 @@ export async function queryMysql(input: QueryInput) {
     }
     const placeholders = people.personIds.map(() => "?").join(", ");
     const result = await query<RankingRow>(
-      `SELECT ${columns(rank, subRank)} FROM ${source} WHERE ${conditions.join(" AND ")} AND person_id IN (${placeholders}) ORDER BY ${subRank} LIMIT ?`,
+      `SELECT ${selectColumns} ${from} WHERE ${predicate} AND ${personColumn} IN (${placeholders}) ORDER BY ${qualifiedSubRank} LIMIT ?`,
       [...values, ...people.personIds, input.searchLimit],
     );
     const entries = result.rows.map(toRankingEntry);
@@ -91,10 +137,10 @@ export async function queryMysql(input: QueryInput) {
     };
   }
   const cursor = input.cursorRank
-    ? ` AND (${subRank} > ? OR (${subRank} = ? AND person_id > ?))`
-    : ` AND ${subRank} >= ?`;
+    ? ` AND (${qualifiedSubRank} > ? OR (${qualifiedSubRank} = ? AND ${personColumn} > ?))`
+    : ` AND ${qualifiedSubRank} >= ?`;
   const pageValues = input.cursorRank ? [...values, input.cursorRank, input.cursorRank, input.cursorId, input.limit + 1] : [...values, input.startRank, input.limit + 1];
-  const result = await query<RankingRow>(`SELECT ${columns(rank, subRank)} FROM ${source} WHERE ${conditions.join(" AND ")}${cursor} ORDER BY ${subRank} LIMIT ?`, pageValues);
+  const result = await query<RankingRow>(`SELECT ${selectColumns} ${from} WHERE ${predicate}${cursor} ORDER BY ${qualifiedSubRank} LIMIT ?`, pageValues);
   const entries = result.rows.slice(0, input.limit).map(toRankingEntry);
   return { data: { entries, hasMore: result.rows.length > input.limit, nextPageStart: null, previousPageStart: null, total: entries.length }, timings: result.timings, queryCount: 1, returnedRows: result.rows.length };
 }
@@ -244,22 +290,24 @@ function parseInput(searchParams: URLSearchParams): QueryInput {
   const search = (searchParams.get("search") ?? "").trim().slice(0, 80);
   const regexSearch = searchParams.get("mode") === "vim";
   if (regexSearch && search && !isValidRegexPattern(search)) throw new Error("Invalid regular expression.");
-  return { eventId, type, scope, regionId, startRank, cursorRank: Number(searchParams.get("cursorRank")) || null, cursorId: searchParams.get("cursorId") ?? "", limit: paged ? PAGE_SIZE : Math.min(PAGE_SIZE, Math.max(20, Number(searchParams.get("limit")) || 80)), locate: (searchParams.get("locate") ?? "").trim().toUpperCase(), search, regexSearch, searchLimit: Math.min(MAX_SEARCH_RESULTS, Math.max(1, Number(searchParams.get("searchLimit")) || MAX_SEARCH_RESULTS)), paged };
+  return { eventId, type, scope, regionId, year: parseYear(searchParams), startRank, cursorRank: Number(searchParams.get("cursorRank")) || null, cursorId: searchParams.get("cursorId") ?? "", limit: paged ? PAGE_SIZE : Math.min(PAGE_SIZE, Math.max(20, Number(searchParams.get("limit")) || 80)), locate: (searchParams.get("locate") ?? "").trim().toUpperCase(), search, regexSearch, searchLimit: Math.min(MAX_SEARCH_RESULTS, Math.max(1, Number(searchParams.get("searchLimit")) || MAX_SEARCH_RESULTS)), paged };
 }
 
 export async function loadRankingsWithDiagnostics(searchParams: URLSearchParams) {
   const input = parseInput(searchParams);
+  if (input.year !== null && (input.eventId === "SOR" || input.eventId === "sor-kinch")) throw new ApiInputError("year is only available for person event rankings.");
   if (input.eventId === "SOR" || input.eventId === "sor-kinch") {
     const result = await queryMysql(input);
     return { ...result, cacheOutcome: "bypass" as const, dataVersion: null };
   }
+  const metadata = await getCurrentRankingsMetadata();
+  if (input.year !== null && !metadata.availableYears.includes(input.year)) throw new ApiInputError(`year ${input.year} is unavailable.`);
   const cacheable = input.paged && !input.search && !input.locate && !input.cursorRank && !input.cursorId;
   if (!cacheable) {
     const result = await queryMysql(input);
-    return { ...result, cacheOutcome: "bypass" as const, dataVersion: null };
+    return { ...result, data: { ...result.data, availableYears: metadata.availableYears }, cacheOutcome: "bypass" as const, dataVersion: null };
   }
-  const metadata = await getCurrentRankingsMetadata();
-  const cached = await rankingsPageCache.getWithStatus(normalPageKey({ eventId: input.eventId, type: input.type, scope: input.scope, regionId: input.regionId, startRank: input.startRank }), () => queryNormalPage(input, metadata)) as { value: Awaited<ReturnType<typeof queryNormalPage>>; outcome: "hit" | "miss" | "coalesced" };
+  const cached = await rankingsPageCache.getWithStatus(normalPageKey({ eventId: input.eventId, year: input.year, type: input.type, scope: input.scope, regionId: input.regionId, startRank: input.startRank }), () => queryNormalPage(input, metadata)) as { value: Awaited<ReturnType<typeof queryNormalPage>>; outcome: "hit" | "miss" | "coalesced" };
   return {
     ...cached.value,
     timings: cached.outcome === "hit" ? { queueMs: 0, statementMs: 0 } : cached.value.timings,

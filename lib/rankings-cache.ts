@@ -7,6 +7,7 @@ export const RANKINGS_CACHE_CAPACITY_DEFAULT = 128;
 
 export type RankingsPageKey = {
   eventId: string;
+  year?: number | null;
   type: RankingType;
   scope: RegionScope;
   regionId: string;
@@ -18,12 +19,12 @@ type CachePool<T> = {
   pinnedKeys: Set<string>;
 };
 
-function keyFor({ type, scope, regionId, startRank }: RankingsPageKey) {
-  return `${type}:${scope}:${regionId}:${startRank}`;
+function keyFor({ year, type, scope, regionId, startRank }: RankingsPageKey) {
+  return `${year ?? "all"}:${type}:${scope}:${regionId}:${startRank}`;
 }
 
 function isPermanentPage(key: RankingsPageKey) {
-  return key.scope === "world" && key.startRank === 1;
+  return !key.year && key.scope === "world" && key.startRank === 1;
 }
 
 /** Process-local LRU pools. First world pages are pinned so warm navigation stays fast. */

@@ -27,6 +27,19 @@ async function projectionSql(file) {
 }
 
 const projectionDefinitions = [
+  {
+    name: "sum-of-ranks",
+    dependencies: [],
+    files: [
+      "person_sum_of_ranks_event_values.sql",
+      "person_sum_of_ranks_scores.sql",
+    ],
+    tables: [
+      "person_sum_of_ranks_event_values",
+      "person_sum_of_ranks_scores",
+    ],
+    enabledByDefault: true,
+  },
   { name: "result-facts", dependencies: ["raw-wca"], files: ["result_facts.sql"], tables: ["result_facts"] },
   { name: "person-event-rankings", dependencies: ["result-facts"], files: ["person_event_rankings.sql"], tables: ["person_event_rankings"] },
   { name: "result-rankings", dependencies: ["result-facts"], files: ["result_rankings.sql"], tables: ["result_rankings"] },
@@ -41,6 +54,12 @@ const projectionDefinitions = [
 ];
 
 export const SEMANTIC_PROJECTION_TABLES = projectionDefinitions.flatMap(({ tables }) => tables);
+export const DEFAULT_PROJECTION_NAMES = projectionDefinitions
+  .filter(({ enabledByDefault }) => enabledByDefault)
+  .map(({ name }) => name);
+export const ACTIVE_SEMANTIC_PROJECTION_TABLES = projectionDefinitions
+  .filter(({ enabledByDefault }) => enabledByDefault)
+  .flatMap(({ tables }) => tables);
 export const COMPATIBILITY_PROJECTION_TABLES = [
   "ranking_entries_single",
   "ranking_entries_average",
@@ -50,7 +69,7 @@ export const COMPATIBILITY_PROJECTION_TABLES = [
 ];
 export const PUBLISHED_PROJECTION_TABLES = [
   ...COMPATIBILITY_PROJECTION_TABLES,
-  ...SEMANTIC_PROJECTION_TABLES,
+  ...ACTIVE_SEMANTIC_PROJECTION_TABLES,
 ];
 
 function projectionNames(sql, suffix) {
@@ -81,7 +100,7 @@ export const PROJECTION_REGISTRY = projectionDefinitions.map((definition) => ({
   validate: (connection, suffix) => validateProjection(connection, definition, suffix),
 }));
 
-function orderedProjections(selectedNames = PROJECTION_REGISTRY.map(({ name }) => name)) {
+function orderedProjections(selectedNames = DEFAULT_PROJECTION_NAMES) {
   const selected = new Set(selectedNames);
   const byName = new Map(PROJECTION_REGISTRY.map((projection) => [projection.name, projection]));
   const ordered = [];
@@ -163,6 +182,26 @@ export async function promoteProjectionTables(connection, { projectionSuffix = "
     renames.push(`\`${published}${projectionSuffix}\` TO \`${published}\``);
   }
   await connection.query(`RENAME TABLE ${renames.join(", ")}`);
+  if (obsolete.length > 0) await connection.query(`DROP TABLE ${obsolete.join(", ")}`);
+}
+
+export async function promoteRegisteredProjections(
+  connection,
+  { projectionSuffix = "_staging", projectionNames: selectedNames = DEFAULT_PROJECTION_NAMES } = {},
+) {
+  const tables = orderedProjections(selectedNames).flatMap(({ tables: projectionTables }) => projectionTables);
+  const renames = [];
+  const obsolete = [];
+  for (const table of tables) {
+    const previous = `${table}_previous`;
+    await dropManagedObject(connection, previous);
+    if (await tableExists(connection, table)) {
+      renames.push(`\`${table}\` TO \`${previous}\``);
+      obsolete.push(`\`${previous}\``);
+    }
+    renames.push(`\`${table}${projectionSuffix}\` TO \`${table}\``);
+  }
+  if (renames.length > 0) await connection.query(`RENAME TABLE ${renames.join(", ")}`);
   if (obsolete.length > 0) await connection.query(`DROP TABLE ${obsolete.join(", ")}`);
 }
 

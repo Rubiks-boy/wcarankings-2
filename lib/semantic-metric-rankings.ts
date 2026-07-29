@@ -7,10 +7,18 @@ import {
   parseResultType,
   parseScope,
   parseStart,
+  type QueryTimings,
 } from "@/lib/projection-api";
 import { WCA_EVENTS } from "@/lib/wca";
 
+const SINGLE_EVENT_IDS = [
+  "333", "222", "444", "555", "666", "777", "333bf", "333fm", "333oh",
+  "clock", "minx", "pyram", "skewb", "sq1", "444bf", "555bf", "333mbf",
+] as const;
+const AVERAGE_EVENT_IDS = SINGLE_EVENT_IDS.filter((eventId) => eventId !== "333mbf");
+
 type MetricRow = {
+  position: number;
   person_id: string;
   person_name: string;
   country_id: string;
@@ -22,73 +30,150 @@ type MetricRow = {
   required_coverage: number;
   event_id: string;
   event_rank: number;
-  personal_result: number;
-  reference_result: number;
-  metric_value: string | null;
+};
+
+type ScoreLocation = {
+  position: number;
+  coverage: number;
+  required_coverage: number;
 };
 
 export async function loadMetricRankings(params: URLSearchParams) {
   const metric = params.get("metric");
-  if (metric !== "kinch" && metric !== "sum_of_ranks") {
-    throw new ApiInputError("metric must be kinch or sum_of_ranks.");
+  if (metric !== "sum_of_ranks") {
+    throw new ApiInputError("metric must be sum_of_ranks.");
   }
   const resultType = parseResultType(params);
   const { scope, regionId } = parseScope(params);
   const personId = parsePersonId(params);
-  const start = parseStart(params);
+  const requestedStart = parseStart(params);
   const limit = parseLimit(params);
-  const conditions = [
-    "score.metric = ?",
-    "score.metric_version = 1",
-    "score.event_set_version = 1",
-    "score.result_type = ?",
-    "score.scope = ?",
-    "score.region_id = ?",
-  ];
-  const values: unknown[] = [metric, resultType, scope, regionId];
+  const eventIds = resultType === "single" ? [...SINGLE_EVENT_IDS] : AVERAGE_EVENT_IDS;
+  const timings: QueryTimings[] = [];
+  let returnedRows = 0;
+  let start = requestedStart;
+  let selection: {
+    personId: string;
+    eligible: boolean;
+    coverage: number;
+    requiredCoverage: number;
+    reason: "incomplete_coverage" | null;
+  } | null = null;
+
   if (personId) {
-    conditions.push("score.person_id = ?");
-    values.push(personId);
-  } else {
-    conditions.push("score.position >= ?");
-    values.push(start);
+    const located = await query<ScoreLocation>(
+      `SELECT position, coverage, required_coverage
+       FROM person_sum_of_ranks_scores
+       WHERE metric_version = 1 AND event_set_version = 1
+         AND result_type = ? AND scope = ? AND region_id = ? AND person_id = ?
+       LIMIT 1`,
+      [resultType, scope, regionId, personId],
+    );
+    timings.push(located.timings);
+    returnedRows += located.rows.length;
+    const location = located.rows[0];
+    if (location) {
+      start = Math.floor((Number(location.position) - 1) / limit) * limit + 1;
+      selection = {
+        personId,
+        eligible: true,
+        coverage: Number(location.coverage),
+        requiredCoverage: Number(location.required_coverage),
+        reason: null,
+      };
+    } else {
+      const coverage = await query<{ coverage: number }>(
+        `SELECT COUNT(*) AS coverage
+         FROM person_sum_of_ranks_event_values
+         WHERE metric_version = 1 AND event_set_version = 1
+           AND result_type = ? AND scope = ? AND region_id = ? AND person_id = ?`,
+        [resultType, scope, regionId, personId],
+      );
+      timings.push(coverage.timings);
+      returnedRows += coverage.rows.length;
+      selection = {
+        personId,
+        eligible: false,
+        coverage: Number(coverage.rows[0]?.coverage ?? 0),
+        requiredCoverage: eventIds.length,
+        reason: "incomplete_coverage",
+      };
+    }
   }
 
-  const rows = await query<MetricRow>(`
-    WITH page AS (
-      SELECT score.*
-      FROM person_metric_scores score
-      WHERE ${conditions.join(" AND ")}
-      ORDER BY score.position, score.person_id
-      LIMIT ?
-    )
-    SELECT page.person_id, COALESCE(person.name, page.person_id) AS person_name,
-      COALESCE(person.country_id, '') AS country_id,
-      COALESCE(country.name, person.country_id, '') AS country_name,
-      COALESCE(country.iso2, '') AS country_iso2,
-      page.rank, page.score, page.coverage, page.required_coverage,
-      value.event_id, value.event_rank, value.personal_result, value.reference_result,
-      CASE WHEN page.metric = 'kinch' THEN value.kinch_value ELSE value.sum_of_ranks_value END AS metric_value
-    FROM page
-    LEFT JOIN persons person ON person.wca_id = page.person_id AND person.sub_id = 1
-    LEFT JOIN countries country ON country.id = person.country_id
-    INNER JOIN person_metric_values value
-      ON value.metric_version = page.metric_version
-      AND value.event_set_version = page.event_set_version
-      AND value.result_type = page.result_type
-      AND value.scope = page.scope
-      AND value.region_id = page.region_id
-      AND value.person_id = page.person_id
-    ORDER BY page.position, page.person_id, value.event_id
-  `, [...values, limit + 1]);
   const counts = await query<{ count: number }>(
-    `SELECT count FROM person_metric_counts
-     WHERE metric = ? AND metric_version = 1 AND event_set_version = 1
+    `SELECT COUNT(*) AS count
+     FROM person_sum_of_ranks_scores
+     WHERE metric_version = 1 AND event_set_version = 1
        AND result_type = ? AND scope = ? AND region_id = ?`,
-    [metric, resultType, scope, regionId],
+    [resultType, scope, regionId],
   );
+  timings.push(counts.timings);
+  returnedRows += counts.rows.length;
+  const total = Number(counts.rows[0]?.count ?? 0);
+
+  if (selection && !selection.eligible) {
+    return {
+      data: {
+        entries: [],
+        context: {
+          resource: "metrics",
+          metric,
+          metricVersion: 1,
+          eventSetVersion: 1,
+          eventIds,
+          direction: "ascending",
+          result: resultType,
+          scope,
+          regionId,
+        },
+        selection,
+        page: { start: 1, limit, hasMore: false, next: null, previous: null },
+        total,
+      },
+      diagnostics: {
+        timings: addTimings(...timings),
+        queryCount: timings.length,
+        returnedRows,
+      },
+    };
+  }
+
+  const rows = await query<MetricRow>(
+    `WITH page AS (
+       SELECT position, person_id, rank, score, coverage, required_coverage
+       FROM person_sum_of_ranks_scores
+       WHERE metric_version = 1 AND event_set_version = 1
+         AND result_type = ? AND scope = ? AND region_id = ?
+         AND position >= ?
+       ORDER BY position, person_id
+       LIMIT ?
+     )
+     SELECT page.position, page.person_id,
+       COALESCE(person.name, page.person_id) AS person_name,
+       COALESCE(person.country_id, '') AS country_id,
+       COALESCE(country.name, person.country_id, '') AS country_name,
+       COALESCE(country.iso2, '') AS country_iso2,
+       page.rank, page.score, page.coverage, page.required_coverage,
+       value.event_id, value.event_rank
+     FROM page
+     LEFT JOIN persons person ON person.wca_id = page.person_id AND person.sub_id = 1
+     LEFT JOIN countries country ON country.id = person.country_id
+     INNER JOIN person_sum_of_ranks_event_values value
+       ON value.metric_version = 1
+       AND value.event_set_version = 1
+       AND value.result_type = ?
+       AND value.scope = ?
+       AND value.region_id = ?
+       AND value.person_id = page.person_id
+     ORDER BY page.position, page.person_id, value.event_id`,
+    [resultType, scope, regionId, start, limit + 1, resultType, scope, regionId],
+  );
+  timings.push(rows.timings);
+  returnedRows += rows.rows.length;
 
   const byPerson = new Map<string, {
+    position: number;
     rank: number;
     personId: string;
     personName: string;
@@ -96,18 +181,13 @@ export async function loadMetricRankings(params: URLSearchParams) {
     score: number;
     coverage: number;
     requiredCoverage: number;
-    events: Array<{
-      eventId: string;
-      rank: number;
-      personalResult: number;
-      referenceResult: number;
-      value: number | null;
-    }>;
+    events: Array<{ eventId: string; rank: number }>;
   }>();
   for (const row of rows.rows) {
     let entry = byPerson.get(row.person_id);
     if (!entry) {
       entry = {
+        position: Number(row.position),
         rank: Number(row.rank),
         personId: row.person_id,
         personName: row.person_name,
@@ -119,37 +199,47 @@ export async function loadMetricRankings(params: URLSearchParams) {
       };
       byPerson.set(row.person_id, entry);
     }
-    entry.events.push({
-      eventId: row.event_id,
-      rank: Number(row.event_rank),
-      personalResult: Number(row.personal_result),
-      referenceResult: Number(row.reference_result),
-      value: row.metric_value === null ? null : Number(row.metric_value),
-    });
+    entry.events.push({ eventId: row.event_id, rank: Number(row.event_rank) });
   }
   const eventOrder = new Map<string, number>(
     WCA_EVENTS.map((event, index) => [event.id, index]),
   );
-  const entries = [...byPerson.values()].slice(0, limit);
-  for (const entry of entries) {
+  const pagePeople = [...byPerson.values()];
+  const hasMore = pagePeople.length > limit;
+  const entries = pagePeople.slice(0, limit).map(({ position: _position, ...entry }) => {
     entry.events.sort((left, right) =>
       (eventOrder.get(left.eventId) ?? 999) - (eventOrder.get(right.eventId) ?? 999));
-  }
+    return entry;
+  });
+
   return {
     data: {
       entries,
-      context: { resource: "metrics", metric, result: resultType, scope, regionId, personId: personId || null },
-      page: {
-        limit,
-        hasMore: byPerson.size > limit,
-        next: byPerson.size > limit && !personId ? { start: start + limit } : null,
+      context: {
+        resource: "metrics",
+        metric,
+        metricVersion: 1,
+        eventSetVersion: 1,
+        eventIds,
+        direction: "ascending",
+        result: resultType,
+        scope,
+        regionId,
       },
-      total: personId ? entries.length : Number(counts.rows[0]?.count ?? 0),
+      selection,
+      page: {
+        start,
+        limit,
+        hasMore,
+        next: hasMore ? { start: start + limit } : null,
+        previous: start > 1 ? { start: Math.max(1, start - limit) } : null,
+      },
+      total,
     },
     diagnostics: {
-      timings: addTimings(rows.timings, counts.timings),
-      queryCount: 2,
-      returnedRows: rows.rows.length + counts.rows.length,
+      timings: addTimings(...timings),
+      queryCount: timings.length,
+      returnedRows,
     },
   };
 }

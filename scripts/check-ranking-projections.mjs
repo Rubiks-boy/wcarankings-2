@@ -37,6 +37,30 @@ const RESULT_ENTRY_INDEXES = [
   "idx_result_entries_single_continent",
   "idx_result_entries_single_country",
 ];
+const SUM_OF_RANKS_COLUMNS = [
+  "metric_version",
+  "event_set_version",
+  "result_type",
+  "scope",
+  "region_id",
+  "person_id",
+  "score",
+  "coverage",
+  "required_coverage",
+  "rank",
+  "position",
+];
+const SUM_OF_RANKS_INDEXES = ["PRIMARY", "idx_person_sum_of_ranks_page"];
+const SUM_OF_RANKS_VALUE_COLUMNS = [
+  "metric_version",
+  "event_set_version",
+  "result_type",
+  "scope",
+  "region_id",
+  "person_id",
+  "event_id",
+  "event_rank",
+];
 
 function databaseOptions(connectionString = process.env.DATABASE_URL) {
   if (!connectionString) throw new Error("DATABASE_URL is required");
@@ -63,16 +87,16 @@ async function main() {
       connection.query(
         `SELECT table_name, column_name FROM information_schema.columns
          WHERE table_schema = DATABASE()
-           AND table_name IN (?, ?, ?)
-           AND column_name IN (${[...ENTRY_COLUMNS, ...RESULT_ENTRY_COLUMNS].map(() => "?").join(", ")})`,
-        ["ranking_entries_single", "ranking_entries_average", "result_entries_single", ...ENTRY_COLUMNS, ...RESULT_ENTRY_COLUMNS],
+           AND table_name IN (?, ?, ?, ?, ?)
+           AND column_name IN (${[...ENTRY_COLUMNS, ...RESULT_ENTRY_COLUMNS, ...SUM_OF_RANKS_COLUMNS, ...SUM_OF_RANKS_VALUE_COLUMNS].map(() => "?").join(", ")})`,
+        ["ranking_entries_single", "ranking_entries_average", "result_entries_single", "person_sum_of_ranks_scores", "person_sum_of_ranks_event_values", ...ENTRY_COLUMNS, ...RESULT_ENTRY_COLUMNS, ...SUM_OF_RANKS_COLUMNS, ...SUM_OF_RANKS_VALUE_COLUMNS],
       ).then(([rows]) => rows),
       connection.query(
         `SELECT table_name, index_name FROM information_schema.statistics
          WHERE table_schema = DATABASE()
-           AND table_name IN (?, ?, ?)
-           AND index_name IN (${[...ENTRY_INDEXES, ...RESULT_ENTRY_INDEXES].map(() => "?").join(", ")})`,
-        ["ranking_entries_single", "ranking_entries_average", "result_entries_single", ...ENTRY_INDEXES, ...RESULT_ENTRY_INDEXES],
+           AND table_name IN (?, ?, ?, ?, ?)
+           AND index_name IN (${[...ENTRY_INDEXES, ...RESULT_ENTRY_INDEXES, ...SUM_OF_RANKS_INDEXES].map(() => "?").join(", ")})`,
+        ["ranking_entries_single", "ranking_entries_average", "result_entries_single", "person_sum_of_ranks_scores", "person_sum_of_ranks_event_values", ...ENTRY_INDEXES, ...RESULT_ENTRY_INDEXES, ...SUM_OF_RANKS_INDEXES],
       ).then(([rows]) => rows),
     ]);
     const metadataRows = tables.has("export_metadata")
@@ -86,10 +110,14 @@ async function main() {
         ENTRY_COLUMNS.filter((column) => !columns.has(`${table}.${column}`)).map((column) => `missing column ${table}.${column}`),
       ),
       ...RESULT_ENTRY_COLUMNS.filter((column) => !columns.has(`result_entries_single.${column}`)).map((column) => `missing column result_entries_single.${column}`),
+      ...SUM_OF_RANKS_COLUMNS.filter((column) => !columns.has(`person_sum_of_ranks_scores.${column}`)).map((column) => `missing column person_sum_of_ranks_scores.${column}`),
+      ...SUM_OF_RANKS_VALUE_COLUMNS.filter((column) => !columns.has(`person_sum_of_ranks_event_values.${column}`)).map((column) => `missing column person_sum_of_ranks_event_values.${column}`),
       ...["ranking_entries_single", "ranking_entries_average"].flatMap((table) =>
         ENTRY_INDEXES.filter((index) => !indexes.has(`${table}.${index}`)).map((index) => `missing index ${table}.${index}`),
       ),
       ...RESULT_ENTRY_INDEXES.filter((index) => !indexes.has(`result_entries_single.${index}`)).map((index) => `missing index result_entries_single.${index}`),
+      ...SUM_OF_RANKS_INDEXES.filter((index) => !indexes.has(`person_sum_of_ranks_scores.${index}`)).map((index) => `missing index person_sum_of_ranks_scores.${index}`),
+      ...["PRIMARY"].filter((index) => !indexes.has(`person_sum_of_ranks_event_values.${index}`)).map((index) => `missing index person_sum_of_ranks_event_values.${index}`),
       ...(metadataRows[0]?.value ? [] : ["missing export_metadata.fetched_at"]),
     ];
     if (issues.length > 0) {
@@ -103,6 +131,6 @@ async function main() {
 
 main().catch((error) => {
   process.stderr.write(`${error instanceof Error ? error.message : error}\n`);
-  process.stderr.write("Run Flyway migrations, then: docker compose run --rm app node /app/scripts/backfill-result-entries.mjs (or rebuild all projections with /app/scripts/refresh-rankings.mjs)\n");
+  process.stderr.write("Run Flyway migrations, then backfill the missing active projection or rebuild all projections with /app/scripts/refresh-rankings.mjs.\n");
   process.exitCode = 1;
 });

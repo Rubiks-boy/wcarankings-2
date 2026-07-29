@@ -38,19 +38,8 @@ const expectedProjectionTables = [
   "ranking_counts",
   "result_entries_single",
   "result_counts",
-  "result_facts",
-  "person_event_rankings",
-  "person_ranking_counts",
-  "result_rankings",
-  "result_ranking_counts",
-  "person_metric_values",
-  "person_metric_scores",
-  "person_metric_counts",
-  "competition_stats",
-  "competition_event_stats",
-  "competition_podium_members",
-  "city_event_stats",
-  "entity_ranking_counts",
+  "person_sum_of_ranks_event_values",
+  "person_sum_of_ranks_scores",
 ] as const;
 
 function serializeRun(run: ImportRunRow | null) {
@@ -104,19 +93,8 @@ export async function GET() {
             'ranking_counts',
             'result_entries_single',
             'result_counts',
-            'result_facts',
-            'person_event_rankings',
-            'person_ranking_counts',
-            'result_rankings',
-            'result_ranking_counts',
-            'person_metric_values',
-            'person_metric_scores',
-            'person_metric_counts',
-            'competition_stats',
-            'competition_event_stats',
-            'competition_podium_members',
-            'city_event_stats',
-            'entity_ranking_counts'
+            'person_sum_of_ranks_event_values',
+            'person_sum_of_ranks_scores'
           )
       `),
     ]);

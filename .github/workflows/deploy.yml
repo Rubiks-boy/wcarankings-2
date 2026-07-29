@@ -141,7 +141,7 @@ jobs:
       - name: Verify candidate ranking projections
         run: |
           ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
-            'cd /srv/wcarankings && docker compose run --rm app node /app/scripts/backfill-result-entries.mjs && docker compose run --rm app node /app/scripts/check-ranking-projections.mjs'
+            'cd /srv/wcarankings && docker compose run --rm app node /app/scripts/backfill-result-entries.mjs && docker compose run --rm app node /app/scripts/backfill-sum-of-ranks.mjs && docker compose run --rm app node /app/scripts/check-ranking-projections.mjs'
 
       - name: Switch production services
         run: |

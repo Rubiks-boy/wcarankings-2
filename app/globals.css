@@ -259,6 +259,107 @@ main {
   stroke-width: 1.7;
 }
 
+.profileMenu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.profileButton {
+  display: inline-grid;
+  width: 2.5em;
+  height: 2.5em;
+  padding: 0.35em;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-strong);
+  cursor: pointer;
+}
+
+.profileButton:hover,
+.profileButton:focus-visible,
+.profileButton[aria-expanded="true"] {
+  color: var(--focus);
+  outline: none;
+}
+
+.profileButton svg {
+  width: 1.35em;
+  height: 1.35em;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.profileButton img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.profilePopover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 0.5em);
+  right: 0;
+  display: grid;
+  width: min(18em, calc(100vw - 2em));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.65em;
+  background: var(--surface);
+  box-shadow: 0 0.75em 2.5em rgb(0 0 0 / 18%);
+}
+
+.profileIdentity,
+.profileStatus {
+  display: grid;
+  gap: 0.2em;
+  margin: 0;
+  padding: 0.85em 1em;
+}
+
+.profileIdentity {
+  border-bottom: 1px solid var(--border);
+}
+
+.profileIdentity span,
+.profileStatus {
+  color: var(--text-secondary);
+  font-size: 0.85em;
+}
+
+.profilePopover a,
+.profilePopover form button {
+  display: block;
+  width: 100%;
+  padding: 0.8em 1em;
+  border: 0;
+  background: transparent;
+  color: var(--text-strong);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.profilePopover a:hover,
+.profilePopover a:focus-visible,
+.profilePopover form button:hover,
+.profilePopover form button:focus-visible {
+  background: var(--surface-hover);
+  color: var(--focus);
+  outline: none;
+}
+
+.profilePopover form {
+  margin: 0;
+}
+
 .themeToggle circle {
   fill: currentColor;
 }
@@ -430,7 +531,7 @@ main {
   .headerActions .findBar.findBar--header {
     position: absolute;
     top: 50%;
-    right: calc(40px + 0.5em);
+    right: calc(80px + 1em);
     transform: translateY(-50%);
   }
 

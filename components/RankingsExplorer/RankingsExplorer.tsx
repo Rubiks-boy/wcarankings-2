@@ -50,6 +50,7 @@ import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVi
 import { ResultsTable } from "../ResultsTable/ResultsTable";
 import { SubjectMockRows } from "./SubjectMockRows";
 import { ThemeToggle } from "../ThemeToggle/ThemeToggle";
+import { ProfileMenu } from "../ProfileMenu/ProfileMenu";
 import { VimHelp } from "../VimHelp/VimHelp";
 import { VimSearchInput } from "../VimSearchInput/VimSearchInput";
 import {
@@ -2656,6 +2657,7 @@ export function RankingsExplorer({
           </div>
           <div className="headerActions">
             <ThemeToggle />
+            <ProfileMenu />
           </div>
         </div>
       </header>

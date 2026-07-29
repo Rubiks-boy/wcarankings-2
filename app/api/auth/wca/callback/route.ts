@@ -1,10 +1,10 @@
 import {
-  encodeWcaSession,
   getWcaAuthConfig,
   makeCookie,
   readCookie,
   toWcaProfile,
 } from "@/lib/wca-auth";
+import { authSessionCookie, createAuthSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -44,16 +44,15 @@ export async function GET(request: Request) {
     const profile = toWcaProfile(await meResponse.json());
     if (!profile) throw new Error("Profile was missing a WCA ID");
 
-    const session = await encodeWcaSession(profile, clientSecret);
+    const session = await createAuthSession(profile);
     const headers = new Headers({
       Location: `${origin}/?auth=success`,
       "Cache-Control": "no-store",
     });
-    headers.append("Set-Cookie", makeCookie("wca_session", session, request, { maxAge: 60 * 60 * 24 * 30 }));
+    headers.append("Set-Cookie", authSessionCookie(session.token, request));
     headers.append("Set-Cookie", makeCookie("wca_oauth_state", "", request, { maxAge: 0 }));
     return new Response(null, { status: 302, headers });
   } catch {
     return Response.redirect(`${origin}/?auth=failed`, 302);
   }
 }
-

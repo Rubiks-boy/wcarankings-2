@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import type { Pool } from "mysql2/promise";
+import type { Pool, PoolConnection } from "mysql2/promise";
 
 const require = createRequire(import.meta.url);
 const { createPool } = require("mysql2/promise") as typeof import("mysql2/promise");
@@ -84,6 +84,26 @@ export async function query<T extends Record<string, unknown>>(
       : text;
     const [rows] = await connection.query(statement, values) as [T[], unknown];
     return { rows, rowCount: rows.length, timings: { queueMs, statementMs: performance.now() - statementAt } };
+  } finally {
+    connection?.release();
+    releaseQueue();
+  }
+}
+
+export async function withTransaction<T>(
+  callback: (connection: PoolConnection) => Promise<T>,
+) {
+  const releaseQueue = await getQueue().acquire();
+  let connection: PoolConnection | undefined;
+  try {
+    connection = await getPool().getConnection();
+    await connection.beginTransaction();
+    const result = await callback(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection?.rollback();
+    throw error;
   } finally {
     connection?.release();
     releaseQueue();

@@ -706,6 +706,9 @@ export function RankingsExplorer({
   const initialSearchRef = useRef(
     Boolean(initialData && normalizedInitialSearch)
   );
+  const initialFocusRef = useRef(
+    Boolean(initialData?.initialMatchPersonId && !normalizedInitialSearch)
+  );
   const findMatchesRef = useRef<RankingEntry[]>(
     orderSearchMatches(initialData?.searchMatches ?? [])
   );
@@ -1504,9 +1507,10 @@ export function RankingsExplorer({
     const normalizedQuery = findQuery.trim();
     const isInitialSearch =
       initialSearchRef.current && normalizedQuery === normalizedInitialSearch;
+    const isInitialFocus = initialFocusRef.current && !normalizedQuery;
     const skipNavigationReset = skipNextFindResetRef.current;
     skipNextFindResetRef.current = false;
-    if (!isInitialSearch && !skipNavigationReset) {
+    if (!isInitialSearch && !isInitialFocus && !skipNavigationReset) {
       navigationEpochRef.current += 1;
       pendingSearchLayoutAnchorRef.current = null;
       cancelScrollAnimation(scrollAnimationStateRef.current);
@@ -1527,6 +1531,12 @@ export function RankingsExplorer({
     const timeout = window.setTimeout(
       () => {
         if (controller.signal.aborted) return;
+        if (isInitialFocus) {
+          initialFocusRef.current = false;
+          setFindResolvedQuery("");
+          setFindLoading(false);
+          return;
+        }
         if (
           initialSearchRef.current &&
           normalizedQuery === normalizedInitialSearch
@@ -2136,6 +2146,7 @@ export function RankingsExplorer({
           setError("This person has no ranking for the selected event and region.");
           return;
         }
+        setHighlightedPersonId(located.personId);
         resetToRank(
           located.subRank,
           animate,

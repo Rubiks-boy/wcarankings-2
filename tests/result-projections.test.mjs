@@ -37,6 +37,8 @@ test("builds a result-level compatibility projection without unused secondary in
   assert.match(schema, /result_entries_single_source/);
   assert.match(schema, /result_entries_single_indexes\.sql/);
   assert.match(schema, /result_counts\.sql/);
+  assert.match(schema, /\(\?!\[A-Za-z0-9_\]\)/);
+  assert.doesNotMatch(schema, /replaceAll\(table, `\$\{table\}\$\{suffix\}`\)/);
   assert.match(schema, /idx_results_single_event_best/);
   assert.match(importer, /result_entries_single_staging/);
   assert.match(importer, /result_counts_staging/);

@@ -317,6 +317,7 @@ jobs:
           ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
             'set -eu
             for endpoint in \
+              "/api/rankings?eventId=333&result=single&year=2024&start=0&limit=1&paged=1" \
               "/api/rankings?eventId=SOR&result=single&start=0&limit=10" \
               "/api/rankings?eventId=sor-kinch&result=average&start=0&limit=10" \
               "/api/rankings/competitions?ranking=competitor-count&start=0&limit=10"; do

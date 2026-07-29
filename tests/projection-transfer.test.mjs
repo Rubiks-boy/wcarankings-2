@@ -15,6 +15,10 @@ const dockerfile = await readFile(
   new URL("../Dockerfile", import.meta.url),
   "utf8",
 );
+const schema = await readFile(
+  new URL("../scripts/mysql-schema.mjs", import.meta.url),
+  "utf8",
+);
 
 test("defers secondary projection indexes until after bulk transfer import", () => {
   assert.match(prepare, /SHOW INDEX FROM/);
@@ -39,4 +43,9 @@ test("rejects missing and invalid export dates", () => {
 
 test("packages the export-date normalizer with the publisher", () => {
   assert.match(dockerfile, /projection-transfer-date\.mjs/);
+});
+
+test("publishes result facts with the core runtime transfer", () => {
+  assert.match(schema, /name: "result-facts"[\s\S]*enabledByDefault: true/);
+  assert.match(schema, /tables: PUBLISHED_PROJECTION_TABLES\.filter\(\(table\) => !table\.startsWith\("person_year_"\)\)/);
 });

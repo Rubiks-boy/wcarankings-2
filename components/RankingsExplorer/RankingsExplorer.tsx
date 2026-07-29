@@ -14,6 +14,7 @@ import {
 import {
   animateScrollTo,
   cancelScrollAnimation,
+  clampTargetSubRank,
   getCurrentViewportPosition,
   getCurrentViewportSubRank,
   getEndSubRank,
@@ -1897,8 +1898,7 @@ export function RankingsExplorer({
       }
       pendingNavigationAppendRef.current = false;
       setLoading(false);
-      const maximumRank = lastRank ?? (Number.isFinite(total) ? total : rank);
-      const normalizedRank = Math.max(1, Math.min(rank, maximumRank));
+      const normalizedRank = clampTargetSubRank(rank, total, lastRank);
       const currentRank = getCurrentViewportSubRank(
         listRef.current,
         entriesRef.current,

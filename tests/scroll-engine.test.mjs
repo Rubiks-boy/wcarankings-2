@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   getScrollAnimationDuration,
   getEndSubRank,
+  clampTargetSubRank,
   getSearchAnimationDuration,
   getSearchBridgePageStarts,
   getSearchJumpMode,
@@ -58,6 +59,12 @@ test("targets the known ranking total when jumping to the end", () => {
   assert.equal(getEndSubRank(10_000, 9_950, 9_925), 10_000);
   assert.equal(getEndSubRank(Number.POSITIVE_INFINITY, 50, 1), 50);
   assert.equal(getEndSubRank(Number.POSITIVE_INFINITY, null, 42), 42);
+});
+
+test("clamps jumps against the ranking total instead of the loaded page", () => {
+  assert.equal(clampTargetSubRank(5_001, 280_935, 50), 5_001);
+  assert.equal(clampTargetSubRank(300_000, 280_935, 50), 280_935);
+  assert.equal(clampTargetSubRank(5_001, Number.POSITIVE_INFINITY, 50), 50);
 });
 
 test("extends the page prefetch buffer for fast downward scrolling", () => {

@@ -10,7 +10,8 @@ SELECT
   scope,
   region_id,
   event_id,
-  COUNT(*) + 1 AS fallback_rank
+  COUNT(*) + 1 AS fallback_rank,
+  MIN(result_value) AS reference_result
 FROM person_sum_of_ranks_event_values
 GROUP BY
   metric_version,
@@ -54,7 +55,14 @@ WITH baselines AS (
       CAST(value.event_rank AS SIGNED)
         - CAST(penalty.fallback_rank AS SIGNED)
     ) AS score_adjustment,
-    COUNT(*) AS coverage
+    COUNT(*) AS coverage,
+    SUM(
+      CASE
+        WHEN value.event_id = '333mbf' THEN 0
+        ELSE 100.0 * penalty.reference_result / value.result_value
+      END
+    ) AS kinch_score,
+    SUM(value.event_id <> '333mbf') AS kinch_coverage
   FROM person_sum_of_ranks_event_values value
   INNER JOIN sum_of_ranks_event_penalties penalty
     ON penalty.metric_version = value.metric_version
@@ -81,7 +89,9 @@ WITH baselines AS (
     CAST(baseline.fallback_score AS SIGNED)
       + person.score_adjustment AS score,
     person.coverage,
-    baseline.required_coverage
+    baseline.required_coverage,
+    person.kinch_score,
+    person.kinch_coverage
   FROM person_adjustments person
   INNER JOIN baselines baseline
     ON baseline.metric_version = person.metric_version
@@ -89,7 +99,7 @@ WITH baselines AS (
     AND baseline.result_type = person.result_type
     AND baseline.scope = person.scope
     AND baseline.region_id = person.region_id
-)
+), ranked AS (
 SELECT
   metric_version,
   event_set_version,
@@ -100,6 +110,7 @@ SELECT
   score,
   coverage,
   required_coverage,
+  CASE WHEN kinch_coverage = 16 THEN kinch_score END AS kinch_score,
   RANK() OVER (
     PARTITION BY metric_version, event_set_version, result_type, scope, region_id
     ORDER BY score
@@ -107,8 +118,27 @@ SELECT
   ROW_NUMBER() OVER (
     PARTITION BY metric_version, event_set_version, result_type, scope, region_id
     ORDER BY score, person_id
-  ) AS position
-FROM totals;
+  ) AS position,
+  CASE
+    WHEN kinch_coverage = 16 THEN RANK() OVER (
+      PARTITION BY metric_version, event_set_version, result_type, scope, region_id
+      ORDER BY
+        CASE WHEN kinch_coverage = 16 THEN 0 ELSE 1 END,
+        kinch_score DESC
+    )
+  END AS kinch_rank,
+  CASE
+    WHEN kinch_coverage = 16 THEN ROW_NUMBER() OVER (
+      PARTITION BY metric_version, event_set_version, result_type, scope, region_id
+      ORDER BY
+        CASE WHEN kinch_coverage = 16 THEN 0 ELSE 1 END,
+        kinch_score DESC,
+        person_id
+    )
+  END AS kinch_position
+FROM totals
+)
+SELECT * FROM ranked;
 
 ALTER TABLE person_sum_of_ranks_scores
   ADD PRIMARY KEY (
@@ -118,6 +148,10 @@ ALTER TABLE person_sum_of_ranks_scores
   ADD INDEX idx_person_sum_of_ranks_page (
     metric_version, event_set_version, result_type,
     scope, region_id, position, person_id
+  ),
+  ADD INDEX idx_person_kinch_page (
+    metric_version, event_set_version, result_type,
+    scope, region_id, kinch_position, person_id
   );
 
 DROP TEMPORARY TABLE sum_of_ranks_event_penalties;

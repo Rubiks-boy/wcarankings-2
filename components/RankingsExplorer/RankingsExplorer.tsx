@@ -455,7 +455,7 @@ export function RankingsExplorer({
   initialData?: InitialRankingData;
   initialSearch?: string;
   initialRegexSearch?: boolean;
-  initialEventId?: (typeof WCA_EVENTS)[number]["id"] | "SOR";
+  initialEventId?: (typeof WCA_EVENTS)[number]["id"] | "SOR" | "sor-kinch";
   initialRankingType?: "single" | "average";
   initialRegionSelection?: RegionSelection;
   showAllEventRankingOptions?: boolean;
@@ -2389,7 +2389,7 @@ export function RankingsExplorer({
   };
 
   const changeEvent = (
-    nextEventId: (typeof WCA_EVENTS)[number]["id"] | "SOR"
+    nextEventId: (typeof WCA_EVENTS)[number]["id"] | "SOR" | "sor-kinch"
   ) => {
     const viewportSubRank = getCurrentViewportSubRank(
       listRef.current,
@@ -2495,7 +2495,10 @@ export function RankingsExplorer({
   const changeRailEvent = (nextEventId: string) => {
     updateQueryParams({ personId: null });
     changeEvent(
-      nextEventId as (typeof WCA_EVENTS)[number]["id"] | "SOR"
+      nextEventId as
+        | (typeof WCA_EVENTS)[number]["id"]
+        | "SOR"
+        | "sor-kinch"
     );
   };
 
@@ -2544,7 +2547,7 @@ export function RankingsExplorer({
         <RankingsControlsRail
           event={currentEvent}
           eventOptions={WCA_EVENTS}
-          additionalEventOptions={showAllEventRankingOptions ? ALL_EVENT_RANKING_OPTIONS.filter((option) => option.id === "SOR") : undefined}
+          additionalEventOptions={showAllEventRankingOptions ? ALL_EVENT_RANKING_OPTIONS : undefined}
           onEventChange={changeRailEvent}
           rankingType={rankingType}
           onRankingTypeChange={changeRankingType}

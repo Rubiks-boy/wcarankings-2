@@ -10,7 +10,7 @@ const MAX_SEARCH_RESULTS = 500;
 
 type RankingRow = { rank: number; sub_rank: number; person_id: string; person_name: string; country_id: string; country_name: string; country_iso2: string; continent_id: string; best: number; competition_id: string; competition_name: string; is_world_record: number; is_continent_record: number; is_country_record: number };
 type QueryInput = { eventId: string; type: RankingType; scope: RegionScope; regionId: string; startRank: number; cursorRank: number | null; cursorId: string; limit: number; locate: string; search: string; regexSearch: boolean; searchLimit: number; paged: boolean };
-type SumOfRanksRow = {
+type PersonMetricRow = {
   rank: number;
   sub_rank: number;
   person_id: string;
@@ -61,7 +61,8 @@ async function queryNormalPage(input: QueryInput, metadata: RankingsMetadata) {
 }
 
 export async function queryMysql(input: QueryInput) {
-  if (input.eventId === "SOR") return querySumOfRanks(input);
+  if (input.eventId === "SOR" || input.eventId === "sor-kinch")
+    return queryPersonMetric(input);
   const { rank, subRank, conditions, values } = filters(input);
   const source = table(input.type);
   if (input.locate) {
@@ -98,7 +99,7 @@ export async function queryMysql(input: QueryInput) {
   return { data: { entries, hasMore: result.rows.length > input.limit, nextPageStart: null, previousPageStart: null, total: entries.length }, timings: result.timings, queryCount: 1, returnedRows: result.rows.length };
 }
 
-function sumOfRanksEntry(row: SumOfRanksRow): RankingEntry {
+function personMetricEntry(row: PersonMetricRow): RankingEntry {
   return {
     rank: Number(row.rank),
     subRank: Number(row.sub_rank),
@@ -115,7 +116,11 @@ function sumOfRanksEntry(row: SumOfRanksRow): RankingEntry {
   };
 }
 
-async function querySumOfRanks(input: QueryInput) {
+async function queryPersonMetric(input: QueryInput) {
+  const kinch = input.eventId === "sor-kinch";
+  const rankColumn = kinch ? "kinch_rank" : "rank";
+  const positionColumn = kinch ? "kinch_position" : "position";
+  const scoreColumn = kinch ? "kinch_score" : "score";
   const values: unknown[] = [input.type, input.scope, input.regionId];
   const conditions = [
     "score.metric_version = 1",
@@ -123,6 +128,7 @@ async function querySumOfRanks(input: QueryInput) {
     "score.result_type = ?",
     "score.scope = ?",
     "score.region_id = ?",
+    `score.${positionColumn} IS NOT NULL`,
   ];
   let peopleTimings = { queueMs: 0, statementMs: 0 };
   let peopleReturnedRows = 0;
@@ -145,22 +151,22 @@ async function querySumOfRanks(input: QueryInput) {
     conditions.push(`score.person_id IN (${people.personIds.map(() => "?").join(", ")})`);
     values.push(...people.personIds);
   } else if (input.cursorRank) {
-    conditions.push("(score.position > ? OR (score.position = ? AND score.person_id > ?))");
+    conditions.push(`(score.${positionColumn} > ? OR (score.${positionColumn} = ? AND score.person_id > ?))`);
     values.push(input.cursorRank, input.cursorRank, input.cursorId);
   } else {
-    conditions.push("score.position >= ?");
+    conditions.push(`score.${positionColumn} >= ?`);
     values.push(input.startRank);
   }
 
   const limit = input.locate ? 1 : input.search ? input.searchLimit : input.limit + 1;
-  const result = await query<SumOfRanksRow>(
-    `SELECT score.rank, score.position AS sub_rank, score.person_id,
+  const result = await query<PersonMetricRow>(
+    `SELECT score.${rankColumn} AS rank, score.${positionColumn} AS sub_rank, score.person_id,
        COALESCE(person.name, score.person_id) AS person_name,
        COALESCE(display_country.id, '') AS country_id,
        COALESCE(display_country.name, display_country.id, '') AS country_name,
        COALESCE(display_country.iso2, '') AS country_iso2,
        COALESCE(display_country.continent_id, '') AS continent_id,
-       score.score AS best
+       score.${scoreColumn} AS best
      FROM person_sum_of_ranks_scores score
      LEFT JOIN persons person ON person.wca_id = score.person_id AND person.sub_id = 1
      LEFT JOIN countries current_country ON current_country.id = person.country_id
@@ -170,7 +176,7 @@ async function querySumOfRanks(input: QueryInput) {
        ELSE person.country_id
      END
      WHERE ${conditions.join(" AND ")}
-     ORDER BY score.position, score.person_id
+     ORDER BY score.${positionColumn}, score.person_id
      LIMIT ?`,
     [input.scope, input.regionId, input.scope, input.regionId, ...values, limit],
   );
@@ -178,7 +184,7 @@ async function querySumOfRanks(input: QueryInput) {
     queueMs: peopleTimings.queueMs + result.timings.queueMs,
     statementMs: peopleTimings.statementMs + result.timings.statementMs,
   };
-  const entries = result.rows.slice(0, input.locate ? 1 : limit - (input.search ? 0 : 1)).map(sumOfRanksEntry);
+  const entries = result.rows.slice(0, input.locate ? 1 : limit - (input.search ? 0 : 1)).map(personMetricEntry);
   if (input.locate) {
     return {
       data: { located: entries[0] ?? null },
@@ -197,11 +203,12 @@ async function querySumOfRanks(input: QueryInput) {
   }
 
   const end = await query<{ position: number }>(
-    `SELECT position
+    `SELECT ${positionColumn} AS position
      FROM person_sum_of_ranks_scores
      WHERE metric_version = 1 AND event_set_version = 1
        AND result_type = ? AND scope = ? AND region_id = ?
-     ORDER BY position DESC
+       AND ${positionColumn} IS NOT NULL
+     ORDER BY ${positionColumn} DESC
      LIMIT 1`,
     [input.type, input.scope, input.regionId],
   );
@@ -242,7 +249,7 @@ function parseInput(searchParams: URLSearchParams): QueryInput {
 
 export async function loadRankingsWithDiagnostics(searchParams: URLSearchParams) {
   const input = parseInput(searchParams);
-  if (input.eventId === "SOR") {
+  if (input.eventId === "SOR" || input.eventId === "sor-kinch") {
     const result = await queryMysql(input);
     return { ...result, cacheOutcome: "bypass" as const, dataVersion: null };
   }

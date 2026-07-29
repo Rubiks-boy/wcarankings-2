@@ -49,8 +49,15 @@ const SUM_OF_RANKS_COLUMNS = [
   "required_coverage",
   "rank",
   "position",
+  "kinch_score",
+  "kinch_rank",
+  "kinch_position",
 ];
-const SUM_OF_RANKS_INDEXES = ["PRIMARY", "idx_person_sum_of_ranks_page"];
+const SUM_OF_RANKS_INDEXES = [
+  "PRIMARY",
+  "idx_person_sum_of_ranks_page",
+  "idx_person_kinch_page",
+];
 const SUM_OF_RANKS_VALUE_COLUMNS = [
   "metric_version",
   "event_set_version",
@@ -60,6 +67,7 @@ const SUM_OF_RANKS_VALUE_COLUMNS = [
   "person_id",
   "event_id",
   "event_rank",
+  "result_value",
 ];
 
 function databaseOptions(connectionString = process.env.DATABASE_URL) {

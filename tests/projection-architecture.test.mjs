@@ -4,7 +4,7 @@ import test from "node:test";
 
 const root = new URL("../", import.meta.url);
 
-test("keeps future grains registered while activating only Sum of Ranks", async () => {
+test("keeps future grains registered while activating person metrics", async () => {
   const [schema, facts, people, results, metricValues, metricScores, sumValues, sumScores, podiums, competitionEvents, competitions, cities, counts, importer] =
     await Promise.all([
       readFile(new URL("scripts/mysql-schema.mjs", root), "utf8"),
@@ -49,12 +49,17 @@ test("keeps future grains registered while activating only Sum of Ranks", async 
   assert.match(metricScores, /CREATE TABLE person_metric_counts AS/);
   assert.match(sumValues, /CREATE TABLE person_sum_of_ranks_event_values AS/);
   assert.match(sumValues, /result\.person_country_id/);
+  assert.match(sumValues, /result_value/);
   assert.match(sumValues, /PARTITION BY result_type, event_id, country_id/);
   assert.match(sumValues, /PARTITION BY result_type, event_id, continent_id/);
   assert.match(sumScores, /CREATE TABLE person_sum_of_ranks_scores AS/);
   assert.match(sumScores, /RANK\(\) OVER/);
   assert.match(sumScores, /ROW_NUMBER\(\) OVER/);
   assert.match(sumScores, /COUNT\(\*\) \+ 1 AS fallback_rank/);
+  assert.match(sumScores, /MIN\(result_value\) AS reference_result/);
+  assert.match(sumScores, /kinch_score/);
+  assert.match(sumScores, /kinch_position/);
+  assert.match(sumScores, /idx_person_kinch_page/);
   assert.match(sumScores, /fallback_score AS SIGNED\)[\s\S]*person\.score_adjustment AS score/);
   assert.match(sumScores, /ENGINE = MEMORY/);
   assert.doesNotMatch(sumScores, /CROSS JOIN/);
@@ -115,7 +120,8 @@ test("exposes bounded resource APIs without projection name scans", async () => 
   assert.match(results, /afterCompetitionId/);
   assert.match(rankings, /FROM person_sum_of_ranks_scores score/);
   assert.match(rankings, /input\.eventId === "SOR"/);
-  assert.match(rankings, /score\.position AS sub_rank/);
+  assert.match(rankings, /input\.eventId === "sor-kinch"/);
+  assert.match(rankings, /score\.\$\{positionColumn\} AS sub_rank/);
   assert.match(entities, /FROM competition_event_stats stats/);
   assert.match(entities, /FROM city_event_stats stats/);
   assert.match(search, /FROM persons person/);

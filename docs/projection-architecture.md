@@ -302,11 +302,13 @@ count
 
 ## Person metrics
 
-### Active Sum of Ranks projections
+### Active Sum of Ranks and Kinch projections
 
 `person_sum_of_ranks_event_values` has one row per metric version, event-set
 version, result type, scope, region, person, and event. It stores only the
-official event rank needed to explain a Sum of Ranks total.
+official event rank and personal result needed to explain Sum of Ranks and
+Kinch totals. Scope-specific Kinch reference results are calculated once per
+event during the score build rather than repeated on every event-value row.
 
 World values reuse the canonical person-event World ranks. Country and
 continent values are derived from `results.person_country_id`, which records
@@ -315,14 +317,21 @@ through the person's current country. This historical-region rule prevents
 country changes from corrupting regional totals; see issue #50.
 
 `person_sum_of_ranks_scores` has one row per metric version, event-set version,
-result type, scope, region, and person. It stores the total, coverage,
-required coverage, public competition `rank`, and deterministic internal
-`position`. Missing events contribute a fallback rank equal to the number of
-ranked competitors for that event and region plus one. A person enters the
+result type, scope, region, and person. It stores the Sum of Ranks total,
+coverage, required coverage, public competition `rank`, and deterministic
+internal `position`, plus nullable Kinch score/rank/position columns. Missing
+events contribute a fallback rank equal to the number of ranked competitors
+for that event and region plus one. A person enters the
 World cohort after recording a result in any included event, and enters a
 regional cohort after representing that historical region in any included
 event. Equal totals use competition ranking (`1, 1, 3`), while positions break
 ties by WCA ID for stable positional paging.
+
+Kinch excludes Multi-Blind and requires results in all 16 remaining events.
+Each event contributes `100 × scope reference result ÷ personal result`; the
+overall score is the sum of those percentages, with higher scores ranking
+first. Its separate positional index supports the same bounded paging API
+without duplicating the person-event value grain.
 
 Names and countries are joined only after selecting a score page. Counts use
 the score browse index rather than another persisted count grain.
@@ -339,6 +348,16 @@ Single page in 21 ms, a page around position 250,000 in 18 ms, and an exact
 WCA-ID search in 5 ms. These are single local observations rather than a
 capacity benchmark, but they confirm that incomplete coverage increases build
 and storage cost without changing the indexed read path.
+
+The targeted Kinch extension refresh on 2026-07-28 completed in 738.6 seconds
+and retained the same 5,699,074 event-value rows and 1,735,888 score rows.
+Adding `result_value` increased the event-value table from approximately 433
+MiB to 457 MiB. The score table remained approximately 201 MiB; its indexes
+increased from approximately 95 MiB to 179 MiB after adding the Kinch paging
+index. Local HTTP observations returned the first World Single Kinch page in
+21 ms, the final page in 7 ms, and a name search in 5 ms. The published
+projection contained 809 eligible World Single people and 165 eligible World
+Average people.
 
 ### Inactive general metric projections
 

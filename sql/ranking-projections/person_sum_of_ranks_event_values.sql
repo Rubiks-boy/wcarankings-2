@@ -35,6 +35,7 @@ WITH regional_bests AS (
     event_id,
     person_id,
     country_id AS region_id,
+    result_value,
     RANK() OVER (
       PARTITION BY result_type, event_id, country_id
       ORDER BY result_value
@@ -56,20 +57,31 @@ WITH regional_bests AS (
     event_id,
     person_id,
     continent_id AS region_id,
+    result_value,
     RANK() OVER (
       PARTITION BY result_type, event_id, continent_id
       ORDER BY result_value
     ) AS event_rank
   FROM continent_bests
 ), world_values AS (
-  SELECT 'single' AS result_type, event_id, person_id, world_rank AS event_rank
+  SELECT
+    'single' AS result_type,
+    event_id,
+    person_id,
+    best AS result_value,
+    world_rank AS event_rank
   FROM ranking_entries_single
   WHERE event_id IN ('333', '222', '444', '555', '666', '777', '333bf', '333fm', '333oh', 'clock', 'minx', 'pyram', 'skewb', 'sq1', '444bf', '555bf', '333mbf')
     AND world_rank > 0
 
   UNION ALL
 
-  SELECT 'average', event_id, person_id, world_rank
+  SELECT
+    'average',
+    event_id,
+    person_id,
+    best,
+    world_rank
   FROM ranking_entries_average
   WHERE event_id IN ('333', '222', '444', '555', '666', '777', '333bf', '333fm', '333oh', 'clock', 'minx', 'pyram', 'skewb', 'sq1', '444bf', '555bf')
     AND world_rank > 0
@@ -82,19 +94,22 @@ SELECT
   '' AS region_id,
   person_id,
   event_id,
-  event_rank
+  event_rank,
+  result_value
 FROM world_values
 
 UNION ALL
 
 SELECT
-  1, 1, result_type, 'continent', region_id, person_id, event_id, event_rank
+  1, 1, result_type, 'continent', region_id, person_id, event_id, event_rank,
+  result_value
 FROM continent_values
 
 UNION ALL
 
 SELECT
-  1, 1, result_type, 'country', region_id, person_id, event_id, event_rank
+  1, 1, result_type, 'country', region_id, person_id, event_id, event_rank,
+  result_value
 FROM country_values;
 
 ALTER TABLE person_sum_of_ranks_event_values

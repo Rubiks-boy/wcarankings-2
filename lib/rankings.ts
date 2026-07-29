@@ -73,7 +73,9 @@ function yearlyColumns(type: RankingType) {
 function yearlyFilters(input: QueryInput) {
   const values: unknown[] = [input.year, input.eventId, input.scope, input.regionId];
   return {
-    conditions: ["ranking.year = ?", "ranking.event_id = ?", "cohort.scope = ?", "cohort.region_id = ?"],
+    // Resolve the small cohort dimension before scanning rankings so MariaDB
+    // can use the year/event/cohort/position browse index directly.
+    conditions: ["ranking.year = ?", "ranking.event_id = ?", "ranking.cohort_id = (SELECT cohort_id FROM person_year_ranking_cohorts WHERE scope = ? AND region_id = ?)"],
     values,
   };
 }
@@ -83,7 +85,6 @@ async function queryNormalPage(input: QueryInput, metadata: RankingsMetadata) {
     const { conditions, values } = yearlyFilters(input);
     const result = await query<RankingRow>(`SELECT ${yearlyColumns(input.type)}
       FROM ${yearlyTable(input.type)} ranking
-      JOIN person_year_ranking_cohorts cohort ON cohort.cohort_id = ranking.cohort_id
       LEFT JOIN persons person ON person.wca_id = ranking.person_id AND person.sub_id = 1
       LEFT JOIN result_facts facts ON facts.result_id = ranking.result_id
       LEFT JOIN countries country ON country.id = facts.person_country_id
@@ -106,7 +107,7 @@ export async function queryMysql(input: QueryInput) {
   const source = yearly ? yearlyTable(input.type) : table(input.type);
   const selectColumns = yearly ? yearlyColumns(input.type) : columns(rank, subRank);
   const from = yearly
-    ? `FROM ${source} ranking JOIN person_year_ranking_cohorts cohort ON cohort.cohort_id = ranking.cohort_id LEFT JOIN persons person ON person.wca_id = ranking.person_id AND person.sub_id = 1 LEFT JOIN result_facts facts ON facts.result_id = ranking.result_id LEFT JOIN countries country ON country.id = facts.person_country_id LEFT JOIN competitions competition ON competition.id = facts.competition_id`
+    ? `FROM ${source} ranking LEFT JOIN persons person ON person.wca_id = ranking.person_id AND person.sub_id = 1 LEFT JOIN result_facts facts ON facts.result_id = ranking.result_id LEFT JOIN countries country ON country.id = facts.person_country_id LEFT JOIN competitions competition ON competition.id = facts.competition_id`
     : `FROM ${source}`;
   const predicate = yearly ? conditions.join(" AND ") : conditions.join(" AND ");
   const qualifiedSubRank = yearly ? `ranking.${subRank}` : subRank;

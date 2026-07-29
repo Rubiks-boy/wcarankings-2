@@ -73,7 +73,7 @@ export const PUBLISHED_PROJECTION_TABLES = [
 ];
 
 function projectionNames(sql, suffix) {
-  return [...SEMANTIC_PROJECTION_TABLES]
+  return [...SEMANTIC_PROJECTION_TABLES, ...COMPATIBILITY_PROJECTION_TABLES]
     .sort((left, right) => right.length - left.length)
     .reduce((renamed, table) => renamed.replaceAll(table, `${table}${suffix}`), sql);
 }

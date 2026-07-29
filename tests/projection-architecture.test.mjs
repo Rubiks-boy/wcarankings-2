@@ -30,6 +30,7 @@ test("keeps future grains registered while activating person metrics", async () 
   assert.match(schema, /durationMs/);
   assert.match(schema, /rowCounts/);
   assert.match(schema, /DEFAULT_PROJECTION_NAMES/);
+  assert.match(schema, /\.\.\.SEMANTIC_PROJECTION_TABLES, \.\.\.COMPATIBILITY_PROJECTION_TABLES/);
   assert.match(schema, /name: "sum-of-ranks"/);
   assert.match(schema, /enabledByDefault: true/);
   assert.match(importer, /promoteProjectionTables/);

@@ -108,6 +108,10 @@ select {
   z-index: 21;
 }
 
+.header:has(.profileButton[aria-expanded="true"]) {
+  z-index: 21;
+}
+
 .header > * {
   margin: 0;
 }

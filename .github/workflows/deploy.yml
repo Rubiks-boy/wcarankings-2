@@ -58,7 +58,7 @@ jobs:
         id: wca-export
         run: |
           export_value=$(ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
-            'cd /srv/wcarankings && docker compose exec -T db sh -c '"'"'mariadb --batch --skip-column-names --user="$MARIADB_USER" --password="$MARIADB_PASSWORD" "$MARIADB_DATABASE" --execute="SELECT value FROM export_metadata WHERE \`key\` = '"'"'export_date'"'"' LIMIT 1"'"'"'')
+            'cd /srv/wcarankings && docker compose exec -T db sh -c '"'"'mariadb --batch --skip-column-names --user="$MARIADB_USER" --password="$MARIADB_PASSWORD" "$MARIADB_DATABASE" --execute="SELECT value FROM export_metadata WHERE \`key\` = 0x6578706f72745f64617465 LIMIT 1"'"'"'')
           export_date=${export_value:0:10}
           if [ -z "$export_date" ] || [ "$export_date" = "null" ]; then
             echo "Production did not return a WCA export date." >&2

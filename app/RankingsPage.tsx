@@ -67,6 +67,9 @@ function getCanonicalSearchParams(
   else params.set("result", rankingType);
   if (regionId) params.set("region", regionId);
   else params.delete("region");
+  if (eventId === "sor-kinch" && regionId && getSearchParam(searchParams, "kinch") === "continent")
+    params.set("kinch", "continent");
+  else params.delete("kinch");
   if (gender.length) params.set("gender", gender.join(","));
   else params.delete("gender");
   const search = getSearchParam(searchParams, "search").trim();

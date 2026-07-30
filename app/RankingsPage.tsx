@@ -90,13 +90,16 @@ async function fetchRegions(kind: RegionKind): Promise<RegionRecord[]> {
 async function getInitialRankings(
   searchParams: Record<string, string | string[] | undefined>,
   focusedWcaId = "",
+  yearOverride: number | null = null,
 ) {
   const rawEventId = getSearchParamWithLegacyKey(searchParams, "eventId", "event");
   const rawRankingType = getSearchParamWithLegacyKey(searchParams, "result", "type");
   const eventId = isRankingEventId(rawEventId) ? rawEventId : "333";
   const rankingType = eventId === "333mbf" ? "single" : isRankingType(rawRankingType) ? rawRankingType : "single";
   const { scope, regionId } = parseRegionQuery(getSearchParam(searchParams, "region"));
-  const year = getSearchParam(searchParams, "year");
+  const year = yearOverride === null
+  ? getSearchParam(searchParams, "year")
+  : String(yearOverride);
   const yearParams = /^\d{4}$/.test(year) ? { year } : {};
   const search = getSearchParam(searchParams, "search").trim().slice(0, 80);
   const regexSearch = getSearchParam(searchParams, "mode") === "vim" && isValidRegexPattern(search);
@@ -351,7 +354,11 @@ export async function RankingsPage({
     redirect(query ? `${pathname}?${query}` : pathname);
   }
   const initialRankingsRequest = initialSubject === "people"
-    ? getInitialRankings(resolvedSearchParams, focusedWcaId)
+    ? getInitialRankings(
+      resolvedSearchParams,
+      focusedWcaId,
+      initialYear,
+    )
     : initialSubject === "results"
       ? getInitialResultRankings(
           resolvedSearchParams,

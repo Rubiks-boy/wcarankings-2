@@ -174,6 +174,22 @@ jobs:
             /tmp/yearly-projection-transfer.json
           key: projection-transfer-yearly-v1-${{ steps.wca-export.outputs.date }}-${{ hashFiles('sql/ranking-projections/person_year_*', 'scripts/mysql-schema.mjs', 'scripts/prepare-projection-transfer.mjs') }}
 
+      - name: Determine required projection transfer
+        id: projection-transfer
+        env:
+          CORE_PROJECTION_FINGERPRINT: projection-transfer-core-v1-${{ steps.wca-export.outputs.date }}-${{ hashFiles('sql/ranking-projections/**', 'scripts/mysql-schema.mjs', 'scripts/prepare-projection-transfer.mjs') }}
+          YEARLY_PROJECTION_FINGERPRINT: projection-transfer-yearly-v1-${{ steps.wca-export.outputs.date }}-${{ hashFiles('sql/ranking-projections/person_year_*', 'scripts/mysql-schema.mjs', 'scripts/prepare-projection-transfer.mjs') }}
+        run: |
+          remote_state=$(ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" 'cat /srv/wcarankings/projection-transfer-state.json 2>/dev/null || true')
+          core_required=true
+          yearly_required=true
+          if jq -e --arg fingerprint "$CORE_PROJECTION_FINGERPRINT" '.core == $fingerprint' <<<"$remote_state" >/dev/null 2>&1; then core_required=false; fi
+          if jq -e --arg fingerprint "$YEARLY_PROJECTION_FINGERPRINT" '.yearly == $fingerprint' <<<"$remote_state" >/dev/null 2>&1; then yearly_required=false; fi
+          if [ "$core_required" = false ] && [ "$yearly_required" = false ]; then required=false; else required=true; fi
+          echo "core_required=$core_required" >> "$GITHUB_OUTPUT"
+          echo "yearly_required=$yearly_required" >> "$GITHUB_OUTPUT"
+          echo "required=$required" >> "$GITHUB_OUTPUT"
+
       - name: Build and export projection generation
         if: steps.core-projection-cache.outputs.cache-hit != 'true' || steps.yearly-projection-cache.outputs.cache-hit != 'true'
         id: projection-build
@@ -232,6 +248,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload projection transfer artifact
+        if: steps.projection-transfer.outputs.required == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: projection-transfer-${{ github.sha }}
@@ -281,19 +298,32 @@ jobs:
             "docker tag wcarankings-app:${GITHUB_SHA} wcarankings-app:latest && docker tag wcarankings-flyway:${GITHUB_SHA} wcarankings-flyway:latest && cd /srv/wcarankings && docker compose run --rm flyway migrate"
 
       - name: Import and publish candidate ranking projections
+        if: steps.projection-transfer.outputs.required == 'true'
         id: projection-import
+        env:
+          CORE_PROJECTION_FINGERPRINT: projection-transfer-core-v1-${{ steps.wca-export.outputs.date }}-${{ hashFiles('sql/ranking-projections/**', 'scripts/mysql-schema.mjs', 'scripts/prepare-projection-transfer.mjs') }}
+          YEARLY_PROJECTION_FINGERPRINT: projection-transfer-yearly-v1-${{ steps.wca-export.outputs.date }}-${{ hashFiles('sql/ranking-projections/person_year_*', 'scripts/mysql-schema.mjs', 'scripts/prepare-projection-transfer.mjs') }}
         run: |
           started_at=$(date +%s)
-          for group in core yearly; do scp -q -o BatchMode=yes "/tmp/${group}-projection-transfer.sql.gz" "$SERVER_USER@$SERVER_IP:/tmp/wcarankings-${group}-projection-transfer.sql.gz"; done
+          groups=()
+          if [ '${{ steps.projection-transfer.outputs.core_required }}' = true ]; then groups+=(core); fi
+          if [ '${{ steps.projection-transfer.outputs.yearly_required }}' = true ]; then groups+=(yearly); fi
+          groups_csv=$(IFS=,; echo "${groups[*]}")
+          for group in "${groups[@]}"; do scp -q -o BatchMode=yes "/tmp/${group}-projection-transfer.sql.gz" "$SERVER_USER@$SERVER_IP:/tmp/wcarankings-${group}-projection-transfer.sql.gz"; done
           ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
-            'set -eu
+            "CORE_PROJECTION_FINGERPRINT='$CORE_PROJECTION_FINGERPRINT' YEARLY_PROJECTION_FINGERPRINT='$YEARLY_PROJECTION_FINGERPRINT' GROUPS='$groups_csv' sh -s" <<'REMOTE'
+            set -eu
             cd /srv/wcarankings
             (while sleep 30; do echo "Projection transfer import is still running…"; done) &
             heartbeat_pid=$!
-            trap "kill $heartbeat_pid 2>/dev/null || true; rm -f /tmp/wcarankings-core-projection-transfer.sql.gz /tmp/wcarankings-yearly-projection-transfer.sql.gz" EXIT
-            for group in core yearly; do gzip -dc "/tmp/wcarankings-${group}-projection-transfer.sql.gz" | docker compose exec -T db sh -c '"'"'mariadb --user="$MARIADB_USER" --password="$MARIADB_PASSWORD" "$MARIADB_DATABASE"'"'"'; done
-            docker compose run --rm app node /app/scripts/publish-projection-transfer.mjs --groups=core,yearly-person-rankings
-            docker compose run --rm app node /app/scripts/check-ranking-projections.mjs'
+            trap 'kill "$heartbeat_pid" 2>/dev/null || true; rm -f /tmp/wcarankings-core-projection-transfer.sql.gz /tmp/wcarankings-yearly-projection-transfer.sql.gz' EXIT
+            for group in $(printf '%s' "$GROUPS" | tr ',' ' '); do gzip -dc "/tmp/wcarankings-${group}-projection-transfer.sql.gz" | docker compose exec -T db sh -c 'mariadb --user="$MARIADB_USER" --password="$MARIADB_PASSWORD" "$MARIADB_DATABASE"'; done
+            publish_groups=$(printf '%s' "$GROUPS" | sed 's/yearly/yearly-person-rankings/g')
+            docker compose run --rm app node /app/scripts/publish-projection-transfer.mjs --groups="$publish_groups"
+            docker compose run --rm app node /app/scripts/check-ranking-projections.mjs
+            jq -n --arg core "$CORE_PROJECTION_FINGERPRINT" --arg yearly "$YEARLY_PROJECTION_FINGERPRINT" '{core: $core, yearly: $yearly}' > /srv/wcarankings/projection-transfer-state.json.tmp
+            mv /srv/wcarankings/projection-transfer-state.json.tmp /srv/wcarankings/projection-transfer-state.json
+          REMOTE
           completed_at=$(date +%s)
           duration=$((completed_at - started_at))
           echo "duration_seconds=$duration" >> "$GITHUB_OUTPUT"
@@ -301,6 +331,14 @@ jobs:
             echo "### Production transfer"
             echo "- Upload, import, validation, and publish: ${duration}s"
             echo "- End-to-end projection path: $((${{ steps.projection-build.outputs.duration_seconds || '0' }} + duration))s"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report unchanged projection transfer
+        if: steps.projection-transfer.outputs.required != 'true'
+        run: |
+          {
+            echo "### Production transfer"
+            echo "- Reused production projections; no ranking artifact was uploaded or imported"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Switch production services

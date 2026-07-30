@@ -57,7 +57,7 @@ test("keeps event and result-type changes on the current page", () => {
   assert.equal(pageStartForViewportSubRank(98), 51);
 });
 
-test("falls back to the first region page only when the current page is absent", () => {
+test("falls back to the first page only when a preserved page is absent", () => {
   assert.equal(shouldFallbackToFirstPage(51, 0), true);
   assert.equal(shouldFallbackToFirstPage(51, 1), false);
   assert.equal(shouldFallbackToFirstPage(1, 0), false);
@@ -107,10 +107,12 @@ test("renders the rankings shell with extracted components", () => {
           initialMatchPersonId: "",
         }}
         initialRegions={{ continents: [], countries: [] }}
+        rankingSource={{ kind: "saved", listId: "7K3M9Q2D", listName: "Pacific Northwest cubers" }}
       />
     </AppRouterContext.Provider>,
   );
   assert.match(markup, /WCA Rankings/);
   assert.match(markup, /Avery Chen/);
   assert.doesNotMatch(markup, /sub-rank/);
+  assert.doesNotMatch(markup, /Jump to top/);
 });

@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { RankingsExplorer } from "@/components/RankingsExplorer/RankingsExplorer";
 import type {
@@ -5,7 +6,7 @@ import type {
   RankingPage,
 } from "@/components/RankingsExplorer/types";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
-import { isEventId, isRankingEventId, isRankingType, isValidRegexPattern, normalizeGenderFilters, parseRegionQuery, WCA_EVENTS, type GenderFilter } from "@/lib/wca";
+import { isEventId, isRankingEventId, isRankingType, isValidRegexPattern, normalizeGenderFilters, parseRegionQuery, type GenderFilter, WCA_EVENTS } from "@/lib/wca";
 import { getRegions } from "@/lib/regions";
 import { loadRankings } from "@/lib/rankings";
 import { loadCompetitionRankings } from "@/lib/semantic-entity-rankings";
@@ -107,10 +108,8 @@ async function getInitialRankings(
   const rankingType = eventId === "333mbf" || eventId === "sor-kinch" ? "single" : isRankingType(rawRankingType) ? rawRankingType : "single";
   const { scope, regionId } = parseRegionQuery(getSearchParam(searchParams, "region"));
   const gender = getGenderFilters(searchParams);
-  const year = yearOverride === null
-  ? getSearchParam(searchParams, "year")
-  : String(yearOverride);
-  const yearParams = /^\d{4}$/.test(year) ? { year } : {};
+  const year = yearOverride === null ? getSearchParam(searchParams, "year") : String(yearOverride);
+  const yearParams: Record<string, string> = /^\d{4}$/.test(year) ? { year } : {};
   const search = getSearchParam(searchParams, "search").trim().slice(0, 80);
   const regexSearch = getSearchParam(searchParams, "mode") === "vim" && isValidRegexPattern(search);
   const searchResult = search
@@ -198,6 +197,7 @@ async function getInitialCompetitionRankings(
   competitionRanking: "best-result" | "podiums" | "competitor-count" | "latitude",
   latitudeHemisphere: "north" | "south",
   regionId: string,
+  gender: readonly GenderFilter[],
 ) {
   const loaded = await loadCompetitionRankings(new URLSearchParams({
     eventId,
@@ -240,35 +240,13 @@ async function getInitialResultRankings(
 ) {
   const search = getSearchParam(searchParams, "search").trim().slice(0, 80);
   const regexSearch = getSearchParam(searchParams, "mode") === "vim" && isValidRegexPattern(search);
-  const common = {
-    eventId,
-    result: rankingType,
-    ...(regionId ? { region: regionId } : {}),
-    ...(gender.length ? { gender: gender.join(",") } : {}),
-  };
-  const searched = search
-    ? await loadResultRankings(new URLSearchParams({
-        ...common,
-        search,
-        searchLimit: "500",
-        ...(regexSearch ? { mode: "vim" } : {}),
-      }))
-    : null;
-  const searchMatches = searched
-    ? (searched.data.entries as RankingEntry[])
-    : [];
+  const common = { eventId, result: rankingType, ...(regionId ? { region: regionId } : {}), ...(gender.length ? { gender: gender.join(",") } : {}) };
+  const searched = search ? await loadResultRankings(new URLSearchParams({ ...common, search, searchLimit: "500", ...(regexSearch ? { mode: "vim" } : {}) })) : null;
+  const searchMatches = searched ? searched.data.entries as RankingEntry[] : [];
   const firstMatch = searchMatches[0];
   const targetPageStart = pageFirstSubRank(firstMatch?.subRank ?? 1);
-  const pageStarts = firstMatch
-    ? [targetPageStart - PAGE_SIZE, targetPageStart, targetPageStart + PAGE_SIZE]
-        .filter((start) => start > 0)
-    : [1];
-  const pages = await Promise.all(pageStarts.map((startRank) =>
-    loadResultRankings(new URLSearchParams({
-      ...common,
-      start: String(startRank - 1),
-      limit: String(PAGE_SIZE),
-    }))));
+  const pageStarts = firstMatch ? [targetPageStart - PAGE_SIZE, targetPageStart, targetPageStart + PAGE_SIZE].filter((start) => start > 0) : [1];
+  const pages = await Promise.all(pageStarts.map((startRank) => loadResultRankings(new URLSearchParams({ ...common, start: String(startRank - 1), limit: String(PAGE_SIZE) }))));
   const pageData = pages.map((page) => page.data as RankingsResponse);
   const firstPage = pageData[0];
   const lastPage = pageData.at(-1) ?? firstPage;
@@ -327,12 +305,8 @@ export async function RankingsPage({
       ? "single"
       : isRankingType(rawRankingType) ? rawRankingType : "single";
   const { scope, regionId } = parseRegionQuery(getSearchParam(resolvedSearchParams, "region"));
-  const gender = (initialSubject === "people" || initialSubject === "results")
-    ? getGenderFilters(resolvedSearchParams)
-    : [];
-  const initialYear = initialYearOverride ?? (/^\d{4}$/.test(getSearchParam(resolvedSearchParams, "year"))
-    ? Number(getSearchParam(resolvedSearchParams, "year"))
-    : null);
+  const gender = (initialSubject === "people" || initialSubject === "results") ? getGenderFilters(resolvedSearchParams) : [];
+  const initialYear = initialYearOverride ?? (/^\d{4}$/.test(getSearchParam(resolvedSearchParams, "year")) ? Number(getSearchParam(resolvedSearchParams, "year")) : null);
   const requestedWcaId = getSearchParam(resolvedSearchParams, "wcaId")
     .trim()
     .toUpperCase();
@@ -345,9 +319,9 @@ export async function RankingsPage({
     resolvedSearchParams,
     eventId,
     rankingType,
-    initialAllEventRankingId,
-    gender,
     regionId,
+    gender,
+    initialAllEventRankingId,
   );
   if (initialSubject === "competitions" && initialCompetitionRanking === "podiums") {
     canonicalParams.delete("result");
@@ -380,13 +354,7 @@ export async function RankingsPage({
       initialYear,
     )
     : initialSubject === "results"
-      ? getInitialResultRankings(
-          resolvedSearchParams,
-          eventId as (typeof WCA_EVENTS)[number]["id"],
-          rankingType,
-          regionId,
-          gender,
-        )
+      ? getInitialResultRankings(resolvedSearchParams, eventId as (typeof WCA_EVENTS)[number]["id"], rankingType, regionId, gender)
     : initialSubject === "competitions"
       ? getInitialCompetitionRankings(
           eventId as (typeof WCA_EVENTS)[number]["id"],

@@ -1,17 +1,63 @@
+import { notFound } from "next/navigation";
 import { RankingsExplorer } from "@/components/RankingsExplorer/RankingsExplorer";
+import { getProjectionFeatureSwitch } from "@/lib/projection-feature-switch";
+import { getCurrentRankingsMetadata } from "@/lib/rankings-metadata";
 import { getRegions } from "@/lib/regions";
 
 export const dynamic = "force-dynamic";
 
-export async function RankingsPage() {
-  const [continents, countries] = await Promise.all([
+const LIVE_COMMIT_SHA =
+  process.env.APP_COMMIT_SHA ?? process.env.GITHUB_SHA ?? "development";
+
+export type RankingsSearchParams = Record<
+  string,
+  string | string[] | undefined
+>;
+
+function searchParam(
+  searchParams: RankingsSearchParams,
+  key: string,
+) {
+  const value = searchParams[key];
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+export async function RankingsPage({
+  searchParams,
+  requiresYearlyRankings = false,
+}: {
+  searchParams?: Promise<RankingsSearchParams>;
+  requiresYearlyRankings?: boolean;
+} = {}) {
+  const featureSwitch = await getProjectionFeatureSwitch();
+  const requestedEvent = searchParam(
+    searchParams ? await searchParams : {},
+    "eventId",
+  );
+  if (
+    !featureSwitch.core ||
+    (requiresYearlyRankings && !featureSwitch.yearlyPersonRankings) ||
+    (["SOR", "sor-kinch"].includes(requestedEvent) &&
+      !featureSwitch.sumOfRanks)
+  ) {
+    notFound();
+  }
+
+  const [continents, countries, rankingsMetadata] = await Promise.all([
     getRegions("continent"),
     getRegions("country"),
+    getCurrentRankingsMetadata(),
   ]);
 
   return (
     <RankingsExplorer
-      initial={{ regions: { continents, countries } }}
+      initial={{
+        regions: { continents, countries },
+        release: {
+          commitSha: LIVE_COMMIT_SHA,
+          lastResultIngestAt: rankingsMetadata.fetchedAt,
+        },
+      }}
       options={{ showSubjectSwitch: true, showAllEventRankingOptions: true }}
     />
   );

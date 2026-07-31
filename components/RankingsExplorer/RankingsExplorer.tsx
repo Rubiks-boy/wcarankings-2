@@ -1,7 +1,8 @@
 "use client";
 
-import { FALLBACK_CONTINENTS, FALLBACK_COUNTRIES } from "@/lib/wca";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
+import { FALLBACK_CONTINENTS, FALLBACK_COUNTRIES } from "@/lib/wca";
+import { RankingsExplorerContext } from "./RankingsExplorerContext";
 import { RankingsExplorerHeader } from "./RankingsExplorerHeader";
 import { RankingsNavigationFooter } from "./RankingsNavigationFooter";
 import { RankingsResults } from "./RankingsResults";
@@ -10,11 +11,8 @@ import {
   RankingsAppShell,
   VimNavigationOverlay,
 } from "./VimNavigation";
-import {
-  RankingsExplorerContext,
-} from "./RankingsExplorerContext";
-import { ListMemberManagementOverlays } from "./useListMemberManagement";
 import { useExplorerKeyboardShortcuts } from "./useExplorerKeyboardShortcuts";
+import { ListMemberManagementOverlays } from "./useListMemberManagement";
 import { useRankingBoundaryShortcuts } from "./useRankingBoundaryShortcuts";
 import { useRankingCommands } from "./useRankingCommands";
 import { useRankingDataRuntime } from "./useRankingDataRuntime";
@@ -23,6 +21,7 @@ import { useRankingsFilters } from "./useRankingsFilters";
 import { useVimNavigation } from "./useVimNavigation";
 import type {
   InitialRankingData,
+  RankingsExplorerConfig,
   RankingsExplorerOptions,
   RankingsListConfig,
   RankingsRegions,
@@ -33,6 +32,7 @@ type RankingsExplorerProps = {
   initial?: {
     data?: InitialRankingData;
     regions?: RankingsRegions;
+    release?: RankingsExplorerConfig["release"];
   };
   options?: Partial<RankingsExplorerOptions>;
   source?: RankingSource;
@@ -101,6 +101,7 @@ export function RankingsExplorer({
             regionSelectionDisabled:
               options?.regionSelectionDisabled ?? false,
           },
+          release: initial?.release,
         },
         filters: url.filters,
         data: {

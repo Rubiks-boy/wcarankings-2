@@ -92,16 +92,35 @@ test("keeps the rankings visual shell and PWA wiring", async () => {
     ]);
 
   assert.match(page, /<RankingsExplorer/);
-  assert.match(page, /initial=\{\{ regions: \{ continents, countries \} \}\}/);
+  assert.match(page, /regions: \{ continents, countries \}/);
+  assert.match(page, /lastResultIngestAt: rankingsMetadata\.fetchedAt/);
   assert.match(page, /showSubjectSwitch/);
   assert.match(page, /getRegions\("continent"\)/);
+  assert.match(page, /getProjectionFeatureSwitch/);
   assert.match(layout, /title:\s*"WCA Rankings"/);
   assert.match(layout, /PwaRegistration/);
+  assert.match(layout, /ProjectionFeatureSwitchProvider/);
   assert.match(manifest, /display: "standalone"/);
+  assert.match(manifest, /icon-192\.png/);
+  assert.match(manifest, /icon-512\.png/);
   assert.match(registration, /serviceWorker[\s\S]*\.register\(SERVICE_WORKER_URL/);
+  assert.match(registration, /updateViaCache: "none"/);
   assert.match(registration, /controllerchange/);
+  assert.match(registration, /SKIP_WAITING/);
+  assert.match(registration, /PwaUpdatePrompt/);
   assert.match(updatePrompt, /Update available/);
+  assert.match(registration, /import\.meta\.env\.PROD/);
+  assert.match(registration, /getRegistrations\(\)/);
+  assert.match(registration, /registration\.unregister\(\)/);
+  assert.match(worker, /CACHE_NAME/);
+  assert.match(worker, /cache\.match/);
+  assert.match(worker, /url\.pathname\.startsWith\("\/api\/"\)/);
   assert.match(worker, /event\.data\?\.type === "SKIP_WAITING"/);
+  assert.doesNotMatch(
+    worker,
+    /cache\.addAll\(APP_SHELL\)\)\.then\(\(\) => self\.skipWaiting/,
+  );
+  assert.match(packageJson, /"name": "wcarankings-2"/);
   assert.match(packageJson, /"@tanstack\/react-query"/);
   assert.match(packageJson, /"@tanstack\/react-virtual"/);
   assert.doesNotMatch(packageJson, /zustand|react-loading-skeleton/);

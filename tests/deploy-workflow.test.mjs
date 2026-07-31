@@ -15,6 +15,7 @@ const [
   planner,
   serverBuild,
   projectionBuild,
+  pullRequest,
   serverDeploy,
   projectionDeploy,
   approvedDataTools,
@@ -27,6 +28,7 @@ const [
   workflow("plan-projections.yml"),
   workflow("build-server.yml"),
   workflow("build-projections.yml"),
+  workflow("pull-request.yml"),
   workflow("deploy-server.yml"),
   workflow("deploy-projections.yml"),
   workflow("resolve-approved-data-tools.yml"),
@@ -37,6 +39,8 @@ const [
 
 test("composes the main release from independently callable workflow blocks", () => {
   assert.match(release, /group: production-mutation/);
+  assert.match(release, /group: production-mutation[\s\S]*cancel-in-progress: false/);
+  assert.doesNotMatch(release, /queue: max/);
   assert.match(release, /uses: \.\/\.github\/workflows\/plan-projections\.yml/);
   assert.match(release, /uses: \.\/\.github\/workflows\/build-server\.yml/);
   assert.match(release, /uses: \.\/\.github\/workflows\/build-projections\.yml/);
@@ -60,6 +64,8 @@ test("daily refresh reuses only the projection lego blocks", () => {
   assert.match(refresh, /schedule:/);
   assert.match(refresh, /cron: "17 5 \* \* \*"/);
   assert.match(refresh, /group: production-mutation/);
+  assert.match(refresh, /group: production-mutation[\s\S]*cancel-in-progress: false/);
+  assert.doesNotMatch(refresh, /queue: max/);
   assert.match(refresh, /plan-projections\.yml/);
   assert.match(refresh, /build-projections\.yml/);
   assert.match(refresh, /deploy-projections\.yml/);
@@ -93,6 +99,13 @@ test("builds one checksummed artifact containing only selected groups", () => {
   assert.match(projectionBuild, /artifact_run_id:/);
   assert.match(projectionBuild, /wca-export\.sql\.zip/);
   assert.match(projectionBuild, /docker compose down --volumes --remove-orphans/);
+  assert.match(projectionBuild, /CREATE TABLE IF NOT EXISTS result_attempts/);
+});
+
+test("keeps applied migrations immutable while preparing disposable validation databases", () => {
+  assert.match(pullRequest, /CREATE TABLE IF NOT EXISTS export_metadata/);
+  assert.match(pullRequest, /CREATE TABLE IF NOT EXISTS result_attempts/);
+  assert.match(pullRequest, /docker compose run --rm[\s\S]*flyway migrate/);
 });
 
 test("builds labeled PR projections and deploys the exact merged artifact", () => {
@@ -107,6 +120,19 @@ test("builds labeled PR projections and deploys the exact merged artifact", () =
   assert.match(prProjectionRelease, /artifact_id:/);
   assert.match(prProjectionRelease, /deploy-projections\.yml/);
   assert.match(prProjectionRelease, /production-mutation/);
+  assert.match(
+    prProjectionRelease,
+    /github\.event\.action == 'labeled'[\s\S]*github\.event\.label\.name == 'build-projections'[\s\S]*production-mutation/,
+  );
+  assert.match(prProjectionRelease, /format\('pr-projection-noop-\{0\}', github\.run_id\)/);
+  assert.match(prProjectionRelease, /cancel-in-progress: false/);
+  assert.doesNotMatch(prProjectionRelease, /queue: max/);
+  assert.match(projectionDeploy, /if \[ "\$WCA_EXPORT_VALUE" != "\$PRODUCTION_WCA_EXPORT_VALUE" \]; then/);
+  assert.doesNotMatch(
+    projectionDeploy,
+    /\.raw == null/,
+    "same-export releases may still carry a coherent PR raw export",
+  );
 });
 
 test("builds and verifies digest-addressed server images", () => {
@@ -120,7 +146,11 @@ test("builds and verifies digest-addressed server images", () => {
   assert.match(serverBuild, /data_tools_image:/);
   assert.match(serverBuild, /Dockerfile\.data-tools/);
   assert.match(serverBuild, /require_existing/);
-  assert.match(release, /require_existing: true/);
+  assert.match(
+    release,
+    /build_server:[\s\S]*uses: \.\/\.github\/workflows\/build-server\.yml[\s\S]*require_existing: false/,
+    "production releases may build missing verified images for the exact release commit",
+  );
   assert.match(serverBuild, /config_checksum:/);
 });
 
@@ -147,6 +177,26 @@ test("server deployment retries real endpoints and rolls back with diagnostics",
   assert.match(serverDeploy, /production-mutation\.lock/);
   assert.match(serverDeploy, /after_migrations_before_server_switch/);
   assert.match(serverDeploy, /after_server_switch_before_public_verification/);
+});
+
+test("runs app and result migrations in separate deployment lanes", async () => {
+  const [dockerfile, compose, dataToolsDockerfile] = await Promise.all([
+    readFile(new URL("../Dockerfile.flyway", import.meta.url), "utf8"),
+    readFile(new URL("../docker-compose.yml", import.meta.url), "utf8"),
+    readFile(new URL("../Dockerfile.data-tools", import.meta.url), "utf8"),
+  ]);
+  assert.match(dockerfile, /COPY migrations\/mysql\/app \/flyway\/migrations\/app/);
+  assert.match(dockerfile, /COPY migrations\/mysql\/results \/flyway\/migrations\/results/);
+  assert.match(dataToolsDockerfile, /COPY --chown=data-tools:data-tools migrations\/mysql \.\/migrations\/mysql/);
+  assert.match(compose, /FLYWAY_LOCATIONS: filesystem:\/flyway\/migrations\/app/);
+  assert.match(compose, /FLYWAY_TABLE: flyway_schema_history_app/);
+  assert.match(serverDeploy, /docker compose run --rm flyway migrate/);
+  assert.match(serverDeploy, /prepare-flyway-history\.mjs/);
+  assert.match(projectionBuild, /FLYWAY_LOCATIONS=filesystem:\/flyway\/migrations\/results/);
+  assert.match(projectionBuild, /FLYWAY_TABLE=flyway_schema_history_results/);
+  assert.match(projectionDeploy, /FLYWAY_LOCATIONS=filesystem:\/flyway\/migrations\/results/);
+  assert.match(projectionDeploy, /FLYWAY_TABLE=flyway_schema_history_results/);
+  assert.match(pullRequest, /FLYWAY_LOCATIONS=filesystem:\/flyway\/migrations\/results/);
 });
 
 test("projection deployment uses exact artifacts and atomically activates a coherent generation", () => {

@@ -5,10 +5,10 @@ import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVi
 import { RankingsPagerRail } from "../RankingsRail/RankingsRail";
 import { useRankingsExplorer } from "./RankingsExplorerContext";
 import { useHasScrolled } from "./useRailScrollProgress";
-import { formatRankingsFreshness } from "./types";
+import { formatFooterDate, formatRankingsFreshness } from "./types";
 
 function RankingsFooter({ standalone = false }: { standalone?: boolean }) {
-  const { data } = useRankingsExplorer();
+  const { config: { release }, data } = useRankingsExplorer();
   const { offlineStale, exportDate } = data.window.state;
 
   return (
@@ -17,7 +17,16 @@ function RankingsFooter({ standalone = false }: { standalone?: boolean }) {
       {offlineStale && (
         <span role="status">Offline cached rankings may be stale</span>
       )}
-      <span>{formatRankingsFreshness(exportDate)}</span>
+      <span>
+        {release
+          ? `${formatFooterDate(release.lastResultIngestAt ?? exportDate)} • ${
+              release.commitSha === "development" ||
+              release.commitSha === "unknown"
+                ? release.commitSha
+                : release.commitSha.slice(0, 7)
+            }`
+          : formatRankingsFreshness(exportDate)}
+      </span>
     </footer>
   );
 }

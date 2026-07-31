@@ -2,7 +2,9 @@ import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { AuthSessionRefresh } from "@/components/AuthSessionRefresh";
 import { GoogleAnalytics } from "@/components/GoogleAnalytics/GoogleAnalytics";
+import { ProjectionFeatureSwitchProvider } from "@/components/ProjectionFeatureSwitchProvider";
 import { PwaRegistration } from "@/components/PwaRegistration/PwaRegistration";
+import { getProjectionFeatureSwitch } from "@/lib/projection-feature-switch";
 import { AppProviders } from "./AppProviders";
 import "./globals.css";
 
@@ -19,7 +21,10 @@ const themeInitScript = `
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
+  const host =
+    requestHeaders.get("x-forwarded-host") ??
+    requestHeaders.get("host") ??
+    "localhost:3000";
   const metadataBase = new URL(
     `${requestHeaders.get("x-forwarded-proto") ??
       (host.startsWith("localhost") ? "http" : "https")}://${host}`,
@@ -28,14 +33,19 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     metadataBase,
     title: "WCA Rankings",
-    description: "Browse official World Cube Association rankings by event and result type.",
+    description:
+      "Browse official World Cube Association rankings by event and result type.",
     manifest: "/manifest.webmanifest",
     appleWebApp: {
       capable: true,
       title: "WCA Rankings",
       statusBarStyle: "default",
     },
-    icons: { icon: "/favicon.svg", shortcut: "/favicon.svg", apple: "/icon-192.png" },
+    icons: {
+      icon: "/favicon.svg",
+      shortcut: "/favicon.svg",
+      apple: "/icon-192.png",
+    },
     openGraph: {
       title: "WCA Rankings",
       description: "Browse official World Cube Association rankings.",
@@ -54,11 +64,13 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const featureSwitch = await getProjectionFeatureSwitch();
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -71,10 +83,12 @@ export default function RootLayout({
       </head>
       <body>
         <AppProviders>
-          <AuthSessionRefresh />
-          <GoogleAnalytics />
-          <PwaRegistration />
-          {children}
+          <ProjectionFeatureSwitchProvider featureSwitch={featureSwitch}>
+            <AuthSessionRefresh />
+            <GoogleAnalytics />
+            <PwaRegistration />
+            {children}
+          </ProjectionFeatureSwitchProvider>
         </AppProviders>
       </body>
     </html>

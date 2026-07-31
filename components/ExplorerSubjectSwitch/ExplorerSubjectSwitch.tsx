@@ -1,5 +1,6 @@
 "use client";
 
+import { useProjectionFeatureSwitch } from "@/components/ProjectionFeatureSwitchProvider";
 import { TextDropdown } from "../Dropdown/TextDropdown";
 
 export const EXPLORER_SUBJECTS = [
@@ -14,10 +15,6 @@ export const NAVIGATION_SUBJECTS = [
 
 export type ExplorerSubject = (typeof EXPLORER_SUBJECTS)[number]["id"];
 export type NavigationSubject = (typeof NAVIGATION_SUBJECTS)[number]["id"];
-const NAVIGATION_DROPDOWN_OPTIONS = NAVIGATION_SUBJECTS.map((option) => ({
-  value: option.id,
-  label: option.label,
-}));
 
 export function ExplorerSubjectSwitch({
   subject,
@@ -28,10 +25,19 @@ export function ExplorerSubjectSwitch({
   onChange: (subject: NavigationSubject) => void;
   variant?: "segmented" | "select" | "text" | "title";
 }) {
+  const featureSwitch = useProjectionFeatureSwitch();
+  const subjects = NAVIGATION_SUBJECTS.filter(
+    (option) => featureSwitch.core || option.id === "lists",
+  );
+  const dropdownOptions = subjects.map((option) => ({
+    value: option.id,
+    label: option.label,
+  }));
+
   if (variant === "title") {
     return (
       <TextDropdown
-        options={NAVIGATION_DROPDOWN_OPTIONS}
+        options={dropdownOptions}
         value={subject}
         onChange={(value) => onChange(value as NavigationSubject)}
         ariaLabel="Browse WCA data"
@@ -45,7 +51,7 @@ export function ExplorerSubjectSwitch({
   if (variant === "text") {
     return (
       <TextDropdown
-        options={NAVIGATION_DROPDOWN_OPTIONS}
+        options={dropdownOptions}
         value={subject}
         onChange={(value) => onChange(value as NavigationSubject)}
         ariaLabel="Browse"
@@ -60,9 +66,11 @@ export function ExplorerSubjectSwitch({
         <select
           value={subject}
           aria-label="Browse"
-          onChange={(event) => onChange(event.target.value as NavigationSubject)}
+          onChange={(event) =>
+            onChange(event.target.value as NavigationSubject)
+          }
         >
-          {NAVIGATION_SUBJECTS.map((option) => (
+          {subjects.map((option) => (
             <option key={option.id} value={option.id}>{option.label}</option>
           ))}
         </select>
@@ -72,7 +80,7 @@ export function ExplorerSubjectSwitch({
 
   return (
     <div className="ExplorerSubjectSwitch" role="tablist" aria-label="Browse">
-      {NAVIGATION_SUBJECTS.map((option) => (
+      {subjects.map((option) => (
         <button
           key={option.id}
           type="button"

@@ -6,6 +6,7 @@ import {
   useSyncExternalStore,
   type CSSProperties,
 } from "react";
+import { useProjectionFeatureSwitch } from "@/components/ProjectionFeatureSwitchProvider";
 import { WCA_EVENTS } from "@/lib/wca";
 import { ALL_EVENT_RANKING_OPTIONS } from "../EventPicker/allEventRankingOptions";
 import {
@@ -58,6 +59,7 @@ function buildRegionOptions(regions: RankingsRegions) {
 }
 
 export function RankingsTopRail() {
+  const featureSwitch = useProjectionFeatureSwitch();
   const {
     config: { source, list, regions: initialRegions, options },
     filters,
@@ -127,7 +129,8 @@ export function RankingsTopRail() {
             eventOptions: filters.competitionRanking === "podiums"
               ? PODIUM_EVENT_OPTIONS
               : WCA_EVENTS,
-            additionalEventOptions: options.showAllEventRankingOptions
+            additionalEventOptions:
+              options.showAllEventRankingOptions && featureSwitch.sumOfRanks
               ? ALL_EVENT_RANKING_OPTIONS
               : undefined,
             onEventChange: actions.changeEvent,

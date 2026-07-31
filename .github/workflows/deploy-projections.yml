@@ -152,8 +152,6 @@ jobs:
             --source-sha="$EXPECTED_SOURCE_SHA"
           if [ "$WCA_EXPORT_VALUE" != "$PRODUCTION_WCA_EXPORT_VALUE" ]; then
             jq -e '.raw != null' "$PROJECTION_ARTIFACT_DIR/projection-release.json" >/dev/null
-          else
-            jq -e '.raw == null' "$PROJECTION_ARTIFACT_DIR/projection-release.json" >/dev/null
           fi
           jq -e \
             --slurpfile compatibility release-compatibility.json \
@@ -250,6 +248,7 @@ jobs:
               echo "Another server-side production mutation holds the lock." >&2
               exit 1
             fi
+            docker compose run --rm data-tools /app/scripts/prepare-flyway-history.mjs
 
             candidate="wcarankings_candidate_${ARTIFACT_ID}"
             previous="${candidate}_previous"
@@ -302,6 +301,12 @@ jobs:
                 '
               docker compose run --rm \
                 -e FLYWAY_URL="jdbc:mariadb://db:3306/${candidate}" \
+                -e FLYWAY_TABLE=flyway_schema_history_app \
+                flyway migrate
+              docker compose run --rm \
+                -e FLYWAY_URL="jdbc:mariadb://db:3306/${candidate}" \
+                -e FLYWAY_LOCATIONS=filesystem:/flyway/migrations/results \
+                -e FLYWAY_TABLE=flyway_schema_history_results \
                 flyway migrate
               printf "initialized\n" > "$phase_file"
               phase=initialized

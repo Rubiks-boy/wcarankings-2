@@ -40,6 +40,7 @@ test("builds a result-level compatibility projection without unused secondary in
   assert.match(schema, /\(\?!\[A-Za-z0-9_\]\)/);
   assert.doesNotMatch(schema, /replaceAll\(table, `\$\{table\}\$\{suffix\}`\)/);
   assert.match(schema, /idx_results_single_event_best/);
+  assert.match(schema, /Skipping \$\{table\} index \$\{name\}; table is not present/);
   assert.match(importer, /result_entries_single_staging/);
   assert.match(importer, /result_counts_staging/);
   assert.match(importer, /published_result_count/);
@@ -55,4 +56,31 @@ test("builds a result-level compatibility projection without unused secondary in
   assert.match(fixture, /month TINYINT/);
   assert.match(fixture, /day TINYINT/);
   assert.match(fixture, /regional_single_record/);
+});
+
+test("normal rankings retain separate historical country and continent bests", async () => {
+  const [single, average, listRankings, fixture, resultAttemptsMigration] = await Promise.all([
+    readFile(new URL("sql/ranking-projections/ranking_entries_single_source.sql", root), "utf8"),
+    readFile(new URL("sql/ranking-projections/ranking_entries_average_source.sql", root), "utf8"),
+    readFile(new URL("lib/list-rankings.ts", root), "utf8"),
+    readFile(new URL("tests/fixtures/regional-ranking-history.sql", root), "utf8"),
+    readFile(new URL("migrations/mysql/V8__result_attempts_lookup.sql", root), "utf8"),
+  ]);
+  const sources = `${single}\n${average}`;
+
+  assert.match(fixture, /'CHANGE1', 'United States', '_North America', 549/);
+  assert.match(fixture, /'CHANGE1', 'New Zealand', '_Oceania', 600/);
+  assert.match(sources, /PARTITION BY r\.event_id, r\.person_id, COALESCE\(r\.person_country_id, ''\)/);
+  assert.match(sources, /PARTITION BY r\.event_id, r\.person_id, COALESCE\(country\.continent_id, ''\)/);
+  assert.match(sources, /WHERE country_person_position = 1/);
+  assert.match(sources, /WHERE continent_person_position = 1/);
+  assert.match(sources, /FROM results r/);
+  assert.match(sources, /FROM ranks_single r/);
+  assert.match(sources, /FROM ranks_average r/);
+  assert.match(sources, /UNION ALL/);
+  assert.match(sources, /regional_record = 'NR'/);
+  assert.match(listRankings, /let rankingColumn = "world_rank";[\s\S]*input\.region\.scope === "continent"/);
+  assert.match(listRankings, /`ranking\.\$\{rankingColumn\} > 0`/);
+  assert.match(resultAttemptsMigration, /information_schema\.tables/);
+  assert.match(resultAttemptsMigration, /PREPARE result_attempts_index_statement/);
 });

@@ -105,7 +105,7 @@ test("builds one checksummed artifact containing only selected groups", () => {
 test("keeps applied migrations immutable while preparing disposable validation databases", () => {
   assert.match(pullRequest, /CREATE TABLE IF NOT EXISTS export_metadata/);
   assert.match(pullRequest, /CREATE TABLE IF NOT EXISTS result_attempts/);
-  assert.match(pullRequest, /docker compose run --rm flyway migrate/);
+  assert.match(pullRequest, /docker compose run --rm[\s\S]*flyway migrate/);
 });
 
 test("builds labeled PR projections and deploys the exact merged artifact", () => {
@@ -177,6 +177,26 @@ test("server deployment retries real endpoints and rolls back with diagnostics",
   assert.match(serverDeploy, /production-mutation\.lock/);
   assert.match(serverDeploy, /after_migrations_before_server_switch/);
   assert.match(serverDeploy, /after_server_switch_before_public_verification/);
+});
+
+test("runs app and result migrations in separate deployment lanes", async () => {
+  const [dockerfile, compose, dataToolsDockerfile] = await Promise.all([
+    readFile(new URL("../Dockerfile.flyway", import.meta.url), "utf8"),
+    readFile(new URL("../docker-compose.yml", import.meta.url), "utf8"),
+    readFile(new URL("../Dockerfile.data-tools", import.meta.url), "utf8"),
+  ]);
+  assert.match(dockerfile, /COPY migrations\/mysql\/app \/flyway\/migrations\/app/);
+  assert.match(dockerfile, /COPY migrations\/mysql\/results \/flyway\/migrations\/results/);
+  assert.match(dataToolsDockerfile, /COPY --chown=data-tools:data-tools migrations\/mysql \.\/migrations\/mysql/);
+  assert.match(compose, /FLYWAY_LOCATIONS: filesystem:\/flyway\/migrations\/app/);
+  assert.match(compose, /FLYWAY_TABLE: flyway_schema_history_app/);
+  assert.match(serverDeploy, /docker compose run --rm flyway migrate/);
+  assert.match(serverDeploy, /prepare-flyway-history\.mjs/);
+  assert.match(projectionBuild, /FLYWAY_LOCATIONS=filesystem:\/flyway\/migrations\/results/);
+  assert.match(projectionBuild, /FLYWAY_TABLE=flyway_schema_history_results/);
+  assert.match(projectionDeploy, /FLYWAY_LOCATIONS=filesystem:\/flyway\/migrations\/results/);
+  assert.match(projectionDeploy, /FLYWAY_TABLE=flyway_schema_history_results/);
+  assert.match(pullRequest, /FLYWAY_LOCATIONS=filesystem:\/flyway\/migrations\/results/);
 });
 
 test("projection deployment uses exact artifacts and atomically activates a coherent generation", () => {

@@ -232,6 +232,49 @@ export const RETIRED_PROJECTION_TABLES = [
   "person_sum_of_ranks_event_values",
 ];
 
+export const COMPATIBILITY_PROJECTION_TASKS = [
+  { name: "compatibility-ranking-entries-single", dependencies: [], table: "ranking_entries_single", estimatedDurationMs: 120_000 },
+  { name: "compatibility-ranking-entries-average", dependencies: [], table: "ranking_entries_average", estimatedDurationMs: 120_000 },
+  { name: "compatibility-result-entries-single", dependencies: [], table: "result_entries_single", estimatedDurationMs: 150_000 },
+  {
+    name: "compatibility-ranking-counts",
+    dependencies: ["compatibility-ranking-entries-single", "compatibility-ranking-entries-average"],
+    table: "ranking_counts",
+    estimatedDurationMs: 15_000,
+  },
+  {
+    name: "compatibility-result-counts",
+    dependencies: ["compatibility-result-entries-single"],
+    table: "result_counts",
+    estimatedDurationMs: 15_000,
+  },
+];
+
+// Initial scheduling hints. The per-task logs provide the data to tune these
+// values as the projection workload evolves; they do not affect SQL semantics.
+const PROJECTION_DURATION_ESTIMATES_MS = {
+  "sum-of-ranks": 180_000,
+  "competition-podium-members": 30_000,
+  "competition-event-stats": 90_000,
+  "result-facts": 150_000,
+  "person-event-rankings": 90_000,
+  "person-year-rankings": 150_000,
+  "result-rankings": 150_000,
+  "result-ranking-counts": 15_000,
+  "person-ranking-counts": 15_000,
+  "person-metric-values": 90_000,
+  "person-metric-scores": 45_000,
+  "competition-stats": 30_000,
+  "city-event-stats": 90_000,
+  "entity-ranking-counts": 15_000,
+};
+
+const LONG_TASK_THRESHOLD_MS = 60_000;
+
+function projectionDurationEstimate(name) {
+  return PROJECTION_DURATION_ESTIMATES_MS[name] ?? 0;
+}
+
 function projectionNames(sql, suffix) {
   return [...SEMANTIC_PROJECTION_TABLES, ...COMPATIBILITY_PROJECTION_TABLES]
     .sort((left, right) => right.length - left.length)
@@ -342,8 +385,8 @@ async function buildProjection(connection, projection, projectionSuffix) {
   }
 }
 
-function projectionConcurrency(value) {
-  const parsed = Number(value ?? process.env.WCA_PROJECTION_BUILD_CONCURRENCY ?? 1);
+export function projectionConcurrency(value) {
+  const parsed = Number(value ?? process.env.WCA_PROJECTION_BUILD_CONCURRENCY ?? 2);
   return Number.isFinite(parsed) && parsed > 1 ? Math.floor(parsed) : 1;
 }
 
@@ -355,63 +398,169 @@ async function buildRegisteredProjectionsSerial(connection, projections, project
   return timings;
 }
 
-async function buildRegisteredProjectionsConcurrently(projections, { projectionSuffix, createConnection, concurrency }) {
-  const projectionByName = new Map(projections.map((projection) => [projection.name, projection]));
-  const pending = [...projections];
+export async function runDependencyAwareTasks(
+  tasks,
+  { connection, createConnection, concurrency = 1 } = {},
+) {
+  const taskByName = new Map(tasks.map((task) => [task.name, task]));
+  for (const task of tasks) {
+    for (const dependency of task.dependencies) {
+      if (dependency !== "raw-wca" && !taskByName.has(dependency)) {
+        throw new Error(`Unknown task dependency ${dependency} for ${task.name}`);
+      }
+    }
+  }
+
+  if (!createConnection || concurrency === 1 || tasks.length <= 1) {
+    const results = [];
+    const completed = new Set(["raw-wca"]);
+    for (const task of tasks) {
+      if (!task.dependencies.every((dependency) =>
+        dependency === "raw-wca" || completed.has(dependency))) {
+        throw new Error(`Task dependency cycle or missing dependency at ${task.name}`);
+      }
+      results.push(await task.run(connection));
+      completed.add(task.name);
+    }
+    return results;
+  }
+
+  const pending = [...tasks];
   const running = new Map();
   const completed = new Set(["raw-wca"]);
   const timings = new Map();
   let failure;
 
-  async function runProjection(projection) {
-    const connection = await createConnection();
+  async function runTask(task) {
+    let workerConnection;
     try {
-      return await buildProjection(connection, projection, projectionSuffix);
+      workerConnection = await createConnection();
+      return await task.run(workerConnection);
     } finally {
-      await connection.end();
+      if (workerConnection) await workerConnection.end();
     }
   }
 
-  function dependenciesComplete(projection) {
-    return projection.dependencies.every((dependency) =>
-      dependency === "raw-wca" || !projectionByName.has(dependency) || completed.has(dependency));
+  function dependenciesComplete(task) {
+    return task.dependencies.every((dependency) =>
+      dependency === "raw-wca" || completed.has(dependency));
   }
 
-  function startReadyProjections() {
-    for (let index = 0; index < pending.length && running.size < concurrency;) {
-      const projection = pending[index];
-      if (!dependenciesComplete(projection)) {
-        index += 1;
-        continue;
+  function isLongTask(task) {
+    return task.estimatedDurationMs >= LONG_TASK_THRESHOLD_MS;
+  }
+
+  function nextReadyTask() {
+    const ready = pending.filter(dependenciesComplete);
+    if (ready.length === 0) return undefined;
+    const longTaskRunning = [...running.values()].some(({ task }) => isLongTask(task));
+    const shortReady = ready.filter((task) => !isLongTask(task));
+    const candidates = longTaskRunning && shortReady.length > 0 ? shortReady : ready;
+    return candidates.reduce((selected, task) => {
+      if (!selected) return task;
+      if (longTaskRunning && shortReady.length > 0) {
+        return task.estimatedDurationMs < selected.estimatedDurationMs ? task : selected;
       }
-      pending.splice(index, 1);
-      running.set(
-        projection.name,
-        runProjection(projection)
-          .then((timing) => ({ projection, timing }))
-          .catch((error) => ({ projection, error })),
-      );
+      return task.estimatedDurationMs > selected.estimatedDurationMs ? task : selected;
+    }, undefined);
+  }
+
+  function startReadyTasks() {
+    while (running.size < concurrency) {
+      const task = nextReadyTask();
+      if (!task) break;
+      pending.splice(pending.indexOf(task), 1);
+      const promise = runTask(task)
+        .then((result) => ({ task, result }))
+        .catch((error) => ({ task, error }));
+      running.set(task.name, { task, promise });
     }
   }
 
   while ((pending.length > 0 || running.size > 0) && !failure) {
-    startReadyProjections();
+    startReadyTasks();
     if (running.size === 0) {
-      throw new Error(`Projection dependency cycle or missing dependency among: ${pending.map(({ name }) => name).join(", ")}`);
+      throw new Error(`Task dependency cycle or missing dependency among: ${pending.map(({ name }) => name).join(", ")}`);
     }
-    const result = await Promise.race(running.values());
-    running.delete(result.projection.name);
+    const result = await Promise.race([...running.values()].map(({ promise }) => promise));
+    running.delete(result.task.name);
     if (result.error) {
       failure = result.error;
       break;
     }
-    completed.add(result.projection.name);
-    timings.set(result.projection.name, result.timing);
+    completed.add(result.task.name);
+    timings.set(result.task.name, result.result);
   }
 
-  if (running.size > 0) await Promise.allSettled(running.values());
+  if (running.size > 0) {
+    await Promise.allSettled([...running.values()].map(({ promise }) => promise));
+  }
   if (failure) throw failure;
-  return projections.map(({ name }) => timings.get(name));
+  return tasks.map(({ name }) => timings.get(name));
+}
+
+async function buildRegisteredProjectionsConcurrently(projections, { projectionSuffix, createConnection, concurrency }) {
+  const tasks = projections.map((projection) => ({
+    name: projection.name,
+    dependencies: projection.dependencies,
+    estimatedDurationMs: projectionDurationEstimate(projection.name),
+    run: async (connection) => buildProjection(connection, projection, projectionSuffix),
+  }));
+  return runDependencyAwareTasks(tasks, { createConnection, concurrency });
+}
+
+/*
+ * Keep this helper separate from the scheduler so compatibility SQL remains
+ * easy to compare with the historical serial implementation.
+ */
+async function buildCompatibilityTable(connection, table, source, indexFile) {
+  await runTimedBuildStep(`table ${table}`, async () => {
+    await connection.query(`CREATE TABLE \`${table}\` AS SELECT * FROM \`${source}\``);
+    for (const statement of statements(await projectionSql(indexFile))) {
+      await connection.query(statement.replace(
+        /^ALTER TABLE (?:ranking_entries|result_entries_single)\b/,
+        `ALTER TABLE \`${table}\``,
+      ));
+    }
+  });
+}
+
+function compatibilityProjectionTasks({
+  entriesTables,
+  entriesSources,
+  countsTable,
+  resultEntriesTable,
+  resultCountsTable,
+  resultEntriesSource,
+}) {
+  const runners = {
+    "compatibility-ranking-entries-single": (connection) => buildCompatibilityTable(
+      connection, entriesTables.single, entriesSources.single, "ranking_entries_indexes.sql",
+    ),
+    "compatibility-ranking-entries-average": (connection) => buildCompatibilityTable(
+      connection, entriesTables.average, entriesSources.average, "ranking_entries_indexes.sql",
+    ),
+    "compatibility-result-entries-single": (connection) => buildCompatibilityTable(
+      connection, resultEntriesTable, resultEntriesSource, "result_entries_single_indexes.sql",
+    ),
+    "compatibility-ranking-counts": async (connection) => executeTableStatements(
+      connection,
+      (await projectionSql("ranking_counts.sql"))
+        .replaceAll("ranking_entries_single", entriesTables.single)
+        .replaceAll("ranking_entries_average", entriesTables.average)
+        .replaceAll("ranking_counts", countsTable),
+    ),
+    "compatibility-result-counts": async (connection) => executeTableStatements(
+      connection,
+      (await projectionSql("result_counts.sql"))
+        .replaceAll("result_entries_single", resultEntriesTable)
+        .replaceAll("result_counts", resultCountsTable),
+    ),
+  };
+  return COMPATIBILITY_PROJECTION_TASKS.map((task) => ({
+    ...task,
+    run: runners[task.name],
+  }));
 }
 
 export async function buildRegisteredProjections(
@@ -558,40 +707,29 @@ export async function refreshMysqlSchema(
     await connection.query(renamed);
   }
 
-  for (const type of ["single", "average"]) {
-    const entriesTable = entriesTables[type];
-    const entriesSource = entriesSources[type];
-    await runTimedBuildStep(`table ${entriesTable}`, async () => {
-      await connection.query(`CREATE TABLE \`${entriesTable}\` AS SELECT * FROM \`${entriesSource}\``);
-      for (const statement of statements(await projectionSql("ranking_entries_indexes.sql"))) {
-        await connection.query(statement.replace(/^ALTER TABLE ranking_entries\b/, `ALTER TABLE \`${entriesTable}\``));
-      }
-    });
-  }
-  await runTimedBuildStep(`table ${resultEntriesTable}`, async () => {
-    await connection.query(`CREATE TABLE \`${resultEntriesTable}\` AS SELECT * FROM \`${resultEntriesSource}\``);
-    for (const statement of statements(await projectionSql("result_entries_single_indexes.sql"))) {
-      await connection.query(statement.replace(/^ALTER TABLE result_entries_single\b/, `ALTER TABLE \`${resultEntriesTable}\``));
-    }
-  });
-  await executeTableStatements(
+  const maxConcurrency = projectionConcurrency(concurrency);
+  const semanticProjections = orderedProjections(selectedNames);
+  const semanticTasks = semanticProjections.map((projection) => ({
+    name: `projection:${projection.name}`,
+    dependencies: projection.dependencies.map((dependency) =>
+      dependency === "raw-wca" ? dependency : `projection:${dependency}`),
+    estimatedDurationMs: projectionDurationEstimate(projection.name),
+    run: (worker) => buildProjection(worker, projection, projectionSuffix),
+  }));
+  await runDependencyAwareTasks([
+    ...compatibilityProjectionTasks({
+      entriesTables,
+      entriesSources,
+      countsTable,
+      resultEntriesTable,
+      resultCountsTable,
+      resultEntriesSource,
+    }),
+    ...semanticTasks,
+  ], {
     connection,
-    (await projectionSql("ranking_counts.sql"))
-      .replaceAll("ranking_entries_single", entriesTables.single)
-      .replaceAll("ranking_entries_average", entriesTables.average)
-      .replaceAll("ranking_counts", countsTable),
-  );
-  await executeTableStatements(
-    connection,
-    (await projectionSql("result_counts.sql"))
-      .replaceAll("result_entries_single", resultEntriesTable)
-      .replaceAll("result_counts", resultCountsTable),
-  );
-  await buildRegisteredProjections(connection, {
-    projectionSuffix,
-    projectionNames: selectedNames,
     createConnection,
-    concurrency,
+    concurrency: maxConcurrency,
   });
 }
 

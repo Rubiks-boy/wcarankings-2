@@ -1,11 +1,7 @@
-import { RankingsPage, type SearchParams } from "@/app/RankingsPage";
+import { RankingsPage } from "@/app/RankingsPage";
 
 export const dynamic = "force-dynamic";
 
-export default function Home({
-  searchParams,
-}: {
-  searchParams: Promise<SearchParams>;
-}) {
-  return RankingsPage({ searchParams });
+export default function Home() {
+  return <RankingsPage />;
 }

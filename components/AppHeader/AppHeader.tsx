@@ -15,7 +15,7 @@ export function AppHeader({
   subject,
   onSubjectChange,
 }: {
-  children: ReactNode;
+  children?: ReactNode;
   className?: string;
   subject?: NavigationSubject;
   onSubjectChange?: (subject: NavigationSubject) => void;

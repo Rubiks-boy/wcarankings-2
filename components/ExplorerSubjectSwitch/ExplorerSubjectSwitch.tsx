@@ -14,6 +14,10 @@ export const NAVIGATION_SUBJECTS = [
 
 export type ExplorerSubject = (typeof EXPLORER_SUBJECTS)[number]["id"];
 export type NavigationSubject = (typeof NAVIGATION_SUBJECTS)[number]["id"];
+const NAVIGATION_DROPDOWN_OPTIONS = NAVIGATION_SUBJECTS.map((option) => ({
+  value: option.id,
+  label: option.label,
+}));
 
 export function ExplorerSubjectSwitch({
   subject,
@@ -27,7 +31,7 @@ export function ExplorerSubjectSwitch({
   if (variant === "title") {
     return (
       <TextDropdown
-        options={NAVIGATION_SUBJECTS.map((option) => ({ value: option.id, label: option.label }))}
+        options={NAVIGATION_DROPDOWN_OPTIONS}
         value={subject}
         onChange={(value) => onChange(value as NavigationSubject)}
         ariaLabel="Browse WCA data"
@@ -41,7 +45,7 @@ export function ExplorerSubjectSwitch({
   if (variant === "text") {
     return (
       <TextDropdown
-        options={NAVIGATION_SUBJECTS.map((option) => ({ value: option.id, label: option.label }))}
+        options={NAVIGATION_DROPDOWN_OPTIONS}
         value={subject}
         onChange={(value) => onChange(value as NavigationSubject)}
         ariaLabel="Browse"

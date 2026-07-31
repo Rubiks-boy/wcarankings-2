@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { AuthSessionRefresh } from "@/components/AuthSessionRefresh";
 import { GoogleAnalytics } from "@/components/GoogleAnalytics/GoogleAnalytics";
 import { PwaRegistration } from "@/components/PwaRegistration/PwaRegistration";
+import { AppProviders } from "./AppProviders";
 import "./globals.css";
 
 const themeInitScript = `
@@ -19,8 +20,10 @@ const themeInitScript = `
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
-  const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  const metadataBase = new URL(`${protocol}://${host}`);
+  const metadataBase = new URL(
+    `${requestHeaders.get("x-forwarded-proto") ??
+      (host.startsWith("localhost") ? "http" : "https")}://${host}`,
+  );
 
   return {
     metadataBase,
@@ -67,10 +70,12 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body>
-        <AuthSessionRefresh />
-        <GoogleAnalytics />
-        <PwaRegistration />
-        {children}
+        <AppProviders>
+          <AuthSessionRefresh />
+          <GoogleAnalytics />
+          <PwaRegistration />
+          {children}
+        </AppProviders>
       </body>
     </html>
   );

@@ -42,7 +42,7 @@ const entries: RankingEntry[] = [
 ];
 
 const meta = {
-  title: "Rankings/ResultsTable",
+  title: "Core UI/Molecules/ResultsTable",
   component: ResultsTable,
   parameters: { layout: "fullscreen" },
   args: {
@@ -53,11 +53,13 @@ const meta = {
     eventId: "333",
     rankingType: "single",
     loading: false,
+    showLoading: false,
     preserveListDuringLoad: false,
     hasMore: true,
     loadingMore: false,
     highlightedPersonId: "",
     measureElement: () => undefined,
+    onRowNavigate: () => undefined,
   },
 } satisfies Meta<typeof ResultsTable>;
 

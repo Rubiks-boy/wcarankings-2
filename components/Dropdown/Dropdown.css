@@ -1,0 +1,102 @@
+.Dropdown {
+  position: relative;
+}
+
+.Dropdown-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.5em);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.65em;
+  background: var(--surface);
+  box-shadow: 0 4px 16px var(--shadow);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.97);
+  transform-origin: top left;
+  transition: opacity 150ms var(--cubic-exit), transform 150ms var(--cubic-exit), visibility 0s linear 150ms;
+}
+
+.Dropdown-menu[data-open="true"] {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+  transition: opacity 150ms var(--cubic-enter), transform 150ms var(--cubic-enter), visibility 0s;
+}
+
+.Dropdown-menu [role="option"] {
+  border-radius: 0;
+}
+
+.TextDropdown-trigger {
+  display: inline-flex;
+  min-width: 40px;
+  min-height: 40px;
+  align-items: center;
+  padding: 0.45rem 0.45rem 0.45rem 0.35rem;
+  border: 0;
+  border-radius: 0.45rem;
+  gap: 0.45rem;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+.TextDropdown-trigger svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.TextDropdown-trigger:hover,
+.TextDropdown-trigger[aria-expanded="true"] {
+  background: var(--surface-hover);
+  color: var(--text-strong);
+}
+
+.TextDropdown-trigger:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.TextDropdown-options {
+  left: 0;
+  display: grid;
+  min-width: 11rem;
+  padding: 0.3rem;
+}
+
+.personYearDropdown .TextDropdown-options {
+  max-height: min(28em, 70vh);
+  overflow-y: auto;
+}
+
+.TextDropdown-options button {
+  min-height: 40px;
+  padding: 0.5rem 0.65rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-strong);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.TextDropdown-options button:hover {
+  background: var(--surface-hover);
+}
+
+.TextDropdown-options button.isSelected {
+  background: var(--surface-selected);
+}
+
+.TextDropdown-options button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}

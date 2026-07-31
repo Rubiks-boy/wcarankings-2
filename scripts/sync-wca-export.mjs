@@ -5,17 +5,23 @@ import { basename, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import mysql from "mysql2/promise";
 import * as unzipper from "unzipper";
-import { dropManagedObject, refreshMysqlSchema } from "./mysql-schema.mjs";
+import { dropManagedObject, promoteProjectionTables, refreshMysqlSchema } from "./mysql-schema.mjs";
 
 const EXPORT_API = "https://www.worldcubeassociation.org/api/v0/export/public";
 const force = process.argv.includes("--force");
 const dryRun = process.argv.includes("--dry-run");
+const rawOnly = process.argv.includes("--raw-only");
 
 function argumentValue(name) {
   const prefix = `--${name}=`;
   const argument = process.argv.find((value) => value.startsWith(prefix));
   return argument ? argument.slice(prefix.length) : "";
 }
+
+const selectedProjectionNames = argumentValue("projection-names")
+  .split(",")
+  .map((name) => name.trim())
+  .filter(Boolean);
 
 function databaseOptions(connectionString = process.env.DATABASE_URL) {
   if (!connectionString) throw new Error("DATABASE_URL is required");
@@ -25,7 +31,8 @@ function databaseOptions(connectionString = process.env.DATABASE_URL) {
     port: Number(url.port || 3306),
     user: decodeURIComponent(url.username),
     password: decodeURIComponent(url.password),
-    database: decodeURIComponent(url.pathname.replace(/^\//, "")),
+    database: process.env.DATABASE_NAME_OVERRIDE
+      || decodeURIComponent(url.pathname.replace(/^\//, "")),
   };
 }
 
@@ -117,6 +124,7 @@ async function dropRankingViews() {
       "ranking_entries_source",
       "ranking_entries_single_source",
       "ranking_entries_average_source",
+      "result_entries_single_source",
       "wca_best_single",
       "wca_best_average",
     ]) {
@@ -179,6 +187,7 @@ async function collectImportCounts() {
         (SELECT COUNT(*) FROM results) AS results,
         (SELECT COUNT(*) FROM ranking_entries_single_staging) +
           (SELECT COUNT(*) FROM ranking_entries_average_staging) AS rankings,
+        (SELECT COUNT(*) FROM result_entries_single_staging) AS result_entries,
         (SELECT COUNT(*) FROM (
           SELECT event_id FROM ranking_entries_single_staging
           UNION
@@ -189,15 +198,18 @@ async function collectImportCounts() {
           UNION
           SELECT country_id FROM ranking_entries_average_staging WHERE country_id <> ''
         ) AS ranking_regions) AS regions,
-        (SELECT COUNT(*) FROM ranking_counts_staging) AS aggregates
+        (SELECT COUNT(*) FROM ranking_counts_staging) AS aggregates,
+        (SELECT COUNT(*) FROM result_counts_staging) AS result_aggregates
     `);
     return {
       source_person_count: Number(coverage[0]?.people ?? 0),
       source_result_count: Number(coverage[0]?.results ?? 0),
       published_ranking_count: Number(coverage[0]?.rankings ?? 0),
+      published_result_count: Number(coverage[0]?.result_entries ?? 0),
       event_count: Number(coverage[0]?.events ?? 0),
       region_count: Number(coverage[0]?.regions ?? 0),
       aggregate_count: Number(coverage[0]?.aggregates ?? 0),
+      result_aggregate_count: Number(coverage[0]?.result_aggregates ?? 0),
     };
   } finally {
     await connection.end();
@@ -215,22 +227,13 @@ async function tableExists(connection, name) {
 async function promoteRankings() {
   const connection = await mysql.createConnection(databaseOptions());
   try {
-    const hasPublished = await tableExists(connection, "ranking_entries_single");
     const hasLegacyProjection = await tableExists(connection, "ranking_entries");
-    await connection.beginTransaction();
-    if (hasPublished) {
-      await connection.query("RENAME TABLE ranking_entries_single TO ranking_entries_single_previous, ranking_entries_single_staging TO ranking_entries_single, ranking_entries_average TO ranking_entries_average_previous, ranking_entries_average_staging TO ranking_entries_average, ranking_counts TO ranking_counts_previous, ranking_counts_staging TO ranking_counts");
-      await connection.query("DROP TABLE ranking_entries_single_previous, ranking_entries_average_previous, ranking_counts_previous");
-    } else if (hasLegacyProjection) {
-      await connection.query("RENAME TABLE ranking_entries TO ranking_entries_legacy_previous, ranking_counts TO ranking_counts_legacy_previous, ranking_entries_single_staging TO ranking_entries_single, ranking_entries_average_staging TO ranking_entries_average, ranking_counts_staging TO ranking_counts");
-      await connection.query("DROP TABLE ranking_entries_legacy_previous, ranking_counts_legacy_previous");
-    } else {
-      await connection.query("RENAME TABLE ranking_entries_single_staging TO ranking_entries_single, ranking_entries_average_staging TO ranking_entries_average, ranking_counts_staging TO ranking_counts");
+    if (hasLegacyProjection) {
+      await dropManagedObject(connection, "ranking_entries_legacy_previous");
+      await connection.query("RENAME TABLE ranking_entries TO ranking_entries_legacy_previous");
     }
-    await connection.commit();
-  } catch (error) {
-    await connection.rollback();
-    throw error;
+    await promoteProjectionTables(connection);
+    await dropManagedObject(connection, "ranking_entries_legacy_previous");
   } finally {
     await connection.end();
   }
@@ -289,13 +292,18 @@ async function writeExportMetadata(latest) {
 async function refreshRankingsSchema() {
   const connection = await mysql.createConnection(databaseOptions());
   try {
-    await refreshMysqlSchema(connection, { projectionSuffix: "_staging" });
+    await refreshMysqlSchema(connection, {
+      projectionSuffix: "_staging",
+      projectionNames: selectedProjectionNames.length > 0 ? selectedProjectionNames : undefined,
+      createConnection: () => mysql.createConnection(databaseOptions()),
+    });
   } finally {
     await connection.end();
   }
 }
 
 async function main() {
+  if (dryRun && rawOnly) throw new Error("--dry-run and --raw-only cannot be used together.");
   const suppliedPath = argumentValue("sql-path") || process.env.WCA_SQL_EXPORT_PATH;
   let latest;
   if (suppliedPath) {
@@ -305,14 +313,15 @@ async function main() {
     latest = cachedPath ? await getSuppliedExportMetadata(cachedPath) : await getLatestExport();
   }
   process.stdout.write(`Latest WCA export: ${latest.exportDate} (v${String(latest.version).replace(/^v/i, "")})\n`);
-  if (!force && await getImportedDate() === String(latest.exportDate)) {
-    process.stdout.write("Database is already current. Nothing to do.\n");
-    return;
-  }
 
   if (dryRun) {
     await getCachedExport(latest);
     process.stdout.write("Dry run complete. The cached SQL export is available for import.\n");
+    return;
+  }
+
+  if (!force && await getImportedDate() === String(latest.exportDate)) {
+    process.stdout.write("Database is already current. Nothing to do.\n");
     return;
   }
 
@@ -324,12 +333,34 @@ async function main() {
     await dropRankingViews();
     process.stdout.write("Importing WCA SQL tables into MariaDB…\n");
     await importSqlExport(zipPath);
-    await updateImportRun(runId, { fetched_at: now(), projection_swap_status: "building" });
+    if (rawOnly) {
+      const completedAt = now();
+      await writeExportMetadata(latest);
+      await updateImportRun(runId, {
+        status: "succeeded",
+        projection_swap_status: "not_applicable",
+        completed_at: completedAt,
+        duration_ms: elapsedMilliseconds(startedAt, completedAt),
+      });
+      process.stdout.write(`WCA raw tables are current through ${latest.exportDate}; projection publication skipped by --raw-only.\n`);
+      return;
+    }
+    const projectionBuildStartedAt = now();
+    await updateImportRun(runId, {
+      fetched_at: projectionBuildStartedAt,
+      projection_build_started_at: projectionBuildStartedAt,
+      projection_swap_status: "building",
+    });
     process.stdout.write("Refreshing staging ranking projections…\n");
     await refreshRankingsSchema();
     const counts = await collectImportCounts();
-    await updateImportRun(runId, counts);
-    await updateImportRun(runId, { projection_swap_status: "swapping" });
+    const projectionBuiltAt = now();
+    await updateImportRun(runId, {
+      ...counts,
+      projection_built_at: projectionBuiltAt,
+      projection_build_duration_ms: elapsedMilliseconds(projectionBuildStartedAt, projectionBuiltAt),
+      projection_swap_status: "swapping",
+    });
     await promoteRankings();
     const completedAt = now();
     await writeExportMetadata(latest);

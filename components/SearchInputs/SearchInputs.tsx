@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type KeyboardEvent, type Ref } from "react";
+import { useEffect, useRef, type KeyboardEvent, type Ref } from "react";
 import CloseIcon from "../Icon/close.svg?react";
 import SearchIcon from "../Icon/search.svg?react";
 import {
@@ -25,7 +25,7 @@ export function SearchInputs({
   onCycle,
 }: {
   barRef?: Ref<HTMLDivElement>;
-  inputRef?: Ref<HTMLInputElement>;
+  inputRef?: (input: HTMLInputElement | null) => void;
   findOpen: boolean;
   findQuery: string;
   findError: string;
@@ -41,11 +41,10 @@ export function SearchInputs({
 }) {
   const localInputRef = useRef<HTMLInputElement>(null);
 
-  const setInputRef = (input: HTMLInputElement | null) => {
-    localInputRef.current = input;
-    if (typeof inputRef === "function") inputRef(input);
-    else if (inputRef) inputRef.current = input;
-  };
+  useEffect(() => {
+    inputRef?.(localInputRef.current);
+    return () => inputRef?.(null);
+  }, [inputRef]);
 
   const openSearch = () => {
     onOpen();
@@ -63,9 +62,9 @@ export function SearchInputs({
       onClose();
     }
   };
+  const searching = findLoading || findPending;
   let status = "";
   if (findError) status = findError;
-  else if (findLoading || findPending) status = "Searching…";
   else if (findQuery.trim()) {
     status = findMatches.length
       ? `${findIndex + 1} of ${findMatches.length}`
@@ -92,7 +91,7 @@ export function SearchInputs({
         <SearchIcon />
       </button>
       <input
-        ref={setInputRef}
+        ref={localInputRef}
         className="findInput"
         type="text"
         value={findQuery}
@@ -105,7 +104,11 @@ export function SearchInputs({
         className={`findStatus${findError ? " isError" : ""}`}
         aria-live="polite"
       >
-        {status}
+        {searching ? (
+          <span className="searchSpinner" aria-label="Searching" />
+        ) : (
+          status
+        )}
       </span>
       <button
         className="findClose"

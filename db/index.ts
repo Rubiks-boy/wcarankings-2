@@ -1,12 +1,41 @@
 import { createRequire } from "node:module";
-import type { Pool } from "mysql2/promise";
+import type { Pool, PoolConnection } from "mysql2/promise";
 
 const require = createRequire(import.meta.url);
 const { createPool } = require("mysql2/promise") as typeof import("mysql2/promise");
 
 const globalForDb = globalThis as typeof globalThis & {
   __cubeRanksPool?: Pool;
+  __cubeRanksQueue?: DatabaseQueue;
 };
+
+function positiveNumber(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export class DatabaseOverloadedError extends Error {
+  constructor() {
+    super("The database queue is full.");
+    this.name = "DatabaseOverloadedError";
+  }
+}
+
+class DatabaseQueue {
+  private active = 0;
+  private readonly limit = Math.floor(positiveNumber(process.env.DATABASE_QUEUE_LIMIT, 20));
+
+  async acquire() {
+    if (this.active >= this.limit) throw new DatabaseOverloadedError();
+    this.active += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.active -= 1;
+    };
+  }
+}
 
 function getDatabaseOptions() {
   const connectionString = process.env.DATABASE_URL;
@@ -20,9 +49,10 @@ function getDatabaseOptions() {
     password: decodeURIComponent(url.password),
     database: decodeURIComponent(url.pathname.replace(/^\//, "")),
     waitForConnections: true,
-    connectionLimit: Number(process.env.DATABASE_POOL_MAX ?? 5),
+    connectionLimit: Math.floor(positiveNumber(process.env.DATABASE_POOL_MAX, 5)),
     idleTimeout: 30_000,
     enableKeepAlive: true,
+    dateStrings: true,
   } as const;
 }
 
@@ -32,7 +62,50 @@ export function getPool() {
   return globalForDb.__cubeRanksPool;
 }
 
-export async function query<T extends Record<string, unknown>>(text: string, values: unknown[] = []) {
-  const [rows] = await getPool().query(text, values) as [T[], unknown];
-  return { rows, rowCount: rows.length };
+function getQueue() {
+  if (!globalForDb.__cubeRanksQueue) globalForDb.__cubeRanksQueue = new DatabaseQueue();
+  return globalForDb.__cubeRanksQueue;
+}
+
+export async function query<T extends Record<string, unknown>>(
+  text: string,
+  values: unknown[] = [],
+  { rankingStatementTimeout = false }: { rankingStatementTimeout?: boolean } = {},
+) {
+  const releaseQueue = await getQueue().acquire();
+  const queuedAt = performance.now();
+  let connection: Awaited<ReturnType<Pool["getConnection"]>> | undefined;
+  try {
+    connection = await getPool().getConnection();
+    const queueMs = performance.now() - queuedAt;
+    const statementAt = performance.now();
+    const statement = rankingStatementTimeout
+      ? `SET STATEMENT max_statement_time = ${positiveNumber(process.env.RANKINGS_STATEMENT_TIMEOUT_MS, 2000) / 1000} FOR ${text}`
+      : text;
+    const [rows] = await connection.query(statement, values) as [T[], unknown];
+    return { rows, rowCount: rows.length, timings: { queueMs, statementMs: performance.now() - statementAt } };
+  } finally {
+    connection?.release();
+    releaseQueue();
+  }
+}
+
+export async function withTransaction<T>(
+  callback: (connection: PoolConnection) => Promise<T>,
+) {
+  const releaseQueue = await getQueue().acquire();
+  let connection: PoolConnection | undefined;
+  try {
+    connection = await getPool().getConnection();
+    await connection.beginTransaction();
+    const result = await callback(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection?.rollback();
+    throw error;
+  } finally {
+    connection?.release();
+    releaseQueue();
+  }
 }

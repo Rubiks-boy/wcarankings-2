@@ -1,0 +1,62 @@
+.ExplorerSubjectSwitch {
+  display: inline-flex;
+  min-width: 0;
+  padding: 3px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.8rem;
+  background: var(--surface-muted);
+}
+
+.ExplorerSubjectSwitch button {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0.5rem 0.8rem;
+  border: 0;
+  border-radius: 0.6rem;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  transition: background-color 150ms var(--cubic-move), color 150ms var(--cubic-move);
+}
+
+.ExplorerSubjectSwitch button:hover {
+  color: var(--text-strong);
+}
+
+.ExplorerSubjectSwitch button.isSelected {
+  background: var(--surface);
+  color: var(--text-strong);
+}
+
+.ExplorerSubjectSwitch button:focus-visible,
+.ExplorerSubjectSelect select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.ExplorerSubjectSelect select {
+  min-width: 10rem;
+  min-height: 44px;
+  padding: 0.5rem 2.25rem 0.5rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  background: var(--surface);
+  color: var(--text-strong);
+  cursor: pointer;
+  font: inherit;
+}
+
+@media (max-width: 460px) {
+  .ExplorerSubjectSwitch {
+    display: flex;
+    width: 100%;
+  }
+
+  .ExplorerSubjectSwitch button {
+    flex: 1 1 0;
+    padding-inline: 0.4rem;
+    font-size: 0.82rem;
+  }
+}

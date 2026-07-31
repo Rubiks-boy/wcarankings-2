@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 concurrency:
   group: pull-request-${{ github.event.pull_request.number || github.ref }}
@@ -33,14 +34,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate Flyway migrations
-        run: |
-          docker compose up -d db
-          docker compose build flyway
-          docker compose run --rm flyway migrate
-          docker compose run --rm flyway info
-          docker compose run --rm flyway validate
-
       - name: Lint
         run: npm run lint
 
@@ -50,22 +43,154 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Calculate source tree tag
+        id: source-tree
+        run: echo "sha=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
+
+      - name: Build Flyway image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.flyway
+          load: true
+          push: false
+          tags: |
+            wcarankings-flyway:pull-request
+            ghcr.io/${{ github.repository_owner }}/wcarankings-flyway:tree-${{ steps.source-tree.outputs.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+            org.opencontainers.image.version=tree-${{ steps.source-tree.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Validate Flyway image and migrations
+        run: |
+          docker run --rm --entrypoint sh wcarankings-flyway:pull-request -c \
+            'test -f /flyway/migrations/V1__export_metadata.sql && test -f /flyway/migrations/V2__import_health.sql && test -f /flyway/migrations/V3__projection_build_timing.sql && test -f /flyway/migrations/V4__result_projection_health.sql'
+          docker tag wcarankings-flyway:pull-request wcarankings-flyway:latest
+          docker compose up -d db
+          docker compose run --rm flyway migrate
+          docker compose run --rm flyway info
+          docker compose run --rm flyway validate
+
       - name: Build production Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           load: true
-          tags: wcarankings-app:pull-request
+          push: false
+          tags: |
+            wcarankings-app:pull-request
+            ghcr.io/${{ github.repository_owner }}/wcarankings-app:tree-${{ steps.source-tree.outputs.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+            org.opencontainers.image.version=tree-${{ steps.source-tree.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Build data-tools Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.data-tools
+          load: true
+          push: false
+          tags: |
+            wcarankings-data-tools:pull-request
+            ghcr.io/${{ github.repository_owner }}/wcarankings-data-tools:tree-${{ steps.source-tree.outputs.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+            org.opencontainers.image.version=tree-${{ steps.source-tree.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify data-tools image
+        run: |
+          docker run --rm --entrypoint sh wcarankings-data-tools:pull-request -c \
+            'test -f /app/release-compatibility.json && test -f /app/scripts/activate-ranking-generation.mjs && test -f /app/scripts/sync-wca-export.mjs'
 
       - name: Verify production image contents
         run: |
           docker run --rm --entrypoint sh wcarankings-app:pull-request -c \
-            'test -f /app/docker-entrypoint.sh && test -f /app/scripts/sync-wca-export.mjs && test -f /app/scripts/refresh-rankings.mjs'
+            'test -f /app/docker-entrypoint.sh && test -f /app/release-compatibility.json && test ! -d /app/sql && test ! -f /app/scripts/sync-wca-export.mjs'
 
-      - name: Build and verify Flyway image
+      - name: Seed visual smoke-test database
         run: |
-          docker build --file Dockerfile.flyway --tag wcarankings-flyway:pull-request .
-          docker run --rm --entrypoint sh wcarankings-flyway:pull-request -c \
-            'test -f /flyway/migrations/V1__export_metadata.sql && test -f /flyway/migrations/V2__import_health.sql'
+          docker tag wcarankings-app:pull-request wcarankings-app:latest
+          docker tag wcarankings-data-tools:pull-request wcarankings-data-tools:latest
+          docker compose exec -T db mariadb \
+            --user="$MYSQL_USER" \
+            --password="$MYSQL_PASSWORD" \
+            "$MYSQL_DATABASE" < tests/fixtures/visual-smoke.sql
+          docker compose run --rm data-tools /app/scripts/backfill-result-entries.mjs
+          docker compose run --rm data-tools /app/scripts/refresh-rankings.mjs
+
+      - name: Exercise candidate-schema activation against disposable MariaDB
+        env:
+          INTEGRATION_ADMIN_DATABASE_URL: mysql://wcarankings:local-development-password@db:3306/mysql
+        run: |
+          docker compose exec -T db mariadb \
+            --user=root \
+            --password="$MYSQL_ROOT_PASSWORD" \
+            --execute="GRANT ALL PRIVILEGES ON *.* TO 'wcarankings'@'%' WITH GRANT OPTION; FLUSH PRIVILEGES;"
+          docker compose run --rm \
+            -e INTEGRATION_ADMIN_DATABASE_URL="$INTEGRATION_ADMIN_DATABASE_URL" \
+            -v "$GITHUB_WORKSPACE:/app/repo:ro" \
+            data-tools /app/repo/tests/ranking-generation-activation.integration.mjs
+
+      - name: Start visual smoke-test app
+        run: |
+          docker compose up -d --no-build app
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs app
+          exit 1
+
+      - name: Cache Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Chromium for visual smoke test
+        run: npx playwright install --with-deps chromium
+
+      - name: Run visual smoke test
+        run: npx playwright test --config=playwright.visual-smoke.config.mjs
+
+      - name: Upload visual smoke-test artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-smoke-test-pr-${{ github.event.pull_request.number }}
+          path: |
+            artifacts/visual-smoke.png
+            artifacts/playwright-report
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Log in to GitHub Container Registry
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish verified images
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          docker push "ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-flyway:tree-${{ steps.source-tree.outputs.sha }}"
+          docker push "ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-app:tree-${{ steps.source-tree.outputs.sha }}"
+          docker push "ghcr.io/${GITHUB_REPOSITORY_OWNER}/wcarankings-data-tools:tree-${{ steps.source-tree.outputs.sha }}"
+
+      - name: Clean up visual smoke-test containers
+        if: always()
+        run: docker compose down --volumes --remove-orphans

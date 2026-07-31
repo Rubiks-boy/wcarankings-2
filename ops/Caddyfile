@@ -1,4 +1,10 @@
 wcarankings.com, www.wcarankings.com {
-  reverse_proxy app:3000
+  @serviceWorker path /sw.js
+  handle @serviceWorker {
+    reverse_proxy app:3000 {
+      header_down Cache-Control "no-cache, no-store, must-revalidate"
+    }
+  }
   encode gzip
+  reverse_proxy app:3000
 }

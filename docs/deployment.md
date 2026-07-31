@@ -1,11 +1,12 @@
 # Deployment
 
 CubeRanks is deployed as a Docker Compose stack on a managed Linux host. The
-production stack contains four services:
+production stack contains five services:
 
 - `db`: MariaDB 11.8 with raw WCA export data and indexed ranking projections in the `mariadb_data` named volume.
 - `flyway`: the pinned Flyway migration image, which applies app-owned schema migrations before deploys and scheduled imports.
-- `app`: the Node/Vinext application and WCA SQL importer. Export archives are retained in the `wca_export_cache` named volume.
+- `app`: the Node/Vinext application.
+- `data-tools`: the approved importer, projection publisher, and generation-activation image. Export archives are retained in the `wca_export_cache` named volume.
 - `proxy`: Caddy, which terminates HTTPS and forwards requests to `app`.
 
 ## Server setup
@@ -36,41 +37,45 @@ starts the application and proxy after loading that image.
 The app listens on `127.0.0.1:3000` on the host. Caddy publishes ports 80 and 443
 and obtains certificates automatically. MariaDB has no public network port.
 
-Apply app-owned schema migrations, then run the initial WCA import from the app image:
+Apply app-owned schema migrations, then run the initial WCA import through the
+`Refresh Ranking Data` GitHub Actions workflow. Production raw WCA tables and
+ranking projections should not be refreshed from a server-local cron, timer, or
+manual SSH command.
 
-```bash
-docker compose run --rm flyway migrate
-docker compose run --rm app node /app/scripts/sync-wca-export.mjs
-```
-
-The import downloads one SQL archive per export date into the persistent cache,
-streams the SQL dump into MariaDB, and then creates the indexed ranking tables and
-competition-name lookups. Use `--force` to re-import an already recorded export.
-For a manually downloaded archive, set `WCA_SQL_EXPORT_PATH` in the environment or
-pass `--sql-path=/path/to/WCA_export.sql.zip`.
+The Actions workflow downloads one SQL archive per export date, builds projection
+transfer artifacts on the GitHub runner, and uploads a checksummed generation
+bundle. Production prepares raw and projection tables in a candidate schema and
+activates raw data, projections, export metadata, and generation metadata with
+one cross-schema `RENAME TABLE`.
 
 Flyway migrations and ranking projection refreshes are separate operations. To
 inspect or validate app-owned migrations without importing WCA data, run
 `docker compose run --rm flyway info` or `docker compose run --rm flyway validate`.
-To rebuild ranking projections from raw WCA tables already present in MariaDB, run
-`docker compose run --rm app node /app/scripts/refresh-rankings.mjs`.
+Do not run importer, backfill, or projection rebuild scripts on production by
+SSH. Those scripts are packaged in the approved data-tools image for GitHub
+Actions-controlled deploy/refresh commands and local development only; they are
+not present in the application image.
 
-To keep the self-hosted database current, install the included systemd timer and
-failure alert as root after copying the repository to the deployment directory:
+To keep the self-hosted database current, use the `Refresh Ranking Data` GitHub
+Actions workflow. It runs daily at 05:17 UTC and can also be started manually
+from the Actions tab. The manual run has one control:
 
-```bash
-install -m 0644 ops/wcarankings-sync.service /etc/systemd/system/
-install -m 0644 ops/wcarankings-sync.timer /etc/systemd/system/
-install -m 0644 ops/wcarankings-sync-alert.service /etc/systemd/system/
-install -m 0755 ops/wcarankings-sync-alert.sh /usr/local/bin/wcarankings-sync-alert
-# Create a root-owned, mode-0700 directory for server-only notification settings.
-# Store the notification environment file there with mode 0600.
-systemctl daemon-reload
-systemctl enable --now wcarankings-sync.timer
-```
+- `dry_run=true` downloads or verifies the latest export archive in production's
+  Actions cache without importing or rebuilding production data.
 
-The sync service triggers the alert service on failure. Its notification destination
-is configured only on the server.
+Deploys and refreshes share the `production-mutation` GitHub Actions
+concurrency group so only one workflow can update production data at a time.
+Queued runs are not cancelled. Each run plans against production when it starts
+and may become a no-op. The host also uses `flock`, and database activation uses
+a MariaDB advisory lock.
+
+The included `ops/wcarankings-sync.service` and `.timer` files are deprecated
+stubs. They are retained only to prevent older operational notes from silently
+installing a live server-side data updater. Do not enable them for production DB
+refreshes.
+
+If an older production host has the timer installed, disable it as part of host
+maintenance and rely on the daily GitHub Actions schedule instead.
 
 ## GitHub Actions deployment
 
@@ -78,28 +83,152 @@ is configured only on the server.
 also be started with `workflow_dispatch`. Deploys are serialized so two production
 deploys do not overlap.
 
-The workflow does the following:
+Pull-request checks build the application, Flyway, and data-tools images from the checked-out
+merge result and tag them with the Git tree SHA, rather than a commit SHA,
+because GitHub can create a different commit SHA when a pull request is merged
+while retaining the same source tree. Before publishing either image, the job
+runs the Flyway image against temporary MariaDB, loads a small WCA-like fixture,
+refreshes ranking projections using the application image, starts that exact
+image, and runs a Chromium smoke test against it. The test asserts a seeded
+ranking is visible and uploads a screenshot plus Playwright report as a
+14-day workflow artifact. Only a successful same-repository pull request pushes
+those already-tested image tags to GitHub Container Registry.
 
-1. Checks out the commit, runs `npm ci`, `npm run lint`, and `npm test`.
-2. Builds `wcarankings-app:${{ github.sha }}` with Docker Buildx on the GitHub runner.
-3. Uses repository-configured SSH credentials and host verification to establish
+The deployment workflow does the following:
+
+1. Checks out the merged commit and calculates its Git tree SHA.
+2. Resolves the matching PR-verified application, Flyway, and data-tools images
+   from GitHub Container Registry. Missing images fail the release; production
+   releases never build an unverified fallback.
+3. Resolves the latest WCA export from the WCA export API, then restores that
+   dated SQL archive and any matching completed projection artifact from GitHub
+   Actions caches. On an archive-cache miss, Actions downloads the export into
+   the Actions cache. Projection artifacts are keyed by export date and
+   projection-schema hash.
+4. On a projection-cache miss, imports the WCA archive into ephemeral MariaDB
+   and builds and validates the complete generation. Secondary indexes are
+   recorded and removed before the logical dump.
+5. Retains the compressed SQL plus its export-date and deferred-index manifest
+   as both a reusable cache entry and seven-day workflow artifact.
+6. Uses repository-configured SSH credentials and host verification to establish
    non-interactive access to the production host.
-4. Copies `docker-compose.yml` and `ops/Caddyfile` to the deployment directory.
-5. Preserves the current image as `wcarankings-app:previous`.
-6. Streams the new image directly to the server with
+7. Verifies server/dataset schema compatibility and copies checksummed
+   `docker-compose.yml` and `ops/Caddyfile` to the deployment directory.
+8. Preserves the current image as `wcarankings-app:previous`, then removes
+   obsolete application, Flyway, and data-tools image tags while retaining images used by
+   running containers and the rollback image.
+9. Streams the new images directly to the server with
    `docker save | gzip | ssh ... 'gzip -d | docker load'`. There is no container
    registry involved.
-7. Tags the loaded application and Flyway images, then runs `docker compose run --rm flyway migrate`.
-8. Starts the new application and proxy only after migrations succeed.
-9. Verifies the app locally on the server and through the configured public host.
-10. Rolls back to `wcarankings-app:previous` if deployment health checks or
-    migrations fail; otherwise removes the previous image after success.
+10. Tags the loaded application, Flyway, and data-tools images, then runs `docker compose run --rm flyway migrate`.
+11. Starts and verifies the new application against the still-active compatible
+    dataset. Caddy is recreated only when Compose or Caddy configuration changed.
+12. Prepares a complete candidate ranking generation, including raw data when
+    the export changed, without exposing candidate tables.
+13. Atomically swaps candidate raw tables, changed projections,
+    `export_metadata`, and `ranking_generation_state`; prior tables move to a
+    retained schema.
+14. Verifies readiness and real ranking endpoints. Failure atomically restores
+    the retained generation. Success then removes retained tables.
+15. Refreshes system, Board, and Delegate lists after activation. External WCA
+    API failures are reported but do not fail an activated ranking generation.
+
+The detailed identity, locking, retry, and recovery contracts are documented in
+[`deployment-pipeline.md`](deployment-pipeline.md).
 
 The deployment server needs the Compose file, Caddyfile, and `.env`, but does not
-need a checkout of the application source. Deployments do not download or import
-WCA data and do not rebuild ranking projections. The daily systemd sync owns that
-slower data operation. The app entrypoint only starts the server, so a fresh host
-should be imported before it is considered ready for ranking traffic.
+need a checkout of the application source. Deployments and the refresh workflow
+are the only supported production raw/projection update paths. The app entrypoint
+only starts the server, so a fresh host should be imported through GitHub Actions
+before it is considered ready for ranking traffic.
+
+### Production projection-transfer benchmark
+
+The first complete production publication through this workflow ran on
+2026-07-29 against the `2026-07-29T00:00:23Z` WCA generation:
+
+| Phase | Time |
+| --- | ---: |
+| Cold Actions build and index-free dump | 42m 27s |
+| Upload, bulk import, index rebuild, validation, and atomic publication | 6m 47s |
+| Entire deployment job | 53m 40s |
+| Compressed transfer artifact | 432,325,262 bytes |
+
+The cold artifact was saved to the Actions cache. A subsequent successful
+cache-hit deployment skipped generation and completed the entire deployment job
+in 10m 34s. Its transfer and publication phase took 7m 03s. About 4m 04s was
+bulk transfer before index construction, and the 22 deferred indexes took about
+2m 51s in total. Five `result_entries_single` indexes dominated index time at
+125.6s; every other table's indexes together took about 45s.
+
+The cache is therefore the main steady-state optimization. The five
+`result_entries_single` secondary indexes had no runtime readers. They were removed after this
+benchmark, leaving the compatibility table's primary key and eliminating its
+125-second deferred-index phase.
+
+The first cold run without those indexes built and dumped the generation in
+24m 15s, 42.9% faster than the 42m 27s indexed run. Production transfer and
+publication took 5m 08s, 27.2% faster than the 7m 03s cache-hit indexed run.
+Deferred-index construction fell from 22 indexes and about 171 seconds to 17
+indexes and about 43 seconds. The compressed artifact remained approximately
+432.3 MB because secondary indexes were already omitted from the logical dump;
+the improvement comes from avoiding their initial and production construction.
+
+The next transfer optimization target is the compatibility table's data build
+and replay cost, or a physical backup/restore format that avoids row-by-row
+logical replay.
+
+## Ranking performance verification
+
+`GET /api/health/live` checks process liveness and `GET /api/health/ready`
+checks database and projection readiness. Both are `no-store`; deployment waits
+for readiness before rendering the page.
+
+Run the repeatable local traffic mix after starting the app:
+
+```bash
+npm run load:rankings
+```
+
+It covers normal browsing, distant pages, incremental search typing, and unique
+queries. It defaults to localhost; a remote target requires
+`--target=https://example.com --allow-remote`. Its JSON report includes request
+and status counts, p50/p95 latency, cache outcomes, and Server-Timing samples.
+
+Inspect an indexed production path without changing data (use a representative
+cohort):
+
+```sql
+EXPLAIN ANALYZE SELECT world_rank, world_sub_rank, person_id
+FROM ranking_entries_single
+WHERE event_id = '333' AND world_rank > 0
+  AND world_sub_rank >= 5001 AND world_sub_rank < 5051
+ORDER BY world_sub_rank;
+```
+
+The result-level single projection is paged with the same keyset pattern. Do not
+query or offset-scan the raw `results` table for the top-results page:
+
+```sql
+SELECT result_id, world_rank, person_id, person_name, best, competition_id
+FROM result_entries_single
+WHERE event_id = '333' AND world_sub_rank > 5000
+ORDER BY world_sub_rank
+LIMIT 50;
+```
+
+For a short slow-query observation, enable the MariaDB global log, inspect it
+using the host's normal log-access procedure, then disable it again. Ensure the
+configured log path has space and do not commit log contents.
+
+```sql
+SET GLOBAL slow_query_log = 1;
+SET GLOBAL long_query_time = 0.2;
+SHOW GLOBAL STATUS LIKE 'Slow_queries';
+SET GLOBAL slow_query_log = 0;
+```
+
+Restore the previous `long_query_time` if it was changed.
 
 The GitHub Actions workflow expects these repository secrets:
 
@@ -108,7 +237,10 @@ The GitHub Actions workflow expects these repository secrets:
 - `DEPLOY_SSH_KEY`: private key for the deployment account.
 - `DEPLOY_KNOWN_HOSTS`: SSH host verification entries.
 
-The workflow replaces the app container after loading the new image, while keeping
-the previous image available until health checks and migrations succeed. MariaDB,
-the export cache, Caddy certificates, and their data survive because they are stored
-in named Docker volumes.
+The workflow builds and validates candidate projections in GitHub Actions before
+replacing the app container. A transfer or validation failure leaves the live
+projection tables and application traffic unchanged. The previous image remains
+available for the next rollback after health checks succeed. MariaDB, the export cache, Caddy
+certificates, and their data survive because they are stored in named Docker
+volumes. Deployments use images verified by the matching pull request and fail
+closed when any required source-tree image is unavailable.

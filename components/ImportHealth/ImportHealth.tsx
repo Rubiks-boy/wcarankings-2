@@ -1,6 +1,12 @@
+"use client";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { formatDate, formatDuration, type ImportHealthStatus } from "@/lib/import-health";
+import {
+  formatDate,
+  formatDuration,
+  type ImportHealthStatus,
+} from "@/lib/import-health";
 import styles from "./ImportHealth.module.css";
 
 type ImportRun = {
@@ -11,6 +17,10 @@ type ImportRun = {
   startedAt: string;
   fetchStartedAt: string | null;
   fetchedAt: string | null;
+  projectionBuildStartedAt: string | null;
+  projectionBuiltAt: string | null;
+  projectionBuildDurationMs: number | null;
+  projectionBuildElapsedMs: number | null;
   completedAt: string | null;
   durationMs: number | null;
   failureMessage: string | null;
@@ -18,12 +28,16 @@ type ImportRun = {
   counts: Record<string, number | null>;
 };
 
-type HealthPayload = {
+export type HealthPayload = {
   status: ImportHealthStatus;
   currentExport: { date: string; formatVersion: string | null; fetchedAt: string | null } | null;
   latestRun: ImportRun | null;
   lastSuccessfulRun: ImportRun | null;
   recentFailures: ImportRun[];
+  projectionTables: {
+    ready: boolean;
+    tables: Array<{ name: string; present: boolean }>;
+  };
   diagnostics: string;
 };
 
@@ -35,26 +49,55 @@ const statusLabels: Record<ImportHealthStatus, string> = {
   last_import_failed: "Last import failed",
 };
 
+const projectionStatusLabels: Record<string, string> = {
+  not_started: "Waiting to build",
+  building: "Building staging tables",
+  swapping: "Publishing rebuilt tables",
+  published: "Published",
+  failed: "Build failed",
+};
+
+async function loadImportHealth(): Promise<HealthPayload> {
+  const response = await fetch("/api/admin/import-health", { cache: "no-store" });
+  const payload = await response.json() as HealthPayload;
+  if (!response.ok) throw new Error(payload.diagnostics);
+  return payload;
+}
+
 function Metric({ label, value }: { label: string; value: string | number | null | undefined }) {
   return <div className={styles.metric}><dt>{label}</dt><dd>{value ?? "—"}</dd></div>;
 }
 
-export function ImportHealth() {
+export function ImportHealth({ loadHealth = loadImportHealth }: { loadHealth?: () => Promise<HealthPayload> }) {
   const [data, setData] = useState<HealthPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/admin/import-health", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = await response.json() as HealthPayload;
-        if (!response.ok) throw new Error(payload.diagnostics);
-        return payload;
-      })
-      .then(setData)
-      .catch((requestError) => setError(requestError instanceof Error ? requestError.message : "Unable to load import health."));
-  }, []);
+    let cancelled = false;
+    let refreshTimer: number | undefined;
 
-  if (error) return <main className={styles.page}><p className={styles.alert}>{error}</p></main>;
+    async function refresh() {
+      try {
+        const payload = await loadHealth();
+        if (cancelled) return;
+        setData(payload);
+        setError(null);
+        refreshTimer = window.setTimeout(refresh, payload.status === "import_running" ? 5_000 : 30_000);
+      } catch (requestError) {
+        if (cancelled) return;
+        setError(requestError instanceof Error ? requestError.message : "Unable to load import health.");
+        refreshTimer = window.setTimeout(refresh, 30_000);
+      }
+    }
+
+    void refresh();
+    return () => {
+      cancelled = true;
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+    };
+  }, [loadHealth]);
+
+  if (error && !data) return <main className={styles.page}><p className={styles.alert}>{error}</p></main>;
   if (!data) return <main className={styles.page}><p>Loading import health…</p></main>;
 
   const run = data.latestRun ?? data.lastSuccessfulRun;
@@ -65,13 +108,41 @@ export function ImportHealth() {
         <strong className={`${styles.status} ${styles[data.status]}`}>{statusLabels[data.status]}</strong>
       </header>
 
+      {error && <p className={styles.alert}>Latest refresh failed: {error}</p>}
+
       <section className={styles.card} aria-labelledby="export-heading">
         <h2 id="export-heading">Current published export</h2>
         <dl className={styles.grid}>
           <Metric label="Export date" value={data.currentExport?.date} />
           <Metric label="Format version" value={data.currentExport?.formatVersion} />
           <Metric label="Published at" value={formatDate(data.currentExport?.fetchedAt)} />
-          <Metric label="Projection swap" value={run?.projectionSwapStatus} />
+          <Metric label="Projection tables ready" value={data.projectionTables.ready ? "Yes" : "No"} />
+        </dl>
+      </section>
+
+      <section className={styles.card} aria-labelledby="projection-heading">
+        <h2 id="projection-heading">Ranking projection tables</h2>
+        <dl className={styles.grid}>
+          <Metric label="Status" value={run ? projectionStatusLabels[run.projectionSwapStatus] ?? run.projectionSwapStatus : null} />
+          <Metric label="Build started" value={formatDate(run?.projectionBuildStartedAt)} />
+          <Metric label="Build completed" value={formatDate(run?.projectionBuiltAt)} />
+          <Metric
+            label={run?.projectionBuildDurationMs == null && run?.projectionBuildStartedAt ? "Building for" : "Build duration"}
+            value={formatDuration(run?.projectionBuildDurationMs ?? run?.projectionBuildElapsedMs)}
+          />
+        </dl>
+        <h3>Published tables</h3>
+        <dl className={styles.grid}>
+          {data.projectionTables.tables.map((table) => (
+            <Metric key={table.name} label={table.name} value={table.present ? "Present" : "Missing"} />
+          ))}
+        </dl>
+        <h3>Rows built</h3>
+        <dl className={styles.grid}>
+          <Metric label="Ranking entries" value={run?.counts.publishedRankings} />
+          <Metric label="Ranking aggregates" value={run?.counts.aggregates} />
+          <Metric label="Events" value={run?.counts.events} />
+          <Metric label="Regions" value={run?.counts.regions} />
         </dl>
       </section>
 
@@ -88,15 +159,17 @@ export function ImportHealth() {
             <Metric label="Duration" value={formatDuration(run.durationMs)} />
           </dl>
           {run.failureMessage && <p className={styles.failure}><strong>Failure:</strong> {run.failureMessage}</p>}
-          <h3>Coverage</h3>
-          <dl className={styles.grid}>
-            <Metric label="Source people" value={run.counts.sourcePeople} />
+           <h3>Coverage</h3>
+           <dl className={styles.grid}>
+             <Metric label="Source people" value={run.counts.sourcePeople} />
             <Metric label="Source results" value={run.counts.sourceResults} />
             <Metric label="Published rankings" value={run.counts.publishedRankings} />
+            <Metric label="Published result entries" value={run.counts.publishedResults} />
             <Metric label="Events" value={run.counts.events} />
             <Metric label="Regions" value={run.counts.regions} />
             <Metric label="Aggregates" value={run.counts.aggregates} />
-          </dl>
+             <Metric label="Result aggregates" value={run.counts.resultAggregates} />
+           </dl>
         </> : <p>No import run has been recorded yet.</p>}
       </section>
 

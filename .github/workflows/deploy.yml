@@ -5,136 +5,99 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Plan projections and build server images without changing production.
+        required: false
+        default: false
+        type: boolean
+      force_rebuild:
+        description: Rebuild all projection groups; server images remain fail-closed to PR-verified digests.
+        required: false
+        default: false
+        type: boolean
 
 permissions:
+  actions: read
   contents: read
+  packages: write
 
 concurrency:
-  group: production-deploy
+  group: production-mutation
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    env:
-      SERVER_IP: ${{ secrets.SERVER_IP }}
-      SERVER_HOST: ${{ secrets.SERVER_HOST }}
-      SERVER_USER: www
+  plan_projections:
+    uses: ./.github/workflows/plan-projections.yml
+    with:
+      ref: ${{ github.sha }}
+      force_rebuild: ${{ inputs.force_rebuild == true }}
+    secrets: inherit
 
-    steps:
-      - name: Check out main
-        uses: actions/checkout@v4
+  build_server:
+    uses: ./.github/workflows/build-server.yml
+    with:
+      ref: ${{ github.sha }}
+      force_rebuild: false
+      require_existing: true
+    secrets: inherit
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
+  build_projections:
+    needs: plan_projections
+    uses: ./.github/workflows/build-projections.yml
+    with:
+      ref: ${{ github.sha }}
+      export_date: ${{ needs.plan_projections.outputs.export_date }}
+      export_value: ${{ needs.plan_projections.outputs.export_value }}
+      groups: ${{ needs.plan_projections.outputs.groups }}
+      fingerprints: ${{ needs.plan_projections.outputs.fingerprints }}
+      cache_only: ${{ inputs.dry_run == true }}
+      include_raw: ${{ needs.plan_projections.outputs.raw_required == 'true' }}
+    secrets: inherit
 
-      - name: Validate
-        run: |
-          npm ci
-          npm run lint
-          npm test
+  deploy_server:
+    if: >-
+      inputs.dry_run != true
+      && needs.build_server.result == 'success'
+      && needs.build_projections.result == 'success'
+    needs:
+      - plan_projections
+      - build_server
+      - build_projections
+    uses: ./.github/workflows/deploy-server.yml
+    with:
+      ref: ${{ github.sha }}
+      source_sha: ${{ needs.build_server.outputs.source_sha }}
+      app_image: ${{ needs.build_server.outputs.app_image }}
+      flyway_image: ${{ needs.build_server.outputs.flyway_image }}
+      data_tools_image: ${{ needs.build_server.outputs.data_tools_image }}
+      config_checksum: ${{ needs.build_server.outputs.config_checksum }}
+      compose_checksum: ${{ needs.build_server.outputs.compose_checksum }}
+      caddy_checksum: ${{ needs.build_server.outputs.caddy_checksum }}
+    secrets: inherit
 
-      - name: Configure deployment SSH
-        env:
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: |
-          install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/id_ed25519"
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image in GitHub Actions
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          load: true
-          tags: wcarankings-app:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Verify production image contents
-        run: |
-          docker run --rm --entrypoint sh "wcarankings-app:${GITHUB_SHA}" -c \
-            'test -f /app/scripts/sync-wca-export.mjs && test -f /app/scripts/refresh-rankings.mjs'
-
-      - name: Build Flyway image in GitHub Actions
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.flyway
-          load: true
-          tags: wcarankings-flyway:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Verify Flyway image contents
-        run: |
-          docker run --rm --entrypoint sh "wcarankings-flyway:${GITHUB_SHA}" -c \
-            'test -f /flyway/migrations/V1__export_metadata.sql && test -f /flyway/migrations/V2__import_health.sql'
-
-      - name: Copy deployment configuration
-        run: |
-          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
-            'install -d -m 0755 /srv/wcarankings/ops'
-          scp -q -o BatchMode=yes docker-compose.yml \
-            "$SERVER_USER@$SERVER_IP:/srv/wcarankings/docker-compose.yml"
-          scp -q -o BatchMode=yes ops/Caddyfile \
-            "$SERVER_USER@$SERVER_IP:/srv/wcarankings/ops/Caddyfile"
-
-      - name: Load images and run pending migrations
-        run: |
-          set -o pipefail
-          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
-            'cd /srv/wcarankings && if docker image inspect wcarankings-app:latest >/dev/null 2>&1; then docker tag wcarankings-app:latest wcarankings-app:previous; fi'
-          docker save "wcarankings-app:${GITHUB_SHA}" "wcarankings-flyway:${GITHUB_SHA}" \
-            | gzip -1 \
-            | ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
-                'gzip -d | docker load'
-          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
-            "docker tag wcarankings-app:${GITHUB_SHA} wcarankings-app:latest && docker tag wcarankings-flyway:${GITHUB_SHA} wcarankings-flyway:latest && cd /srv/wcarankings && docker compose run --rm flyway migrate"
-
-      - name: Switch production services
-        run: |
-          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
-            'cd /srv/wcarankings && docker compose up -d --no-build --remove-orphans app proxy'
-
-      - name: Verify deployment
-        run: |
-          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
-            'cd /srv/wcarankings && docker compose ps && for attempt in $(seq 1 30); do curl --fail --silent http://127.0.0.1:3000/ >/dev/null && exit 0; sleep 2; done; docker compose logs --tail=80 app; exit 1'
-
-          PUBLIC_HOST="${SERVER_HOST#https://}"
-          PUBLIC_HOST="${PUBLIC_HOST#http://}"
-          PUBLIC_HOST="${PUBLIC_HOST%%/*}"
-          if [ -z "$PUBLIC_HOST" ]; then
-            echo "SERVER_HOST must contain a hostname." >&2
-            exit 1
-          fi
-
-          for attempt in $(seq 1 30); do
-            curl --fail --silent --show-error \
-              --connect-timeout 5 --max-time 15 \
-              --resolve "${PUBLIC_HOST}:443:${SERVER_IP}" \
-              "https://${PUBLIC_HOST}/" >/dev/null && exit 0
-            sleep 2
-          done
-          exit 1
-
-      - name: Roll back failed deployment
-        if: failure()
-        run: |
-          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
-            'set -eu; cd /srv/wcarankings; if ! docker image inspect wcarankings-app:previous >/dev/null 2>&1; then echo "No previous image is available for rollback." >&2; exit 1; fi; docker tag wcarankings-app:previous wcarankings-app:latest; docker compose up -d --no-build --remove-orphans app proxy'
-
-      - name: Remove previous image after successful deployment
-        if: success()
-        run: |
-          ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
-            'docker image inspect wcarankings-app:previous >/dev/null 2>&1 && docker image rm wcarankings-app:previous || true'
+  deploy_projections:
+    if: >-
+      inputs.dry_run != true
+      && needs.plan_projections.outputs.required == 'true'
+      && needs.deploy_server.result == 'success'
+      && needs.build_projections.result == 'success'
+    needs:
+      - plan_projections
+      - build_projections
+      - build_server
+      - deploy_server
+    uses: ./.github/workflows/deploy-projections.yml
+    with:
+      ref: ${{ github.sha }}
+      artifact_name: ${{ needs.build_projections.outputs.artifact_name }}
+      manifest_sha256: ${{ needs.build_projections.outputs.manifest_sha256 }}
+      groups: ${{ needs.plan_projections.outputs.groups }}
+      export_date: ${{ needs.plan_projections.outputs.export_date }}
+      export_value: ${{ needs.plan_projections.outputs.export_value }}
+      production_export_value: ${{ needs.plan_projections.outputs.production_export_value }}
+      source_sha: ${{ needs.build_server.outputs.source_sha }}
+      artifact_run_id: ${{ needs.build_projections.outputs.artifact_run_id }}
+      artifact_id: ${{ needs.build_projections.outputs.artifact_id }}
+      data_tools_image: ${{ needs.build_server.outputs.data_tools_image }}
+    secrets: inherit

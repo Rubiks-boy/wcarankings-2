@@ -8,7 +8,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Behavior-only component that registers the production service worker and renders no visible UI.",
+          "Registers the service worker and offers to refresh when an update is ready.",
       },
     },
   },

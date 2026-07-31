@@ -1,22 +1,34 @@
 import {
-  encodeWcaSession,
   getWcaAuthConfig,
+  getSameOriginDestination,
+  getRequestOrigin,
   makeCookie,
   readCookie,
   toWcaProfile,
 } from "@/lib/wca-auth";
+import { authSessionCookie, createAuthSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
-  const origin = requestUrl.origin;
+  const origin = getRequestOrigin(request);
   const code = requestUrl.searchParams.get("code");
   const state = requestUrl.searchParams.get("state");
   const storedState = readCookie(request, "wca_oauth_state");
-  const { clientId, clientSecret, redirectUri } = getWcaAuthConfig(request);
+  const returnTo = getSameOriginDestination(
+    request,
+    readCookie(request, "wca_oauth_return_to"),
+  );
+  const { clientId, clientSecret, redirectUri, wcaOrigin } = getWcaAuthConfig(request);
 
   if (!code || !state || state !== storedState || !clientId || !clientSecret) {
+    console.warn("WCA OAuth callback rejected before token exchange", {
+      hasCode: Boolean(code),
+      hasState: Boolean(state),
+      stateMatches: state === storedState,
+      configured: Boolean(clientId && clientSecret),
+    });
     return Response.redirect(`${origin}/?auth=failed`, 302);
   }
 
@@ -28,32 +40,37 @@ export async function GET(request: Request) {
       code,
       redirect_uri: redirectUri,
     });
-    const tokenResponse = await fetch("https://www.worldcubeassociation.org/oauth/token", {
+    const tokenResponse = await fetch(new URL("/oauth/token", wcaOrigin), {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
     });
-    if (!tokenResponse.ok) throw new Error("Token exchange failed");
+    if (!tokenResponse.ok) {
+      throw new Error(`WCA token exchange failed with status ${tokenResponse.status}`);
+    }
     const token = (await tokenResponse.json()) as { access_token?: string };
     if (!token.access_token) throw new Error("Token was missing");
 
-    const meResponse = await fetch("https://www.worldcubeassociation.org/api/v0/me", {
+    const meResponse = await fetch(new URL("/api/v0/me", wcaOrigin), {
       headers: { Authorization: `Bearer ${token.access_token}` },
     });
-    if (!meResponse.ok) throw new Error("Profile request failed");
+    if (!meResponse.ok) {
+      throw new Error(`WCA profile request failed with status ${meResponse.status}`);
+    }
     const profile = toWcaProfile(await meResponse.json());
     if (!profile) throw new Error("Profile was missing a WCA ID");
 
-    const session = await encodeWcaSession(profile, clientSecret);
+    const session = await createAuthSession(profile);
     const headers = new Headers({
-      Location: `${origin}/?auth=success`,
+      Location: returnTo,
       "Cache-Control": "no-store",
     });
-    headers.append("Set-Cookie", makeCookie("wca_session", session, request, { maxAge: 60 * 60 * 24 * 30 }));
+    headers.append("Set-Cookie", authSessionCookie(session.token, request));
     headers.append("Set-Cookie", makeCookie("wca_oauth_state", "", request, { maxAge: 0 }));
+    headers.append("Set-Cookie", makeCookie("wca_oauth_return_to", "", request, { maxAge: 0 }));
     return new Response(null, { status: 302, headers });
-  } catch {
+  } catch (error) {
+    console.error("WCA OAuth callback failed", error);
     return Response.redirect(`${origin}/?auth=failed`, 302);
   }
 }
-

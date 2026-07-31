@@ -1,7 +1,7 @@
 "use client";
 
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -9,12 +9,19 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
+  type CSSProperties,
 } from "react";
 import {
   animateScrollTo,
   cancelScrollAnimation,
+  clampTargetSubRank,
   getCurrentViewportPosition,
   getCurrentViewportSubRank,
+  getEndSubRank,
+  getPagerJumpTarget,
+  getPrefetchRowCount,
+  shouldPrefetchExtraPage,
   getScrollAnimationDuration,
   getSearchAnimationDuration,
   getSearchBridgePageStarts,
@@ -26,25 +33,46 @@ import {
 import {
   FALLBACK_CONTINENTS,
   FALLBACK_COUNTRIES,
-  isEventId,
+  type GenderFilter,
+  isRankingEventId,
   isRankingType,
+  normalizeGenderFilters,
   parseRegionQuery,
   WCA_EVENTS,
 } from "@/lib/wca";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
 import {
-  JumpDownControls,
-  JumpUpControls,
-} from "../JumpControls/JumpControls";
+  notifyAnalyticsNavigation,
+  trackGoogleAnalyticsEvent,
+} from "@/lib/google-analytics";
+import { RankingsControlsRail, RankingsPagerRail } from "../RankingsRail/RankingsRail";
+import {
+  ALL_EVENT_RANKING_OPTIONS,
+} from "../EventPicker/allEventRankingOptions";
 import { JumpControlsVisibility } from "../JumpControlsVisibility/JumpControlsVisibility";
-import { RankingControls } from "../RankingControls/RankingControls";
 import { ResultsTable } from "../ResultsTable/ResultsTable";
-import { SearchInputs } from "../SearchInputs/SearchInputs";
-import { ThemeToggle } from "../ThemeToggle/ThemeToggle";
+import { SubjectMockRows } from "./SubjectMockRows";
+import { AppHeader } from "../AppHeader/AppHeader";
 import { VimHelp } from "../VimHelp/VimHelp";
 import { VimSearchInput } from "../VimSearchInput/VimSearchInput";
 import {
-  formatFetchedAgo,
+  ExplorerSubjectSwitch,
+  type ExplorerSubject,
+  type NavigationSubject,
+} from "../ExplorerSubjectSwitch/ExplorerSubjectSwitch";
+import { TextDropdown } from "../Dropdown/TextDropdown";
+import { ListAddPeopleRail, ListMembershipControls, ListMembershipRequestRows, ListOwnerControls } from "../ListOwnerControls/ListOwnerControls";
+import { ListCloneExportControls } from "../ListOwnerControls/ListCloneExportControls";
+import { DynamicListControls } from "../ListOwnerControls/DynamicListControls";
+import { useRailScrollProgress } from "./useRailScrollProgress";
+import { fetchRankingPage, RankingsPageCache } from "./rankingsPageCache";
+import { useScrollVelocity } from "./useScrollVelocity";
+import { useRankingsExplorerState } from "./useRankingsExplorerState";
+import { COMPETITION_RANKING_OPTIONS, type CompetitionRanking, type RankingResource } from "./helpers/rankingModes";
+import { centeredRowScrollTop, getSearchScrollDirection, subjectPath } from "./helpers/navigation";
+export { centeredRowScrollTop, getSearchScrollDirection, subjectPath } from "./helpers/navigation";
+import {
+  formatRankingsFreshness,
   type InitialRankingData,
   type RankingEntry,
   type RankingPage,
@@ -59,28 +87,68 @@ const SEARCH_ANIMATION_ROWS = 3;
 const VIM_JUMP_PAGE_COUNT = 2;
 const VIM_JUMP_SIZE = PAGE_SIZE * VIM_JUMP_PAGE_COUNT;
 const ROW_HEIGHT = 65.45;
+const EXPANDED_ROW_HEIGHT = 248;
+type ResetToRank = (rank: number, animate?: boolean, focusedPersonId?: string | null) => void;
+const MOBILE_CONTROLS_QUERY = "(max-width: 600px)";
+
+function subscribeMobileControls(listener: () => void) {
+  const media = window.matchMedia(MOBILE_CONTROLS_QUERY);
+  media.addEventListener("change", listener);
+  return () => media.removeEventListener("change", listener);
+}
+
+function getMobileControlsSnapshot() {
+  return window.matchMedia(MOBILE_CONTROLS_QUERY).matches;
+}
+const RAIL_REVEAL_DISTANCE = ROW_HEIGHT * 1.5;
+const TOP_RAIL_TRANSFORM_DISTANCE = ROW_HEIGHT * 2;
 const END_MARKER_PEEK = ROW_HEIGHT + 40;
+type RankingSource =
+  | { kind: "saved"; listId: string; listName: string }
+  | { kind: "dynamic"; personIds: string[]; listName: string };
 
-export function centeredRowScrollTop(
-  rowTop: number,
-  viewportHeight: number,
-  rowHeight = ROW_HEIGHT
-) {
-  return Math.max(
-    0,
-    rowTop - Math.max(0, (viewportHeight - rowHeight) / 2)
-  );
+function addRankingSourceParams(params: URLSearchParams, source?: RankingSource) {
+  if (!source) return;
+  if (source.kind === "saved") params.set("list", source.listId);
+  else params.set("wca_ids", source.personIds.join(","));
 }
 
-export function getSearchScrollDirection(
-  currentMatch: Pick<RankingEntry, "subRank"> | null,
-  targetMatch: Pick<RankingEntry, "subRank">,
-  fallbackDirection: -1 | 1
-): -1 | 1 {
-  if (!currentMatch || currentMatch.subRank === targetMatch.subRank)
-    return fallbackDirection;
-  return targetMatch.subRank > currentMatch.subRank ? 1 : -1;
+function rankingSourceCacheKey(source: RankingSource | undefined, resource: RankingResource) {
+  if (!source) return resource;
+  return source.kind === "saved" ? source.listId : `dynamic:${source.personIds.join(",")}`;
 }
+type VinextNavigationWindow = Window & {
+  __VINEXT_RSC_PENDING__?: Promise<unknown> | null;
+};
+
+
+export function competitionRankingPath(ranking: CompetitionRanking) {
+  return `/competitions/${ranking}`;
+}
+
+function rankingResource(
+  subject: ExplorerSubject,
+  competitionRanking: CompetitionRanking,
+  latitudeHemisphere: "north" | "south" = "north",
+): RankingResource {
+  if (subject === "results") return "results";
+  if (subject !== "competitions") return "people";
+  if (competitionRanking === "latitude") return `latitude-${latitudeHemisphere}`;
+  if (competitionRanking === "competitor-count") return "competitor-count";
+  return competitionRanking === "podiums" ? "podiums" : "competitions";
+}
+
+function podiumRankingType(eventId: string): "single" | "average" {
+  return ["333bf", "444bf", "555bf"].includes(eventId)
+    ? "single"
+    : "average";
+}
+
+type NetworkInformationLike = {
+  saveData?: boolean;
+  effectiveType?: string;
+};
+
 
 function updateQueryParams(updates: Record<string, string | null>) {
   const url = new URL(window.location.href);
@@ -93,6 +161,7 @@ function updateQueryParams(updates: Record<string, string | null>) {
     "",
     `${url.pathname}${url.search}`
   );
+  notifyAnalyticsNavigation();
 }
 
 function setSearchQueryParam(value: string) {
@@ -105,81 +174,38 @@ type SearchLayoutAnchor = {
   viewportTop: number;
 };
 
-type SearchSurface = "header" | "rail";
-
-type PendingSearchFocusHandoff = {
-  target: SearchSurface;
-  selectionStart: number | null;
-  selectionEnd: number | null;
-  selectionDirection: "forward" | "backward" | "none" | null;
+type PendingPersonFocus = {
+  personId: string;
+  animate: boolean;
 };
 
-const CLIENT_PAGE_CACHE_CAPACITY_333 = 512;
-const CLIENT_PAGE_CACHE_CAPACITY_DEFAULT = 128;
+const pageCache = new RankingsPageCache();
 
-type ClientPageCacheEntry = { request: Promise<RankingPage>; permanent: boolean };
-
-class ClientPageCache {
-  private readonly pools = new Map<string, Map<string, ClientPageCacheEntry>>();
-
-  private pool(eventId: string) {
-    let pool = this.pools.get(eventId);
-    if (!pool) {
-      pool = new Map();
-      this.pools.set(eventId, pool);
-    }
-    return pool;
-  }
-
-  get(eventId: string, key: string) {
-    const pool = this.pool(eventId);
-    const entry = pool.get(key);
-    if (!entry) return undefined;
-    if (!entry.permanent) {
-      pool.delete(key);
-      pool.set(key, entry);
-    }
-    return entry.request;
-  }
-
-  set(eventId: string, key: string, request: Promise<RankingPage>, permanent: boolean) {
-    const pool = this.pool(eventId);
-    pool.set(key, { request, permanent });
-    const capacity = eventId === "333"
-      ? CLIENT_PAGE_CACHE_CAPACITY_333
-      : CLIENT_PAGE_CACHE_CAPACITY_DEFAULT;
-    while (pool.size > capacity) {
-      const oldest = [...pool.entries()].find(([, entry]) => !entry.permanent);
-      if (!oldest) break;
-      pool.delete(oldest[0]);
-    }
-  }
-
-  delete(eventId: string, key: string) {
-    this.pool(eventId).delete(key);
-  }
-}
-
-const pageCache = new ClientPageCache();
-
-async function fetchRankingPage(input: RequestInfo | URL) {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      return await fetch(input);
-    } catch (error) {
-      lastError = error;
-      if (attempt === 0)
-        await new Promise((resolve) => window.setTimeout(resolve, 150));
-    }
-  }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Rankings are unavailable.");
-}
-
-function pageStartForSubRank(subRank: number) {
+export function pageStartForSubRank(subRank: number) {
   return Math.floor((Math.max(1, subRank) - 1) / PAGE_SIZE) * PAGE_SIZE;
+}
+
+export function pageStartForViewportSubRank(subRank: number) {
+  return pageStartForSubRank(subRank) + 1;
+}
+
+function activeYear() {
+  return window.location.pathname.match(/^\/persons\/year\/(\d{4})$/)?.[1]
+    ?? new URLSearchParams(window.location.search).get("year");
+}
+
+function getRenderedPersonTop(personId: string) {
+  const row = Array.from(
+    document.querySelectorAll<HTMLElement>(".listItem[data-person-id]")
+  ).find((element) => element.dataset.personId === personId);
+  return row ? row.getBoundingClientRect().top + window.scrollY : undefined;
+}
+
+export function shouldFallbackToFirstPage(
+  startRank: number,
+  entryCount: number
+) {
+  return startRank > 1 && entryCount === 0;
 }
 
 export function orderSearchMatches(
@@ -198,7 +224,10 @@ function getPage(
   eventId: string,
   rankingType: "single" | "average",
   start: number,
-  selection: RegionSelection
+  selection: RegionSelection,
+  resource: RankingResource = "people",
+  source?: RankingSource,
+  gender: readonly GenderFilter[] = [],
 ) {
   const pageStart = pageStartForSubRank(start);
   const params = new URLSearchParams({
@@ -208,12 +237,28 @@ function getPage(
     limit: String(PAGE_SIZE),
     paged: "1",
   });
+  const year = activeYear();
+  if (resource === "people" && year) params.set("year", year);
+  addRankingSourceParams(params, source);
+  if ((resource === "people" || resource === "results") && gender.length) params.set("gender", gender.join(","));
   if (selection.scope !== "world") params.set("region", selection.regionId);
+  if (resource === "podiums") params.set("ranking", "podium");
+  if (resource === "competitor-count") params.set("ranking", "competitor-count");
+  if (resource.startsWith("latitude-")) {
+    params.set("ranking", "latitude");
+    params.set("hemisphere", resource.slice("latitude-".length));
+  }
   const cacheKey = params.toString();
-  const cached = pageCache.get(eventId, cacheKey);
+  const cachePool = `${rankingSourceCacheKey(source, resource)}:${eventId}`;
+  const cached = pageCache.get(cachePool, cacheKey);
   if (cached) return cached;
 
-  const request = fetchRankingPage(`/api/rankings?${params}`).then(async (response) => {
+  const endpoint = resource === "results"
+    ? "/api/rankings/results"
+    : resource !== "people"
+      ? "/api/rankings/competitions"
+      : "/api/rankings";
+  const request = fetchRankingPage(`${endpoint}?${params}`).then(async (response) => {
     if (!response.ok) {
       const body = (await response.json()) as { error?: string };
       throw new Error(body.error ?? "Rankings are unavailable.");
@@ -227,13 +272,13 @@ function getPage(
       startPosition: data.startPosition,
       lastRank: data.lastRank,
       total: data.total,
-      fetchedAt: data.fetchedAt ?? data.exportDate ?? null,
+      exportDate: data.exportDate ?? null,
       offlineStale: response.headers.get("X-Rankings-Offline-Stale") === "1",
     };
   });
 
-  pageCache.set(eventId, cacheKey, request, selection.scope === "world" && pageStart === 0);
-  request.catch(() => pageCache.delete(eventId, cacheKey));
+  pageCache.set(cachePool, cacheKey, request, !source && selection.scope === "world" && pageStart === 0);
+  request.catch(() => pageCache.delete(cachePool, cacheKey));
   return request;
 }
 
@@ -241,7 +286,10 @@ async function getEndWindow(
   eventId: string,
   rankingType: "single" | "average",
   selection: RegionSelection,
-  endSubRank: number
+  endSubRank: number,
+  resource: RankingResource = "people",
+  source?: RankingSource,
+  gender: readonly GenderFilter[] = [],
 ) {
   const finalPageStart = pageStartForSubRank(endSubRank);
   const pageStarts = [
@@ -250,7 +298,7 @@ async function getEndWindow(
   ].filter((start, index, starts) => starts.indexOf(start) === index);
   const pages = await Promise.all(
     pageStarts.map((start) =>
-      getPage(eventId, rankingType, start + 1, selection)
+      getPage(eventId, rankingType, start + 1, selection, resource, source, gender)
     )
   );
   const firstPage = pages[0];
@@ -271,11 +319,13 @@ async function getEndWindow(
   };
 }
 
-async function getSearchWindow(
+async function getPersonWindow(
   eventId: string,
   rankingType: "single" | "average",
   selection: RegionSelection,
-  match: RankingEntry
+  match: Pick<RankingEntry, "personId" | "subRank">,
+  source?: RankingSource,
+  gender: readonly GenderFilter[] = [],
 ) {
   const targetPageStart = pageStartForSubRank(match.subRank);
   const pageFirstSubRanks = Array.from(
@@ -287,7 +337,7 @@ async function getSearchWindow(
     .filter((start, index, starts) => starts.indexOf(start) === index);
   const pages = await Promise.all(
     pageFirstSubRanks.map((start) =>
-      getPage(eventId, rankingType, start, selection)
+      getPage(eventId, rankingType, start, selection, "people", source, gender)
     )
   );
   const entries = pages.flatMap((page) => page.entries);
@@ -311,7 +361,9 @@ async function getDistantSearchWindow(
   selection: RegionSelection,
   currentPageStart: number,
   match: RankingEntry,
-  direction: -1 | 1
+  direction: -1 | 1,
+  source?: RankingSource,
+  gender: readonly GenderFilter[] = [],
 ) {
   const targetPageStart = pageStartForSubRank(match.subRank);
   const pageStarts = [
@@ -332,7 +384,7 @@ async function getDistantSearchWindow(
   const pages = (
     await Promise.all(
       pageStarts.map((start) =>
-        getPage(eventId, rankingType, start + 1, selection)
+        getPage(eventId, rankingType, start + 1, selection, "people", source, gender)
       )
     )
   ).filter((page) => page.entries.length > 0);
@@ -356,7 +408,9 @@ function prefetchSearchResultPages(
   rankingType: "single" | "average",
   selection: RegionSelection,
   matches: Array<RankingEntry | null | undefined>,
-  currentMatchIndex: number
+  currentMatchIndex: number,
+  source?: RankingSource,
+  gender: readonly GenderFilter[] = [],
 ) {
   if (matches.length < 2 || currentMatchIndex < 0) return;
   const requested = new Set<number>();
@@ -371,7 +425,7 @@ function prefetchSearchResultPages(
       const requestKey = pageStartForSubRank(match.subRank);
       if (requested.has(requestKey)) continue;
       requested.add(requestKey);
-      void getSearchWindow(eventId, rankingType, selection, match).catch(
+      void getPersonWindow(eventId, rankingType, selection, match, source, gender).catch(
         () => undefined
       );
     }
@@ -384,7 +438,10 @@ function searchRankings(
   selection: RegionSelection,
   search: string,
   regexSearch: boolean,
-  signal: AbortSignal
+  signal: AbortSignal,
+  source?: RankingSource,
+  resource: RankingResource = "people",
+  gender: readonly GenderFilter[] = [],
 ) {
   const params = new URLSearchParams({
     eventId,
@@ -393,14 +450,46 @@ function searchRankings(
     searchLimit: "500",
   });
   if (regexSearch) params.set("mode", "vim");
+  addRankingSourceParams(params, source);
+  const year = activeYear();
+  if (resource === "people" && year) params.set("year", year);
+  if ((resource === "people" || resource === "results") && gender.length) params.set("gender", gender.join(","));
   if (selection.scope !== "world") params.set("region", selection.regionId);
 
-  return fetch(`/api/rankings?${params}`, { signal }).then(async (response) => {
+  const endpoint = resource === "results" ? "/api/rankings/results" : "/api/rankings";
+  return fetch(`${endpoint}?${params}`, { signal }).then(async (response) => {
     if (!response.ok) {
       const body = (await response.json()) as { error?: string };
       throw new Error(body.error ?? "Search is unavailable.");
     }
     return response.json() as Promise<{ entries: RankingEntry[] }>;
+  });
+}
+
+function locateRanking(
+  eventId: string,
+  rankingType: "single" | "average",
+  selection: RegionSelection,
+  wcaId: string,
+  source?: RankingSource,
+  gender: readonly GenderFilter[] = [],
+) {
+  const params = new URLSearchParams({
+    eventId,
+    result: rankingType,
+    locate: wcaId,
+  });
+  addRankingSourceParams(params, source);
+  const year = activeYear();
+  if (year) params.set("year", year);
+  if (gender.length) params.set("gender", gender.join(","));
+  if (selection.scope !== "world") params.set("region", selection.regionId);
+  return fetch(`/api/rankings?${params}`).then(async (response) => {
+    if (!response.ok) {
+      const body = (await response.json()) as { error?: string };
+      throw new Error(body.error ?? "Could not find this person in the rankings.");
+    }
+    return response.json() as Promise<{ located: RankingEntry | null }>;
   });
 }
 
@@ -410,7 +499,24 @@ export function RankingsExplorer({
   initialRegexSearch = initialData?.regexSearch ?? false,
   initialEventId = "333",
   initialRankingType = "single",
+  initialGender = [],
+  initialYear: _initialYear = null,
   initialRegionSelection = { scope: "world", regionId: "" },
+  showAllEventRankingOptions = false,
+  showSubjectSwitch = false,
+  initialSubject = "people",
+  initialCompetitionRanking = "best-result",
+  initialLatitudeHemisphere = "north",
+  mockSubjectRows = false,
+  rankingSource,
+  showMyRank = true,
+  listOwner,
+  listMembership,
+  listMembershipRequests,
+  listActions,
+  dynamicList,
+  listNotice,
+  regionSelectionDisabled = false,
   initialRegions = {
     continents: FALLBACK_CONTINENTS,
     countries: FALLBACK_COUNTRIES,
@@ -419,22 +525,78 @@ export function RankingsExplorer({
   initialData?: InitialRankingData;
   initialSearch?: string;
   initialRegexSearch?: boolean;
-  initialEventId?: (typeof WCA_EVENTS)[number]["id"];
+  initialEventId?: (typeof WCA_EVENTS)[number]["id"] | "SOR" | "sor-kinch";
   initialRankingType?: "single" | "average";
+  initialGender?: readonly GenderFilter[];
+  initialYear?: number | null;
   initialRegionSelection?: RegionSelection;
+  showAllEventRankingOptions?: boolean;
+  showSubjectSwitch?: boolean;
+  initialSubject?: ExplorerSubject;
+  initialCompetitionRanking?: CompetitionRanking;
+  initialLatitudeHemisphere?: "north" | "south";
+  mockSubjectRows?: boolean;
+  rankingSource?: RankingSource;
+  showMyRank?: boolean;
+  listOwner?: {
+    listId: string;
+    visibility: "public" | "private";
+    joinPolicy: "open" | "closed";
+  };
+  listMembership?: {
+    listId: string;
+    joinPolicy: "open" | "closed";
+    state: "member" | "pending" | "not_member";
+  };
+  listMembershipRequests?: {
+    listId: string;
+    requests: Array<{ id: number; personId: string; name: string }>;
+  };
+  listActions?: { listId: string; isOwner: boolean };
+  dynamicList?: { personIds: string[] };
+  listNotice?: string;
+  regionSelectionDisabled?: boolean;
   initialRegions?: {
     continents: Array<{ id: string; name: string }>;
     countries: Array<{ id: string; name: string; iso2?: string }>;
   };
 }) {
+  const router = useRouter();
+  const isMobileControls = useSyncExternalStore(
+    subscribeMobileControls,
+    getMobileControlsSnapshot,
+    () => false,
+  );
   const normalizedInitialSearch = initialSearch.trim();
-  const [eventId, setEventId] = useState(initialEventId);
-  const [rankingType, setRankingType] = useState<"single" | "average">(
-    initialRankingType
-  );
-  const [regionSelection, setRegionSelection] = useState<RegionSelection>(
-    initialRegionSelection
-  );
+  const {
+    eventId, setEventId, rankingType, setRankingType, regionSelection, setRegionSelection,
+    subject, setSubject, competitionRanking, setCompetitionRanking,
+    latitudeHemisphere, setLatitudeHemisphere, listAddOpen, setListAddOpen,
+    memberSelectionMode, setMemberSelectionMode, selectedMemberIds, setSelectedMemberIds,
+  } = useRankingsExplorerState({
+    eventId: initialEventId,
+    rankingType: initialRankingType,
+    regionSelection: initialRegionSelection,
+    subject: initialSubject,
+    competitionRanking: initialCompetitionRanking,
+    latitudeHemisphere: initialLatitudeHemisphere,
+  });
+  const [gender, setGender] = useState<readonly GenderFilter[]>(initialGender);
+  const navigateToPage = useCallback((path: string) => {
+    const navigate = () => router.push(path);
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+    if (!document.startViewTransition || reduceMotion) {
+      navigate();
+      return;
+    }
+    document.startViewTransition(async () => {
+      navigate();
+      await Promise.resolve();
+      await (window as VinextNavigationWindow).__VINEXT_RSC_PENDING__;
+    });
+  }, [router]);
   const regions: RegionOption[] = [
     { key: "world", scope: "world", regionId: "", label: "World" },
     ...initialRegions.continents.map((region) => ({
@@ -473,16 +635,18 @@ export function RankingsExplorer({
   const [total, setTotal] = useState(
     initialData?.total ?? Number.POSITIVE_INFINITY
   );
-  const [fetchedAt, setFetchedAt] = useState<string | null>(
-    initialData?.fetchedAt ?? null
+  const [exportDate, setExportDate] = useState<string | null>(
+    initialData?.exportDate ?? null
   );
   const [offlineStale, setOfflineStale] = useState(false);
   const [hasMore, setHasMore] = useState(initialData?.hasMore ?? true);
   const [loading, setLoading] = useState(!initialData);
+  const [showLoading, setShowLoading] = useState(false);
   const [preserveListDuringLoad, setPreserveListDuringLoad] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingPrevious, setLoadingPrevious] = useState(false);
   const [error, setError] = useState("");
+  const [focusNotice, setFocusNotice] = useState("");
   const [listOffset, setListOffset] = useState(0);
   const [pageReloadNonce, setPageReloadNonce] = useState(0);
   const [findOpen, setFindOpen] = useState(Boolean(normalizedInitialSearch && !initialRegexSearch));
@@ -502,6 +666,9 @@ export function RankingsExplorer({
   const [highlightedPersonId, setHighlightedPersonId] = useState(
     initialData?.initialMatchPersonId ?? ""
   );
+  const [focusedExpandedPersonId, setFocusedExpandedPersonId] = useState(
+    initialData?.initialMatchPersonId ?? ""
+  );
   const [hydrated, setHydrated] = useState(false);
   const [vimMode, setVimMode] = useState(false);
   const [vimCommand, setVimCommand] = useState(":");
@@ -510,64 +677,92 @@ export function RankingsExplorer({
   const [vimSearchQuery, setVimSearchQuery] = useState(
     initialRegexSearch ? initialSearch : ""
   );
-  const [jumpUpArmed, setJumpUpArmed] = useState(false);
-  const [jumpDownArmed, setJumpDownArmed] = useState(false);
-  const [tableReachedTop, setTableReachedTop] = useState(false);
-  const [atPageEnd, setAtPageEnd] = useState(false);
+  const [pagerNavigationBusy, setPagerNavigationBusy] = useState(false);
+  const [memberRemovalOpen, setMemberRemovalOpen] = useState(false);
+  const [memberRemovalBusy, setMemberRemovalBusy] = useState(false);
+  const [memberRemovalError, setMemberRemovalError] = useState("");
+  const [memberRemovalPersonIds, setMemberRemovalPersonIds] = useState<string[]>([]);
+  const [memberContextMenu, setMemberContextMenu] = useState<{
+    personId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const { topProgress: topRailProgress, bottomProgress: bottomRailProgress } = useRailScrollProgress({ enabled: true, revealDistance: RAIL_REVEAL_DISTANCE, transformDistance: TOP_RAIL_TRANSFORM_DISTANCE });
+  const activeListKey = [
+    subject,
+    competitionRanking,
+    latitudeHemisphere,
+    eventId,
+    rankingType,
+    gender.join(","),
+    regionSelection.scope,
+    regionSelection.regionId,
+  ].join(":");
   const listRef = useRef<HTMLDivElement>(null);
-  const headerFindInputRef = useRef<HTMLInputElement>(null);
+  const stickyRankingsRailRef = useRef<HTMLDivElement>(null);
   const railFindInputRef = useRef<HTMLInputElement>(null);
-  const tableReachedTopRef = useRef(false);
-  const pendingSearchFocusHandoffRef =
-    useRef<PendingSearchFocusHandoff | null>(null);
-  const searchCompositionActiveRef = useRef(false);
-  const searchFocusHandoffFrameRef = useRef<number | null>(null);
-  const searchFocusHandoffTimerRef = useRef<number | null>(null);
+  const setRailFindInputRef = useCallback((input: HTMLInputElement | null) => {
+    railFindInputRef.current = input;
+  }, []);
   const vimInputRef = useRef<HTMLInputElement>(null);
   const vimCommandRef = useRef(vimCommand);
   const moreRequestRef = useRef(false);
   const previousRequestRef = useRef(false);
   const navigationEpochRef = useRef(0);
+  const activeListKeyRef = useRef(activeListKey);
+  const focusResolutionEpochRef = useRef(0);
+  const focusedWcaIdRef = useRef("");
+  const lastFocusRequestRef = useRef("");
+  const pendingFocusNoticeRef = useRef("");
+  const pendingPersonFocusRef = useRef<PendingPersonFocus | null>(null);
   const pendingRankRef = useRef(1);
   const pendingFocusLastRef = useRef(false);
   const pendingScrollToTopRef = useRef(false);
   const pendingScrollDirectionRef = useRef<-1 | 1 | null>(null);
   const pendingNavigationAppendRef = useRef(false);
   const navigationTargetRankRef = useRef<number | null>(null);
-  const jumpUpTimerRef = useRef<number | null>(null);
-  const jumpDownTimerRef = useRef<number | null>(null);
-  const jumpUpArmedRef = useRef(false);
-  const jumpDownArmedRef = useRef(false);
+  const pagerNavigationBusyRef = useRef(false);
   const preserveListDuringLoadRef = useRef(false);
-  const scrollRestoreAttemptedRef = useRef(false);
-  const scrollPersistenceReadyRef = useRef(false);
   const initialPageKeyRef = useRef(
     initialData
       ? [
+          initialSubject,
+          initialCompetitionRanking,
+          initialLatitudeHemisphere,
           initialEventId,
           initialRankingType,
           initialRegionSelection.scope,
           initialRegionSelection.regionId,
-          initialData.startRank,
+          initialData.startRank ?? 1,
         ].join(":")
       : ""
   );
   const forcePageLoadRef = useRef(false);
   const skipNextFindResetRef = useRef(false);
   const skipPageLoadStartRef = useRef<number | null>(null);
+  const pendingFirstPageFallbackRef = useRef(false);
   const initialScrollRef = useRef(
     Boolean(
-      initialData && normalizedInitialSearch && initialData.initialMatchPersonId
+      initialData && initialData.initialMatchPersonId
     )
   );
   const initialSearchRef = useRef(
     Boolean(initialData && normalizedInitialSearch)
+  );
+  const initialFocusRef = useRef(
+    Boolean(initialData?.initialMatchPersonId && !normalizedInitialSearch)
   );
   const findMatchesRef = useRef<RankingEntry[]>(
     orderSearchMatches(initialData?.searchMatches ?? [])
   );
   const findIndexRef = useRef(initialData?.searchMatches.length ? 0 : -1);
   const rankingListRef = useRef<HTMLOListElement>(null);
+  const railEventPickerTriggerRef = useRef<HTMLButtonElement>(null);
+  const pendingRowFocusRef = useRef<{
+    anchorPersonId: string;
+    direction: -1 | 1;
+  } | null>(null);
+  const rowFocusFrameRef = useRef<number | null>(null);
   const searchAnimationTimerRef = useRef<number | null>(null);
   const searchTransformOffsetRef = useRef(0);
   const pendingSearchLayoutAnchorRef = useRef<SearchLayoutAnchor | null>(null);
@@ -581,104 +776,91 @@ export function RankingsExplorer({
     clearProgrammaticTimer: null,
     settleTimer: null,
   });
+  const scrollVelocityRef = useScrollVelocity();
+  const resetToRankRef = useRef<ResetToRank>(() => {});
+  const finishPagerNavigation = useCallback(() => {
+    pagerNavigationBusyRef.current = false;
+    setPagerNavigationBusy(false);
+  }, []);
+  const removeSelectedMembers = async () => {
+    if (!listOwner || memberRemovalPersonIds.length === 0) return;
+    setMemberRemovalBusy(true);
+    setMemberRemovalError("");
+    try {
+      const responses = await Promise.all(
+        memberRemovalPersonIds.map((personId) =>
+          fetch(`/api/lists/${listOwner.listId}/members/${personId}`, {
+            method: "DELETE",
+          }),
+        ),
+      );
+      if (responses.some((response) => !response.ok)) {
+        throw new Error("Could not remove every selected person.");
+      }
+      setSelectedMemberIds(new Set());
+      setMemberSelectionMode(false);
+      window.location.reload();
+    } catch (error) {
+      setMemberRemovalError(
+        error instanceof Error ? error.message : "Could not remove people.",
+      );
+      setMemberRemovalBusy(false);
+    }
+  };
+  useEffect(() => {
+    if (!memberContextMenu) return;
+    const closeContextMenu = () => setMemberContextMenu(null);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeContextMenu();
+    };
+    window.addEventListener("pointerdown", closeContextMenu);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeContextMenu);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [memberContextMenu]);
+  const queuePersonFocus = useCallback((personId: string, animate: boolean) => {
+    setHighlightedPersonId(personId);
+    setFocusedExpandedPersonId(personId);
+    pendingPersonFocusRef.current = { personId, animate };
+  }, []);
+
+  const focusedExpandedIndex = subject === "people" && focusedExpandedPersonId
+    ? entries.findIndex((entry) => entry.personId === focusedExpandedPersonId)
+    : -1;
+  const estimatedRowHeight = useCallback((index: number) => (
+    index === focusedExpandedIndex ? EXPANDED_ROW_HEIGHT : ROW_HEIGHT
+  ), [focusedExpandedIndex]);
 
   const rowVirtualizer = useWindowVirtualizer({
     count: entries.length + 1,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: estimatedRowHeight,
+    measureElement: (element, entry, instance) => {
+      const index = Number(element.getAttribute("data-index"));
+      if (element.getAttribute("data-accordion-measure-lock") === "true") {
+        const key = instance.options.getItemKey(index);
+        const cache = (instance as unknown as { itemSizeCache?: Map<unknown, number> }).itemSizeCache;
+        return cache?.get(key) ?? estimatedRowHeight(index);
+      }
+      if (entry?.borderBoxSize) {
+        const box = entry.borderBoxSize[0];
+        if (box) return Math.round(box.blockSize);
+      }
+      return (element as HTMLElement).offsetHeight;
+    },
     overscan: 12,
     scrollMargin: listOffset,
   });
   const rowVirtualizerRef = useRef(rowVirtualizer);
-  const virtualRows = rowVirtualizer.getVirtualItems();
-
-  const focusPendingSearchSurface = useCallback(() => {
-    const pending = pendingSearchFocusHandoffRef.current;
-    if (!pending || searchCompositionActiveRef.current) return false;
-
-    const targetShouldBeRail = tableReachedTopRef.current;
-    if ((pending.target === "rail") !== targetShouldBeRail) {
-      pendingSearchFocusHandoffRef.current = null;
-      return true;
-    }
-
-    const target =
-      pending.target === "rail"
-        ? railFindInputRef.current
-        : headerFindInputRef.current;
-    if (!target) return false;
-
-    target.focus({ preventScroll: true });
-    if (document.activeElement !== target) return false;
-
-    if (pending.selectionStart !== null && pending.selectionEnd !== null) {
-      try {
-        target.setSelectionRange(
-          pending.selectionStart,
-          pending.selectionEnd,
-          pending.selectionDirection ?? undefined
-        );
-      } catch {
-        // Some mobile browsers can reject selection changes during focus transfer.
-      }
-    }
-
-    pendingSearchFocusHandoffRef.current = null;
-    return true;
+  const resizeVirtualRow = useCallback((index: number, size: number) => {
+    rowVirtualizerRef.current.resizeItem(index, size);
   }, []);
 
-  const schedulePendingSearchFocus = useCallback(() => {
-    if (!pendingSearchFocusHandoffRef.current) return;
-
-    if (searchFocusHandoffFrameRef.current !== null) {
-      window.cancelAnimationFrame(searchFocusHandoffFrameRef.current);
-      searchFocusHandoffFrameRef.current = null;
-    }
-    if (searchFocusHandoffTimerRef.current !== null) {
-      window.clearTimeout(searchFocusHandoffTimerRef.current);
-      searchFocusHandoffTimerRef.current = null;
-    }
-
-    if (focusPendingSearchSurface()) return;
-    if (searchCompositionActiveRef.current) return;
-
-    searchFocusHandoffFrameRef.current = window.requestAnimationFrame(() => {
-      searchFocusHandoffFrameRef.current = null;
-      if (focusPendingSearchSurface()) return;
-
-      searchFocusHandoffTimerRef.current = window.setTimeout(() => {
-        searchFocusHandoffTimerRef.current = null;
-        focusPendingSearchSurface();
-      }, 25);
-    });
-  }, [focusPendingSearchSurface]);
-
-  useLayoutEffect(() => {
-    schedulePendingSearchFocus();
-  }, [schedulePendingSearchFocus, tableReachedTop]);
-
   useEffect(() => {
-    const isFindInput = (target: EventTarget | null) =>
-      target === headerFindInputRef.current || target === railFindInputRef.current;
-    const handleCompositionStart = (event: CompositionEvent) => {
-      if (isFindInput(event.target)) searchCompositionActiveRef.current = true;
-    };
-    const handleCompositionEnd = (event: CompositionEvent) => {
-      if (!isFindInput(event.target)) return;
-      searchCompositionActiveRef.current = false;
-      schedulePendingSearchFocus();
-    };
-
-    document.addEventListener("compositionstart", handleCompositionStart);
-    document.addEventListener("compositionend", handleCompositionEnd);
-    return () => {
-      document.removeEventListener("compositionstart", handleCompositionStart);
-      document.removeEventListener("compositionend", handleCompositionEnd);
-      if (searchFocusHandoffFrameRef.current !== null)
-        window.cancelAnimationFrame(searchFocusHandoffFrameRef.current);
-      if (searchFocusHandoffTimerRef.current !== null)
-        window.clearTimeout(searchFocusHandoffTimerRef.current);
-    };
-  }, [schedulePendingSearchFocus]);
+    activeListKeyRef.current = activeListKey;
+  }, [activeListKey]);
+  const virtualRows = rowVirtualizer.getVirtualItems();
 
   useLayoutEffect(() => {
     const anchor = pendingSearchLayoutAnchorRef.current;
@@ -716,78 +898,34 @@ export function RankingsExplorer({
     setHydrated(true);
   }, []);
 
-  const scrollStorageKey = [
-    "wca-rankings-scroll-v1",
-    eventId,
-    rankingType,
-    regionSelection.scope,
-    regionSelection.regionId || "world",
-    findQuery.trim(),
-  ].join(":");
-
   useEffect(() => {
-    if (!hydrated || scrollRestoreAttemptedRef.current) return;
-    scrollRestoreAttemptedRef.current = true;
-    let savedScrollY = 0;
-    try {
-      const saved = window.localStorage.getItem(scrollStorageKey);
-      const parsed = saved ? (JSON.parse(saved) as { scrollY?: number }) : null;
-      if (parsed && Number.isFinite(parsed.scrollY))
-        savedScrollY = Math.max(0, parsed.scrollY ?? 0);
-    } catch {
-      savedScrollY = 0;
+    if (!loading) {
+      const frame = window.requestAnimationFrame(() => setShowLoading(false));
+      return () => window.cancelAnimationFrame(frame);
     }
+    const timer = window.setTimeout(() => setShowLoading(true), 200);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
 
-    let secondFrame: number | null = null;
-    const firstFrame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(() => {
-        if (!normalizedInitialSearch && !initialScrollRef.current && savedScrollY > 0)
-          window.scrollTo({ top: savedScrollY, behavior: "auto" });
-        scrollPersistenceReadyRef.current = true;
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-      if (secondFrame !== null) window.cancelAnimationFrame(secondFrame);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const wrapperTop = listRef.current
+        ? listRef.current.getBoundingClientRect().top + window.scrollY
+        : 0;
+      const listTop = rankingListRef.current?.offsetTop ?? 0;
+      setListOffset(wrapperTop + listTop);
+      rowVirtualizerRef.current.measure();
     };
-  }, [hydrated, normalizedInitialSearch, scrollStorageKey]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    let saveTimer: number | null = null;
-    const saveScrollPosition = () => {
-      if (!scrollPersistenceReadyRef.current) return;
-      try {
-        window.localStorage.setItem(
-          scrollStorageKey,
-          JSON.stringify({ scrollY: Math.max(0, Math.round(window.scrollY)) })
-        );
-      } catch {
-        // Storage can be unavailable in private browsing or restricted embeds.
-      }
-    };
-    const onScroll = () => {
-      if (saveTimer !== null) window.clearTimeout(saveTimer);
-      saveTimer = window.setTimeout(() => {
-        saveTimer = null;
-        saveScrollPosition();
-      }, 100);
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("beforeunload", saveScrollPosition);
-    return () => {
-      if (saveTimer !== null) window.clearTimeout(saveTimer);
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("beforeunload", saveScrollPosition);
-    };
-  }, [hydrated, scrollStorageKey]);
-
-  useEffect(() => {
-    const measure = () => setListOffset(listRef.current?.offsetTop ?? 0);
     measure();
     window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [eventId, rankingType, loading, regionSelection]);
+    window.addEventListener("orientationchange", measure);
+    window.visualViewport?.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+      window.visualViewport?.removeEventListener("resize", measure);
+    };
+  }, [entries.length, eventId, loading, loadingPrevious, rankingType, regionSelection]);
 
   useEffect(() => {
     if (
@@ -810,13 +948,12 @@ export function RankingsExplorer({
           list: listRef.current,
           index: targetIndex,
           alignment: "center",
+          rowHeight: EXPANDED_ROW_HEIGHT,
           requestedDuration: getScrollAnimationDuration(targetIndex),
           schedule: false,
           targetOffset: () =>
-            rowVirtualizerRef.current.getOffsetForIndex(
-              targetIndex,
-              "start"
-            )?.[0],
+            getRenderedPersonTop(initialData.initialMatchPersonId) ??
+            rowVirtualizerRef.current.getOffsetForIndex(targetIndex, "start")?.[0],
         });
       });
     });
@@ -832,38 +969,6 @@ export function RankingsExplorer({
     startPositionRef.current = startPosition;
   }, [entries, startPosition, startRank]);
 
-  useEffect(() => {
-    const updateRailVisibility = () => {
-      const tableTop = rankingListRef.current?.getBoundingClientRect().top;
-      const nextTableReachedTop =
-        (tableTop ?? Number.POSITIVE_INFINITY) <= 0;
-      if (nextTableReachedTop !== tableReachedTopRef.current) {
-        const source = nextTableReachedTop
-          ? headerFindInputRef.current
-          : railFindInputRef.current;
-        if (source && document.activeElement === source) {
-          pendingSearchFocusHandoffRef.current = {
-            target: nextTableReachedTop ? "rail" : "header",
-            selectionStart: source.selectionStart,
-            selectionEnd: source.selectionEnd,
-            selectionDirection: source.selectionDirection,
-          };
-        }
-        tableReachedTopRef.current = nextTableReachedTop;
-        setTableReachedTop(nextTableReachedTop);
-      }
-      setAtPageEnd(
-        window.scrollY + window.innerHeight >=
-          document.documentElement.scrollHeight - 1
-      );
-    };
-    const frame = window.requestAnimationFrame(updateRailVisibility);
-    window.addEventListener("scroll", updateRailVisibility, { passive: true });
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", updateRailVisibility);
-    };
-  }, [entries.length, loading]);
 
   useEffect(() => {
     const syncStateFromUrl = () => {
@@ -873,10 +978,14 @@ export function RankingsExplorer({
       const nextRankingType =
         url.searchParams.get("result") ?? url.searchParams.get("type");
       const nextRegion = url.searchParams.get("region");
+      const nextLatitudeHemisphere =
+        url.searchParams.get("hemisphere") === "south" ? "south" : "north";
       const search = url.searchParams.get("search") ?? "";
-      const resolvedEventId = isEventId(nextEventId) ? nextEventId : "333";
-      const resolvedRankingType =
-        resolvedEventId === "333mbf"
+      const resolvedEventId = isRankingEventId(nextEventId) ? nextEventId : "333";
+      const resolvedRankingType = initialSubject === "competitions" &&
+        initialCompetitionRanking === "podiums"
+          ? podiumRankingType(resolvedEventId)
+          : resolvedEventId === "333mbf"
           ? "single"
           : isRankingType(nextRankingType)
           ? nextRankingType
@@ -885,6 +994,7 @@ export function RankingsExplorer({
       setEventId(resolvedEventId);
       setRankingType(resolvedRankingType);
       setRegionSelection({ scope, regionId });
+      setLatitudeHemisphere(nextLatitudeHemisphere);
       setFindQuery(search);
       const nextRegexSearch = url.searchParams.get("mode") === "vim" && Boolean(search.trim());
       setRegexSearch(nextRegexSearch);
@@ -892,8 +1002,15 @@ export function RankingsExplorer({
       setVimSearchQuery(nextRegexSearch ? search : "");
       setFindOpen(Boolean(search.trim() && !nextRegexSearch));
       updateQueryParams({
-        eventId: resolvedEventId === "333" ? null : resolvedEventId,
-        result: resolvedRankingType === "single" ? null : resolvedRankingType,
+        eventId:
+          resolvedEventId === "333" ? null : resolvedEventId,
+        result:
+          initialSubject === "competitions" &&
+          initialCompetitionRanking === "podiums"
+            ? null
+            : resolvedRankingType === "single"
+              ? null
+              : resolvedRankingType,
         event: null,
         type: null,
         region: regionId || null,
@@ -908,6 +1025,9 @@ export function RankingsExplorer({
 
   useEffect(() => {
     const pageKey = [
+      subject,
+      competitionRanking,
+      latitudeHemisphere,
       eventId,
       rankingType,
       regionSelection.scope,
@@ -925,7 +1045,9 @@ export function RankingsExplorer({
     }
     skipPageLoadStartRef.current = null;
     let active = true;
+    let redirectedToFirstPage = false;
     const requestNavigationEpoch = navigationEpochRef.current;
+    const shouldFallbackToTop = pendingFirstPageFallbackRef.current;
     const preserveList = preserveListDuringLoadRef.current;
     // This reset is coupled to the request started immediately below.
     setLoading(true);
@@ -934,16 +1056,23 @@ export function RankingsExplorer({
       setNextPageStart(null);
       setPreviousPageStart(null);
       setHasMore(true);
-      setTotal(Number.POSITIVE_INFINITY);
     }
     setError("");
+    if (!preserveList && !pendingFocusNoticeRef.current) setFocusNotice("");
     moreRequestRef.current = false;
     previousRequestRef.current = false;
     const focusLast = pendingFocusLastRef.current;
     pendingFocusLastRef.current = false;
+    const personFocus = pendingPersonFocusRef.current;
+    const focusMatch = personFocus
+      ? { personId: personFocus.personId, subRank: pendingRankRef.current }
+      : null;
+    const resource = rankingResource(subject, competitionRanking, latitudeHemisphere);
     const pageRequest = focusLast
-      ? getEndWindow(eventId, rankingType, regionSelection, startRank)
-      : getPage(eventId, rankingType, startRank, regionSelection);
+      ? getEndWindow(eventId, rankingType, regionSelection, startRank, resource, rankingSource, gender)
+      : focusMatch
+        ? getPersonWindow(eventId, rankingType, regionSelection, focusMatch, rankingSource, gender)
+      : getPage(eventId, rankingType, startRank, regionSelection, resource, rankingSource, gender);
     pageRequest
       .then((data) => {
         if (
@@ -951,6 +1080,22 @@ export function RankingsExplorer({
           requestNavigationEpoch !== navigationEpochRef.current
         )
           return;
+        if (
+          shouldFallbackToTop &&
+          shouldFallbackToFirstPage(startRank, data.entries.length)
+        ) {
+          redirectedToFirstPage = true;
+          pendingFirstPageFallbackRef.current = false;
+          pendingRankRef.current = 1;
+          pendingScrollToTopRef.current = true;
+          pendingScrollDirectionRef.current = null;
+          pendingNavigationAppendRef.current = false;
+          preserveListDuringLoadRef.current = true;
+          setPreserveListDuringLoad(true);
+          setStartRank(1);
+          return;
+        }
+        if (shouldFallbackToTop) pendingFirstPageFallbackRef.current = false;
         const currentPosition = getCurrentViewportPosition(
           listRef.current,
           entriesRef.current,
@@ -970,6 +1115,7 @@ export function RankingsExplorer({
           pendingNavigationAppendRef.current &&
           !scrollToTop &&
           !focusLast &&
+          !focusMatch &&
           Boolean(pendingDirection);
         const previousEntries = entriesRef.current;
         const previousStartPosition = startPositionRef.current;
@@ -1017,13 +1163,18 @@ export function RankingsExplorer({
         setLastRank(data.lastRank);
         setHasMore(data.hasMore);
         setTotal(data.total);
-        setFetchedAt(data.fetchedAt);
+        setExportDate(data.exportDate ?? null);
         setOfflineStale(Boolean(data.offlineStale));
+        const focusedTargetIndex = personFocus
+          ? loadedEntries.findIndex((entry) => entry.personId === personFocus.personId)
+          : -1;
         const requestedTargetIndex = focusLast
           ? Math.max(0, loadedEntries.length - 1)
-          : loadedEntries.findIndex(
-              (entry) => entry.subRank >= rankForStep
-            );
+          : focusedTargetIndex >= 0
+            ? focusedTargetIndex
+            : loadedEntries.findIndex(
+                (entry) => entry.subRank >= rankForStep
+              );
         const targetIndex =
           requestedTargetIndex >= 0
             ? requestedTargetIndex
@@ -1034,15 +1185,20 @@ export function RankingsExplorer({
           scrollToTop ||
             focusLast ||
             pendingDirection ||
-            appendNavigation
+            appendNavigation ||
+            focusedTargetIndex >= 0
         );
+        if (focusedTargetIndex >= 0) pendingPersonFocusRef.current = null;
         pendingScrollDirectionRef.current = null;
         if (scrollToTop) {
           animateScrollTo(
             scrollAnimationStateRef.current,
             0,
             "smooth",
-            getScrollAnimationDuration(currentPosition)
+            getScrollAnimationDuration(currentPosition),
+            pagerNavigationBusyRef.current
+              ? finishPagerNavigation
+              : undefined
           );
         } else if (shouldScrollToTarget) {
           if (previousListHeight !== null) {
@@ -1060,19 +1216,33 @@ export function RankingsExplorer({
               state: scrollAnimationStateRef.current,
               list: listRef.current,
               index: targetIndex,
-              alignment: focusLast ? "bottom" : "top",
+              alignment: focusLast
+                ? "bottom"
+                : focusedTargetIndex >= 0
+                  ? "center"
+                  : "top",
               bottomOffset: focusLast ? END_MARKER_PEEK : 0,
-              requestedBehavior: "smooth",
+              requestedBehavior:
+                focusedTargetIndex >= 0 && !personFocus?.animate
+                  ? "auto"
+                  : "smooth",
               requestedDuration: getScrollAnimationDuration(
                 Math.abs(rankForStep - currentSubRank)
               ),
+              rowHeight: focusedTargetIndex >= 0 ? EXPANDED_ROW_HEIGHT : ROW_HEIGHT,
               targetOffset: focusLast
                 ? undefined
                 : () =>
+                    (personFocus
+                      ? getRenderedPersonTop(personFocus.personId)
+                      : undefined) ??
                     rowVirtualizerRef.current.getOffsetForIndex(
                       targetIndex,
                       "start"
                     )?.[0],
+              onComplete: pagerNavigationBusyRef.current
+                ? finishPagerNavigation
+                : undefined,
             });
           });
 
@@ -1083,11 +1253,57 @@ export function RankingsExplorer({
           active &&
           requestNavigationEpoch === navigationEpochRef.current
         ) {
+          if (focusMatch) {
+            void locateRanking(eventId, rankingType, regionSelection, focusMatch.personId, rankingSource, gender)
+              .then(({ located }) => {
+                if (
+                  !active ||
+                  requestNavigationEpoch !== navigationEpochRef.current
+                )
+                  return;
+                if (located) {
+                  pendingFocusNoticeRef.current = "";
+                  setFocusNotice("");
+                  resetToRankRef.current(located.subRank, false, located.personId);
+                  return;
+                }
+                const notice = "That person is not ranked for the selected event or filters.";
+                setFocusedExpandedPersonId("");
+                pendingPersonFocusRef.current = null;
+                pendingFocusNoticeRef.current = notice;
+                pendingRankRef.current = 1;
+                pendingScrollToTopRef.current = true;
+                pendingScrollDirectionRef.current = null;
+                pendingNavigationAppendRef.current = false;
+                preserveListDuringLoadRef.current = true;
+                setPreserveListDuringLoad(true);
+                setFocusNotice(notice);
+                setStartRank(1);
+                setPageReloadNonce((nonce) => nonce + 1);
+                finishPagerNavigation();
+              })
+              .catch((locateError: unknown) => {
+                if (
+                  !active ||
+                  requestNavigationEpoch !== navigationEpochRef.current
+                )
+                  return;
+                setError(
+                  locateError instanceof Error
+                    ? locateError.message
+                    : "Rankings are unavailable."
+                );
+                finishPagerNavigation();
+              });
+            return;
+          }
+          if (shouldFallbackToTop) pendingFirstPageFallbackRef.current = false;
           setError(
             requestError instanceof Error
               ? requestError.message
               : "Rankings are unavailable."
           );
+          finishPagerNavigation();
         }
       })
       .finally(() => {
@@ -1095,6 +1311,7 @@ export function RankingsExplorer({
           active &&
           requestNavigationEpoch === navigationEpochRef.current
         ) {
+          if (redirectedToFirstPage) return;
           setLoading(false);
           preserveListDuringLoadRef.current = false;
           setPreserveListDuringLoad(false);
@@ -1105,11 +1322,17 @@ export function RankingsExplorer({
       active = false;
     };
   }, [
+    competitionRanking,
     eventId,
+    latitudeHemisphere,
     rankingType,
     regionSelection,
     pageReloadNonce,
     startRank,
+    subject,
+    finishPagerNavigation,
+    rankingSource,
+    gender,
   ]);
 
   const jumpToMatch = useCallback(
@@ -1165,7 +1388,9 @@ export function RankingsExplorer({
         rankingType,
         regionSelection,
         findMatchesRef.current,
-        findIndexRef.current
+        findIndexRef.current,
+        rankingSource,
+        gender,
       );
       setError("");
       setLoading(true);
@@ -1215,9 +1440,11 @@ export function RankingsExplorer({
               regionSelection,
               currentPageStart,
               match,
-              scrollDirection
+              scrollDirection,
+              rankingSource,
+              gender,
             )
-          : getSearchWindow(eventId, rankingType, regionSelection, match);
+          : getPersonWindow(eventId, rankingType, regionSelection, match, rankingSource, gender);
 
       void pageRequest
         .then((data) => {
@@ -1258,7 +1485,7 @@ export function RankingsExplorer({
           setLastRank(data.lastRank);
           setHasMore(data.hasMore);
           setTotal(data.total);
-          setFetchedAt(data.fetchedAt);
+          setExportDate(data.exportDate ?? null);
           setOfflineStale(Boolean(data.offlineStale));
           pendingScrollDirectionRef.current = null;
 
@@ -1382,7 +1609,7 @@ export function RankingsExplorer({
           finishSearchNavigation();
         });
     },
-    [eventId, rankingType, regionSelection]
+    [eventId, gender, rankingType, regionSelection, rankingSource]
   );
 
   const cycleFind = useCallback(
@@ -1446,9 +1673,18 @@ export function RankingsExplorer({
     const normalizedQuery = findQuery.trim();
     const isInitialSearch =
       initialSearchRef.current && normalizedQuery === normalizedInitialSearch;
+    const isInitialFocus = initialFocusRef.current && !normalizedQuery;
     const skipNavigationReset = skipNextFindResetRef.current;
     skipNextFindResetRef.current = false;
-    if (!isInitialSearch && !skipNavigationReset) {
+    const hasActiveOrResolvedSearch = Boolean(
+      normalizedQuery || findResolvedQuery || findMatchesRef.current.length,
+    );
+    if (
+      hasActiveOrResolvedSearch &&
+      !isInitialSearch &&
+      !isInitialFocus &&
+      !skipNavigationReset
+    ) {
       navigationEpochRef.current += 1;
       pendingSearchLayoutAnchorRef.current = null;
       cancelScrollAnimation(scrollAnimationStateRef.current);
@@ -1469,6 +1705,12 @@ export function RankingsExplorer({
     const timeout = window.setTimeout(
       () => {
         if (controller.signal.aborted) return;
+        if (isInitialFocus) {
+          initialFocusRef.current = false;
+          setFindResolvedQuery("");
+          setFindLoading(false);
+          return;
+        }
         if (
           initialSearchRef.current &&
           normalizedQuery === normalizedInitialSearch
@@ -1497,7 +1739,10 @@ export function RankingsExplorer({
           regionSelection,
           normalizedQuery,
           regexSearch,
-          controller.signal
+          controller.signal,
+          rankingSource,
+          rankingResource(subject, competitionRanking, latitudeHemisphere),
+          gender,
         )
           .then((data) => {
             if (controller.signal.aborted) return;
@@ -1534,13 +1779,17 @@ export function RankingsExplorer({
       controller.abort();
     };
   }, [
+    competitionRanking,
     eventId,
     findQuery,
+    findResolvedQuery,
     normalizedInitialSearch,
     rankingType,
     regionSelection,
     regexSearch,
     jumpToMatch,
+    rankingSource,
+    gender,
   ]);
 
   useEffect(() => {
@@ -1563,15 +1812,27 @@ export function RankingsExplorer({
         updateQueryParams({ mode: null });
         setFindOpen(true);
         window.requestAnimationFrame(() => {
-          const input = tableReachedTop
-            ? railFindInputRef.current
-            : headerFindInputRef.current;
+          const input = railFindInputRef.current;
           input?.focus();
           input?.select();
         });
         return;
       }
       if (vimMode) return;
+      if (
+        key === "e" &&
+        !isEditable &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey
+      ) {
+        const trigger = railEventPickerTriggerRef.current;
+        if (!trigger) return;
+        event.preventDefault();
+        if (trigger.getAttribute("aria-expanded") !== "true") trigger.click();
+        trigger.focus();
+        return;
+      }
       if (vimSearchActive && key === "n" && !isEditable) {
         event.preventDefault();
         setFindOpen(false);
@@ -1605,7 +1866,6 @@ export function RankingsExplorer({
     findQuery,
     regexSearch,
     resetFind,
-    tableReachedTop,
     vimMode,
     vimSearchActive,
   ]);
@@ -1621,17 +1881,44 @@ export function RankingsExplorer({
     )
       return;
     const requestEpoch = navigationEpochRef.current;
+    const requestListKey = activeListKeyRef.current;
     moreRequestRef.current = true;
     setLoadingMore(true);
     try {
+      const connection = (navigator as Navigator & {
+        connection?: NetworkInformationLike;
+      }).connection;
+      const followingPageStart = nextPageStart + PAGE_SIZE;
+      if (
+        followingPageStart <= total &&
+        shouldPrefetchExtraPage({
+          downwardPixelsPerMs: scrollVelocityRef.current.downwardPixelsPerMs,
+          saveData: connection?.saveData,
+          effectiveType: connection?.effectiveType,
+        })
+      ) {
+        void getPage(
+          eventId,
+          rankingType,
+          followingPageStart,
+          regionSelection,
+          rankingResource(subject, competitionRanking, latitudeHemisphere),
+          rankingSource,
+          gender,
+        ).catch(() => undefined);
+      }
       const data = await getPage(
         eventId,
         rankingType,
         nextPageStart,
-        regionSelection
+        regionSelection,
+        rankingResource(subject, competitionRanking, latitudeHemisphere),
+        rankingSource,
+        gender,
       );
       if (
         requestEpoch !== navigationEpochRef.current ||
+        requestListKey !== activeListKeyRef.current ||
         preserveListDuringLoadRef.current ||
         scrollAnimationStateRef.current.programmatic
       )
@@ -1646,7 +1933,7 @@ export function RankingsExplorer({
       setHasMore(data.hasMore);
       setLastRank(data.lastRank);
       setTotal(data.total);
-      setFetchedAt(data.fetchedAt);
+      setExportDate(data.exportDate ?? null);
       setOfflineStale(Boolean(data.offlineStale));
     } catch (requestError) {
       setError(
@@ -1658,11 +1945,11 @@ export function RankingsExplorer({
       moreRequestRef.current = false;
       setLoadingMore(false);
     }
-  }, [eventId, hasMore, loading, nextPageStart, rankingType, regionSelection]);
+  }, [competitionRanking, eventId, gender, hasMore, latitudeHemisphere, loading, nextPageStart, rankingSource, rankingType, regionSelection, subject, total]);
 
   const loadPrevious = useCallback(async () => {
     if (
-      !previousPageStart ||
+      previousPageStart === null ||
       previousRequestRef.current ||
       loading ||
       preserveListDuringLoadRef.current ||
@@ -1670,6 +1957,7 @@ export function RankingsExplorer({
     )
       return;
     const requestEpoch = navigationEpochRef.current;
+    const requestListKey = activeListKeyRef.current;
     previousRequestRef.current = true;
     setLoadingPrevious(true);
     const previousListHeight = rowVirtualizer.getTotalSize();
@@ -1678,10 +1966,14 @@ export function RankingsExplorer({
         eventId,
         rankingType,
         previousPageStart,
-        regionSelection
+        regionSelection,
+        rankingResource(subject, competitionRanking, latitudeHemisphere),
+        rankingSource,
+        gender,
       );
       if (
         requestEpoch !== navigationEpochRef.current ||
+        requestListKey !== activeListKeyRef.current ||
         preserveListDuringLoadRef.current ||
         scrollAnimationStateRef.current.programmatic
       )
@@ -1694,7 +1986,7 @@ export function RankingsExplorer({
       setStartPosition(data.startPosition);
       setPreviousPageStart(data.previousPageStart);
       setLastRank(data.lastRank);
-      setFetchedAt(data.fetchedAt);
+      setExportDate(data.exportDate ?? null);
       setOfflineStale(Boolean(data.offlineStale));
       window.requestAnimationFrame(() => {
         const addedHeight = Math.max(
@@ -1715,38 +2007,126 @@ export function RankingsExplorer({
       setLoadingPrevious(false);
     }
   }, [
+    competitionRanking,
     eventId,
+    latitudeHemisphere,
     loading,
     previousPageStart,
     rankingType,
     regionSelection,
     rowVirtualizer,
+    rankingSource,
+    gender,
+    subject,
   ]);
+
+  const focusRowAtIndex = useCallback(
+    (index: number) => {
+      rowVirtualizer.scrollToIndex(index, { align: "auto" });
+      if (rowFocusFrameRef.current !== null)
+        window.cancelAnimationFrame(rowFocusFrameRef.current);
+
+      let attemptsRemaining = 4;
+      const focusWhenRendered = () => {
+        rowFocusFrameRef.current = window.requestAnimationFrame(() => {
+          const row = rankingListRef.current?.querySelector<HTMLElement>(
+            `[data-row-index="${index}"]`,
+          );
+          if (row) {
+            row.focus({ preventScroll: true });
+            rowFocusFrameRef.current = null;
+            return;
+          }
+          attemptsRemaining -= 1;
+          if (attemptsRemaining > 0) focusWhenRendered();
+          else rowFocusFrameRef.current = null;
+        });
+      };
+      focusWhenRendered();
+    },
+    [rowVirtualizer],
+  );
+
+  const handleRowNavigate = useCallback(
+    (rowIndex: number, direction: -1 | 1) => {
+      const targetIndex = rowIndex + direction;
+      if (targetIndex >= 0 && targetIndex < entries.length) {
+        focusRowAtIndex(targetIndex);
+        return;
+      }
+
+      const anchor = entries[rowIndex];
+      if (!anchor) return;
+      if (direction === -1 && previousPageStart === null) return;
+      if (direction === 1 && !hasMore) return;
+
+      pendingRowFocusRef.current = {
+        anchorPersonId: anchor.personId,
+        direction,
+      };
+      if (direction === -1) void loadPrevious();
+      else void loadMore();
+    },
+    [
+      entries,
+      focusRowAtIndex,
+      hasMore,
+      loadMore,
+      loadPrevious,
+      previousPageStart,
+    ],
+  );
+
+  useEffect(() => {
+    const pending = pendingRowFocusRef.current;
+    if (!pending) return;
+    const anchorIndex = entries.findIndex(
+      (entry) => entry.personId === pending.anchorPersonId,
+    );
+    const targetIndex = anchorIndex + pending.direction;
+    if (anchorIndex < 0 || targetIndex < 0 || targetIndex >= entries.length)
+      return;
+    pendingRowFocusRef.current = null;
+    focusRowAtIndex(targetIndex);
+  }, [entries, focusRowAtIndex]);
 
   useEffect(() => {
     const lastVirtualRow = virtualRows.at(-1);
     // Loading the next bucket is the synchronization performed by this effect.
-    if (lastVirtualRow && lastVirtualRow.index >= entries.length - 12) {
+    const prefetchRows = getPrefetchRowCount(scrollVelocityRef.current.downwardPixelsPerMs);
+    if (lastVirtualRow && lastVirtualRow.index >= entries.length - prefetchRows) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       void loadMore();
     }
   }, [entries.length, loadMore, virtualRows]);
 
   useEffect(() => {
-    let lastScrollY = window.scrollY;
     const onScroll = () => {
       if (
         !scrollAnimationStateRef.current.programmatic &&
-        window.scrollY < lastScrollY
+        window.scrollY <= listOffset + ROW_HEIGHT * 14
       ) {
         navigationTargetRankRef.current = null;
-        if (window.scrollY <= listOffset + ROW_HEIGHT * 14) void loadPrevious();
+        void loadPrevious();
       }
-      lastScrollY = window.scrollY;
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, [listOffset, loadPrevious]);
+
+  useEffect(() => {
+    // A search result can be rendered at the document's top. In that state an
+    // additional upward gesture does not emit a scroll event, so prime the
+    // previous window after the virtual list has committed.
+    const frame = window.requestAnimationFrame(() => {
+      if (
+        !scrollAnimationStateRef.current.programmatic &&
+        window.scrollY <= listOffset + ROW_HEIGHT * 14
+      )
+        void loadPrevious();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [entries.length, listOffset, loadPrevious]);
 
   useEffect(() => {
     const cancelOnUserInput = () => {
@@ -1775,6 +2155,7 @@ export function RankingsExplorer({
       setLoading(false);
       preserveListDuringLoadRef.current = false;
       setPreserveListDuringLoad(false);
+      finishPagerNavigation();
     };
     window.addEventListener("wheel", cancelOnUserInput, { passive: true });
     window.addEventListener("touchstart", cancelOnUserInput, { passive: true });
@@ -1786,7 +2167,15 @@ export function RankingsExplorer({
       window.removeEventListener("touchstart", cancelOnUserInput);
       window.removeEventListener("pointerdown", cancelOnUserInput);
     };
-  }, []);
+  }, [finishPagerNavigation]);
+
+  useEffect(
+    () => () => {
+      if (rowFocusFrameRef.current !== null)
+        window.cancelAnimationFrame(rowFocusFrameRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     const animationState = scrollAnimationStateRef.current;
@@ -1801,17 +2190,22 @@ export function RankingsExplorer({
     entries[virtualRows[0]?.index ?? 0]?.subRank ?? startRank;
   const renderedRows = hydrated
     ? virtualRows
-    : entries.map((_, index) => ({
-        index,
-        start: index * ROW_HEIGHT,
-        key: index,
-      }));
+    : entries.map((_, index) => {
+        const start = entries
+          .slice(0, index)
+          .reduce((totalHeight, _entry, rowIndex) => totalHeight + estimatedRowHeight(rowIndex), 0);
+        return {
+          index,
+          start,
+          key: index,
+        };
+      });
   const renderedListHeight = hydrated
     ? rowVirtualizer.getTotalSize()
-    : entries.length * ROW_HEIGHT + (hasMore ? ROW_HEIGHT : 0);
+    : entries.reduce((totalHeight, _entry, index) => totalHeight + estimatedRowHeight(index), hasMore ? ROW_HEIGHT : 0);
 
   const resetToRank = useCallback(
-    (rank: number) => {
+    (rank: number, animate = true, focusedPersonId: string | null = null) => {
       // Vim and jump controls pass the internal sub_rank, never the displayed rank.
       navigationEpochRef.current += 1;
       cancelScrollAnimation(scrollAnimationStateRef.current);
@@ -1828,8 +2222,7 @@ export function RankingsExplorer({
       }
       pendingNavigationAppendRef.current = false;
       setLoading(false);
-      const maximumRank = lastRank ?? (Number.isFinite(total) ? total : rank);
-      const normalizedRank = Math.max(1, Math.min(rank, maximumRank));
+      const normalizedRank = clampTargetSubRank(rank, total, lastRank);
       const currentRank = getCurrentViewportSubRank(
         listRef.current,
         entriesRef.current,
@@ -1837,13 +2230,15 @@ export function RankingsExplorer({
       );
       navigationTargetRankRef.current = normalizedRank;
       pendingRankRef.current = normalizedRank;
+      if (focusedPersonId) queuePersonFocus(focusedPersonId, animate);
+      else pendingPersonFocusRef.current = null;
       if (normalizedRank === 1) {
         if (findQuery.trim()) skipNextFindResetRef.current = true;
         resetFind();
         setFindOpen(false);
         pendingFocusLastRef.current = false;
         pendingScrollDirectionRef.current = null;
-        pendingScrollToTopRef.current = true;
+        pendingScrollToTopRef.current = animate;
         cancelScrollAnimation(scrollAnimationStateRef.current);
         preserveListDuringLoadRef.current = true;
         setPreserveListDuringLoad(true);
@@ -1854,27 +2249,42 @@ export function RankingsExplorer({
       }
       pendingScrollToTopRef.current = false;
       pendingFocusLastRef.current = false;
-      pendingScrollDirectionRef.current =
+      pendingScrollDirectionRef.current = animate
+        ?
         normalizedRank < currentRank
           ? -1
           : normalizedRank > currentRank
           ? 1
-          : null;
+          : null
+        : null;
       // Rank values can be missing, so ask the API for the exact target and let
       // its ordered query choose the first real result at or beyond that rank.
       pendingNavigationAppendRef.current = Boolean(
         pendingScrollDirectionRef.current
       );
       const nextStart = pageStartForSubRank(normalizedRank) + 1;
+      if (!animate) {
+        preserveListDuringLoadRef.current = true;
+        setPreserveListDuringLoad(true);
+        if (nextStart === startRankRef.current) {
+          forcePageLoadRef.current = true;
+          setPageReloadNonce((nonce) => nonce + 1);
+        }
+        setStartRank(nextStart);
+        return;
+      }
       const firstLoadedRank = entries[0]?.subRank ?? Number.POSITIVE_INFINITY;
       const lastLoadedRank = entries.at(-1)?.subRank ?? 0;
       if (
         normalizedRank >= firstLoadedRank &&
         normalizedRank <= lastLoadedRank
       ) {
-        const requestedTargetIndex = entries.findIndex(
-          (entry) => entry.subRank >= normalizedRank
-        );
+        const focusedTargetIndex = focusedPersonId
+          ? entries.findIndex((entry) => entry.personId === focusedPersonId)
+          : -1;
+        const requestedTargetIndex = focusedTargetIndex >= 0
+          ? focusedTargetIndex
+          : entries.findIndex((entry) => entry.subRank >= normalizedRank);
         const targetIndex =
           requestedTargetIndex >= 0
             ? requestedTargetIndex
@@ -1885,14 +2295,22 @@ export function RankingsExplorer({
           state: scrollAnimationStateRef.current,
           list: listRef.current,
           index: targetIndex,
-          alignment: "top",
+          alignment: focusedTargetIndex >= 0 ? "center" : "top",
           requestedBehavior: "smooth",
           requestedDuration: getScrollAnimationDuration(
             Math.abs(normalizedRank - currentRank)
           ),
+          rowHeight: focusedTargetIndex >= 0 ? EXPANDED_ROW_HEIGHT : ROW_HEIGHT,
           targetOffset: () =>
+            (focusedPersonId
+              ? getRenderedPersonTop(focusedPersonId)
+              : undefined) ??
             rowVirtualizer.getOffsetForIndex(targetIndex, "start")?.[0],
+          onComplete: pagerNavigationBusyRef.current
+            ? finishPagerNavigation
+            : undefined,
         });
+        pendingPersonFocusRef.current = null;
         pendingScrollDirectionRef.current = null;
         return;
       }
@@ -1904,56 +2322,207 @@ export function RankingsExplorer({
       entries,
       findQuery,
       lastRank,
+      queuePersonFocus,
       resetFind,
       rowVirtualizer,
       startRank,
       total,
+      finishPagerNavigation,
     ]
   );
 
+  const focusWcaId = useCallback((wcaId: string, animate = true) => {
+    if (subject !== "people") return;
+    const resolutionEpoch = focusResolutionEpochRef.current + 1;
+    focusResolutionEpochRef.current = resolutionEpoch;
+    setError("");
+    void locateRanking(eventId, rankingType, regionSelection, wcaId, rankingSource, gender)
+      .then(({ located }) => {
+        if (resolutionEpoch !== focusResolutionEpochRef.current) return;
+        if (!located) {
+          const notice = "That person is not ranked for the selected event or filters.";
+          setFocusedExpandedPersonId("");
+          pendingFocusNoticeRef.current = notice;
+          setFocusNotice(notice);
+          resetToRank(1, false);
+          return;
+        }
+        pendingFocusNoticeRef.current = "";
+        setFocusNotice("");
+        setFocusedExpandedPersonId(located.personId);
+        resetToRank(
+          located.subRank,
+          animate,
+          located.personId,
+        );
+      })
+      .catch((requestError: unknown) => {
+        if (resolutionEpoch !== focusResolutionEpochRef.current) return;
+        setError(requestError instanceof Error ? requestError.message : "Could not find this person in the rankings.");
+      });
+  }, [eventId, gender, rankingType, rankingSource, regionSelection, resetToRank, subject]);
+
+  const focusMyRanking = useCallback((wcaId: string) => {
+    focusedWcaIdRef.current = wcaId;
+    setFocusedExpandedPersonId(wcaId);
+    updateQueryParams({ focus: "me", wcaId: null });
+    lastFocusRequestRef.current = [
+      eventId,
+      rankingType,
+      regionSelection.scope,
+      regionSelection.regionId,
+      "",
+      "me",
+    ].join(":");
+    focusWcaId(wcaId);
+  }, [eventId, focusWcaId, rankingType, regionSelection]);
+
+  const updateFocusedPersonParam = useCallback((personId: string | null) => {
+    if (personId) {
+      lastFocusRequestRef.current = [
+        eventId,
+        rankingType,
+        regionSelection.scope,
+        regionSelection.regionId,
+        personId,
+        "",
+      ].join(":");
+      focusedWcaIdRef.current = personId;
+      setHighlightedPersonId(personId);
+      setFocusedExpandedPersonId(personId);
+      updateQueryParams({ wcaId: personId, focus: null });
+      return;
+    }
+    focusedWcaIdRef.current = "";
+    setHighlightedPersonId("");
+    setFocusedExpandedPersonId("");
+    pendingFocusNoticeRef.current = "";
+    setFocusNotice("");
+    updateQueryParams({ wcaId: null, focus: null });
+  }, [eventId, rankingType, regionSelection]);
+
+  useEffect(() => {
+    if (subject !== "people") return;
+    const url = new URL(window.location.href);
+    const explicitWcaId = url.searchParams.get("wcaId")?.trim().toUpperCase();
+    const focusMe = url.searchParams.get("focus") === "me";
+    const requestKey = [eventId, rankingType, regionSelection.scope, regionSelection.regionId, explicitWcaId ?? "", focusMe ? "me" : ""].join(":");
+    if ((!explicitWcaId && !focusMe) || lastFocusRequestRef.current === requestKey) return;
+
+    if (explicitWcaId) {
+      lastFocusRequestRef.current = requestKey;
+      focusedWcaIdRef.current = explicitWcaId;
+      // Apply an explicit URL focus before resolving its ranking position.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setFocusedExpandedPersonId(explicitWcaId);
+      void Promise.resolve().then(() => {
+        if (lastFocusRequestRef.current === requestKey)
+          focusWcaId(explicitWcaId, false);
+      });
+      return;
+    }
+
+    if (focusedWcaIdRef.current) {
+      lastFocusRequestRef.current = requestKey;
+      const wcaId = focusedWcaIdRef.current;
+      setFocusedExpandedPersonId(wcaId);
+      void Promise.resolve().then(() => {
+        if (lastFocusRequestRef.current === requestKey)
+          focusWcaId(wcaId, false);
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    fetch("/api/auth/wca/me", { headers: { Accept: "application/json" }, signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not load your profile.");
+        const { profile } = await response.json() as { profile: { wcaId: string } | null };
+        if (!profile) throw new Error("Sign in with WCA to jump to your ranking.");
+        focusedWcaIdRef.current = profile.wcaId;
+        setFocusedExpandedPersonId(profile.wcaId);
+        lastFocusRequestRef.current = requestKey;
+        focusWcaId(profile.wcaId, false);
+      })
+      .catch((requestError: unknown) => {
+        if (requestError instanceof DOMException && requestError.name === "AbortError") return;
+        setError(requestError instanceof Error ? requestError.message : "Could not load your profile.");
+      });
+    return () => controller.abort();
+  }, [eventId, focusWcaId, rankingType, regionSelection, subject]);
+
   const jumpToEnd = useCallback(() => {
-    navigationEpochRef.current += 1;
+    const requestEpoch = navigationEpochRef.current + 1;
+    navigationEpochRef.current = requestEpoch;
     cancelScrollAnimation(scrollAnimationStateRef.current);
     pendingNavigationAppendRef.current = false;
     setLoading(false);
-    const endRank = lastRank ?? (Number.isFinite(total) ? total : visibleSubRank);
-    const nextStart = pageStartForSubRank(endRank) + 1;
-    const currentRank = getCurrentViewportSubRank(
-      listRef.current,
-      entriesRef.current,
-      startRankRef.current
-    );
-    navigationTargetRankRef.current = endRank;
-    pendingRankRef.current = endRank;
-    pendingScrollToTopRef.current = false;
-    pendingFocusLastRef.current = true;
-    pendingScrollDirectionRef.current =
-      endRank < currentRank ? -1 : endRank > currentRank ? 1 : null;
-    if (!hasMore && entries.length > 0) {
-      const targetIndex = Math.max(0, entries.length - 1);
-      scrollToEntry({
-        state: scrollAnimationStateRef.current,
-        list: listRef.current,
-        index: targetIndex,
-        alignment: "bottom",
-        bottomOffset: END_MARKER_PEEK,
-        requestedBehavior: "smooth",
-        requestedDuration: getScrollAnimationDuration(
-          Math.abs(endRank - currentRank)
-        ),
+    void getPage(
+      eventId,
+      rankingType,
+      1,
+      regionSelection,
+      rankingResource(subject, competitionRanking, latitudeHemisphere),
+      rankingSource,
+      gender,
+    )
+      .then((boundaryPage) => {
+        if (requestEpoch !== navigationEpochRef.current) return;
+        const endRank = getEndSubRank(
+          boundaryPage.total,
+          boundaryPage.lastRank ?? lastRank,
+          visibleSubRank
+        );
+        const nextStart = pageStartForSubRank(endRank) + 1;
+        const currentRank = getCurrentViewportSubRank(
+          listRef.current,
+          entriesRef.current,
+          startRankRef.current
+        );
+        navigationTargetRankRef.current = endRank;
+        pendingRankRef.current = endRank;
+        pendingScrollToTopRef.current = false;
+        pendingFocusLastRef.current = true;
+        pendingScrollDirectionRef.current =
+          endRank < currentRank ? -1 : endRank > currentRank ? 1 : null;
+        if (nextStart === startRankRef.current && entriesRef.current.length > 0) {
+          scrollToEntry({
+            state: scrollAnimationStateRef.current,
+            list: listRef.current,
+            index: entriesRef.current.length - 1,
+            alignment: "bottom",
+            bottomOffset: END_MARKER_PEEK,
+            requestedBehavior: "smooth",
+            requestedDuration: getScrollAnimationDuration(
+              Math.abs(endRank - currentRank)
+            ),
+          });
+          pendingScrollDirectionRef.current = null;
+          pendingFocusLastRef.current = false;
+          return;
+        }
+        preserveListDuringLoadRef.current = true;
+        setPreserveListDuringLoad(true);
+        setStartRank(nextStart);
+      })
+      .catch((requestError: unknown) => {
+        if (requestEpoch !== navigationEpochRef.current) return;
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Rankings are unavailable."
+        );
       });
-      pendingScrollDirectionRef.current = null;
-      pendingFocusLastRef.current = false;
-      return;
-    }
-    preserveListDuringLoadRef.current = true;
-    setPreserveListDuringLoad(true);
-    setStartRank(nextStart);
   }, [
-    entries.length,
-    hasMore,
+    competitionRanking,
+    eventId,
+    latitudeHemisphere,
     lastRank,
-    total,
+    rankingType,
+    rankingSource,
+    gender,
+    regionSelection,
+    subject,
     visibleSubRank,
   ]);
 
@@ -1972,86 +2541,21 @@ export function RankingsExplorer({
   }, []);
 
   const handleJumpUp = () => {
-    if (visibleSubRank <= 5000) {
-      if (jumpUpTimerRef.current !== null)
-        window.clearTimeout(jumpUpTimerRef.current);
-      jumpUpTimerRef.current = null;
-      jumpUpArmedRef.current = false;
-      setJumpUpArmed(false);
-      resetToRank(1);
-      return;
-    }
-    if (jumpUpArmedRef.current) {
-      if (jumpUpTimerRef.current !== null)
-        window.clearTimeout(jumpUpTimerRef.current);
-      jumpUpTimerRef.current = null;
-      jumpUpArmedRef.current = false;
-      setJumpUpArmed(false);
-      resetToRank(1);
-      return;
-    }
-    jumpDownArmedRef.current = false;
-    setJumpDownArmed(false);
-    if (jumpDownTimerRef.current !== null)
-      window.clearTimeout(jumpDownTimerRef.current);
-    jumpDownTimerRef.current = null;
-    jumpUpArmedRef.current = true;
-    jumpUpTimerRef.current = window.setTimeout(() => {
-      jumpUpTimerRef.current = null;
-      jumpUpArmedRef.current = false;
-      setJumpUpArmed(false);
-    }, 500);
-    setJumpUpArmed(true);
-    resetToRank(getNavigationBaseSubRank() - 5000);
+    if (pagerNavigationBusyRef.current) return;
+    pagerNavigationBusyRef.current = true;
+    setPagerNavigationBusy(true);
+    const baseRank = getNavigationBaseSubRank();
+    resetToRank(getPagerJumpTarget(baseRank, -1, total));
   };
 
   const handleJumpDown = () => {
-    if (Number.isFinite(total) && visibleSubRank >= total - 5000) {
-      if (jumpDownTimerRef.current !== null)
-        window.clearTimeout(jumpDownTimerRef.current);
-      jumpDownTimerRef.current = null;
-      jumpDownArmedRef.current = false;
-      setJumpDownArmed(false);
-      jumpToEnd();
-      return;
-    }
-    if (jumpDownArmedRef.current) {
-      if (jumpDownTimerRef.current !== null)
-        window.clearTimeout(jumpDownTimerRef.current);
-      jumpDownTimerRef.current = null;
-      jumpDownArmedRef.current = false;
-      setJumpDownArmed(false);
-      jumpToEnd();
-      return;
-    }
-    jumpUpArmedRef.current = false;
-    setJumpUpArmed(false);
-    if (jumpUpTimerRef.current !== null)
-      window.clearTimeout(jumpUpTimerRef.current);
-    jumpUpTimerRef.current = null;
-    jumpDownArmedRef.current = true;
-    jumpDownTimerRef.current = window.setTimeout(() => {
-      jumpDownTimerRef.current = null;
-      jumpDownArmedRef.current = false;
-      setJumpDownArmed(false);
-    }, 500);
-    setJumpDownArmed(true);
-    resetToRank(getNavigationBaseSubRank() + 5000);
+    if (pagerNavigationBusyRef.current) return;
+    pagerNavigationBusyRef.current = true;
+    setPagerNavigationBusy(true);
+    const baseRank = getNavigationBaseSubRank();
+    resetToRank(getPagerJumpTarget(baseRank, 1, total));
   };
 
-  useEffect(
-    () => () => {
-      if (jumpUpTimerRef.current !== null)
-        window.clearTimeout(jumpUpTimerRef.current);
-      if (jumpDownTimerRef.current !== null)
-        window.clearTimeout(jumpDownTimerRef.current);
-      jumpUpArmedRef.current = false;
-      jumpDownArmedRef.current = false;
-    },
-    []
-  );
-
-  const resetToRankRef = useRef(resetToRank);
   const jumpToEndRef = useRef(jumpToEnd);
   useEffect(() => {
     resetToRankRef.current = resetToRank;
@@ -2186,6 +2690,9 @@ export function RankingsExplorer({
         if (event.key === "Enter") {
           const regexQuery = vimCommand.slice(1).trim();
           if (regexQuery) {
+            trackGoogleAnalyticsEvent("ranking_search_used", {
+              search_mode: "vim",
+            });
             setRegexSearch(true);
             updateQueryParams({ search: regexQuery, mode: "vim" });
             setFindResolvedQuery("");
@@ -2274,53 +2781,121 @@ export function RankingsExplorer({
   const changeRankingType = (nextRankingType: "single" | "average") => {
     if (
       nextRankingType === rankingType ||
-      (eventId === "333mbf" && nextRankingType === "average")
+      eventId === "333mbf" ||
+      eventId === "sor-kinch"
     )
       return;
-    pendingRankRef.current = 1;
-    pendingScrollToTopRef.current = true;
+    const viewportSubRank = getCurrentViewportSubRank(
+      listRef.current,
+      entriesRef.current,
+      startRankRef.current
+    );
+    const nextStartRank = pageStartForViewportSubRank(viewportSubRank);
+    pendingRankRef.current = viewportSubRank;
+    pendingScrollToTopRef.current = false;
     pendingScrollDirectionRef.current = null;
+    pendingFirstPageFallbackRef.current = true;
     skipNextFindResetRef.current = true;
     preserveListDuringLoadRef.current = true;
     setPreserveListDuringLoad(true);
     setRankingType(nextRankingType);
+    trackGoogleAnalyticsEvent("ranking_result_type_changed", {
+      result_type: nextRankingType,
+    });
     updateQueryParams({
       result: nextRankingType === "single" ? null : nextRankingType,
       type: null,
     });
-    setStartRank(1);
+    setStartRank(nextStartRank);
   };
 
-  const changeEvent = (nextEventId: (typeof WCA_EVENTS)[number]["id"]) => {
+  const changeEvent = (
+    nextEventId: (typeof WCA_EVENTS)[number]["id"] | "SOR" | "sor-kinch"
+  ) => {
     pendingRankRef.current = 1;
     pendingScrollToTopRef.current = true;
+    pendingScrollDirectionRef.current = null;
+    pendingFirstPageFallbackRef.current = false;
     skipNextFindResetRef.current = true;
-    preserveListDuringLoadRef.current = false;
-    setPreserveListDuringLoad(false);
+    preserveListDuringLoadRef.current = true;
+    setPreserveListDuringLoad(true);
+    animateScrollTo(
+      scrollAnimationStateRef.current,
+      0,
+      "smooth",
+      getScrollAnimationDuration(Math.max(1, Math.round(window.scrollY / ROW_HEIGHT))),
+    );
     setStartRank(1);
     setEventId(nextEventId);
-    const nextRankingType = nextEventId === "333mbf" ? "single" : rankingType;
+    const nextRankingType =
+      subject === "competitions" && competitionRanking === "podiums"
+        ? podiumRankingType(nextEventId)
+        : nextEventId === "333mbf" || nextEventId === "sor-kinch"
+          ? "single"
+          : rankingType;
     setRankingType(nextRankingType);
+    trackGoogleAnalyticsEvent("ranking_event_changed", {
+      event_id: nextEventId,
+    });
     updateQueryParams({
       eventId: nextEventId === "333" ? null : nextEventId,
-      result: nextRankingType === "single" ? null : nextRankingType,
+      result: nextEventId === "sor-kinch" || nextRankingType === "single" ? null : nextRankingType,
       event: null,
       type: null,
     });
   };
 
   const changeRegion = (option: RegionOption) => {
-    pendingRankRef.current = 1;
-    pendingScrollToTopRef.current = true;
+    const viewportSubRank = getCurrentViewportSubRank(
+      listRef.current,
+      entriesRef.current,
+      startRankRef.current
+    );
+    const nextStartRank = pageStartForViewportSubRank(viewportSubRank);
+    const nextSelection = { scope: option.scope, regionId: option.regionId };
+    pendingFirstPageFallbackRef.current = true;
+    pendingRankRef.current = viewportSubRank;
+    pendingScrollToTopRef.current = false;
+    pendingScrollDirectionRef.current = null;
+    pendingNavigationAppendRef.current = false;
     skipNextFindResetRef.current = true;
-    preserveListDuringLoadRef.current = false;
-    setPreserveListDuringLoad(false);
-    setStartRank(1);
-    setRegionSelection({ scope: option.scope, regionId: option.regionId });
+    preserveListDuringLoadRef.current = true;
+    setPreserveListDuringLoad(true);
+    setStartRank(nextStartRank);
+    setRegionSelection(nextSelection);
+    trackGoogleAnalyticsEvent("ranking_scope_changed", {
+      scope_type: option.scope,
+    });
     updateQueryParams({
       region: option.scope === "world" ? null : option.regionId,
       scope: null,
     });
+  };
+
+  const changeGender = (nextGender: GenderFilter[]) => {
+    const normalizedGender = normalizeGenderFilters(nextGender);
+    if (normalizedGender.join(",") === gender.join(",")) return;
+    pendingRankRef.current = 1;
+    pendingScrollToTopRef.current = true;
+    pendingScrollDirectionRef.current = null;
+    pendingNavigationAppendRef.current = false;
+    preserveListDuringLoadRef.current = false;
+    setPreserveListDuringLoad(false);
+    setStartRank(1);
+    setGender(normalizedGender);
+    updateQueryParams({ gender: normalizedGender.length ? normalizedGender.join(",") : null });
+    trackGoogleAnalyticsEvent("ranking_gender_changed", {
+      gender: normalizedGender.length ? normalizedGender.join(",") : "any",
+    });
+  };
+
+  const changeSubject = (nextSubject: NavigationSubject) => {
+    if (nextSubject === "lists") {
+      navigateToPage("/lists");
+      return;
+    }
+    if (nextSubject === subject) return;
+    navigateToPage(subjectPath(nextSubject));
   };
 
   const activateFind = () => {
@@ -2332,17 +2907,12 @@ export function RankingsExplorer({
     setFindOpen(true);
   };
 
-  const openFind = () => {
-    activateFind();
-    window.requestAnimationFrame(() =>
-      (tableReachedTop
-        ? railFindInputRef.current
-        : headerFindInputRef.current
-      )?.focus()
-    );
-  };
-
   const changeFindQuery = (value: string) => {
+    if (!findQuery.trim() && value.trim()) {
+      trackGoogleAnalyticsEvent("ranking_search_used", {
+        search_mode: "standard",
+      });
+    }
     setVimSearchActive(false);
     setVimSearchQuery("");
     setRegexSearch(false);
@@ -2366,7 +2936,25 @@ export function RankingsExplorer({
     [findMatches, findResolvedQuery]
   );
   const activeFindMatch = findMatches[findIndex] ?? null;
-  const currentEvent = WCA_EVENTS.find((event) => event.id === eventId)!;
+  const currentEvent =
+    ALL_EVENT_RANKING_OPTIONS.find((option) => option.id === eventId) ??
+    WCA_EVENTS.find((event) => event.id === eventId)!;
+  const changeRailEvent = (nextEventId: string) => {
+    updateQueryParams({ personId: null });
+    changeEvent(
+      nextEventId as
+        | (typeof WCA_EVENTS)[number]["id"]
+        | "SOR"
+        | "sor-kinch"
+    );
+  };
+  const changeListSubject = (nextSubject: NavigationSubject) => {
+    if (nextSubject === "lists") {
+      navigateToPage("/lists");
+      return;
+    }
+    changeSubject(nextSubject);
+  };
 
   return (
     <div
@@ -2374,52 +2962,77 @@ export function RankingsExplorer({
         findQuery.trim() ? " app--searching" : ""
       }`}
     >
-      <header className="header">
-        <div className="headerTopRow">
-          <div className="headerTitle">
-            <h1 className="title">
-              <Link href="/">WCA Rankings</Link>
-            </h1>
-          </div>
-          <div className="headerActions">
-            <SearchInputs
-              inputRef={headerFindInputRef}
-              findOpen={findOpen}
-              findQuery={findQuery}
-              findError={findError}
-              findLoading={findLoading}
-              findPending={findPending}
-              findMatches={findMatches}
-              findIndex={findIndex}
-              activeFindMatch={activeFindMatch}
-              onOpen={activateFind}
-              onClose={closeFind}
-              onQueryChange={changeFindQuery}
-              onCycle={cycleFind}
+      <AppHeader>
+        {rankingSource ? (
+          <>
+            <ExplorerSubjectSwitch subject="lists" onChange={changeListSubject} variant="text" />
+            <span className="listRankingName">{rankingSource.listName}</span>
+          </>
+        ) : showSubjectSwitch && (
+          <>
+            <ExplorerSubjectSwitch
+              subject={subject}
+              onChange={changeSubject}
+              variant="text"
             />
-            <ThemeToggle />
-          </div>
-        </div>
-        <RankingControls
-          eventId={eventId}
+            {subject === "competitions" && (
+              <TextDropdown
+                options={COMPETITION_RANKING_OPTIONS}
+                value={competitionRanking}
+                onChange={(nextRanking) => {
+                  if (nextRanking === competitionRanking) return;
+                  navigateToPage(competitionRankingPath(nextRanking));
+                }}
+                ariaLabel="Competition ranking"
+                className="competitionRankingDropdown"
+              />
+            )}
+          </>
+        )}
+      </AppHeader>
+
+      <div
+        ref={stickyRankingsRailRef}
+        className="stickyRankingsRail"
+        style={{ "--rail-scroll-progress": topRailProgress } as CSSProperties}
+      >
+        {listOwner && <ListOwnerControls listId={listOwner.listId} initialVisibility={listOwner.visibility} initialJoinPolicy={listOwner.joinPolicy} onManageMembers={() => { setMemberSelectionMode(true); setSelectedMemberIds(new Set()); }} />}
+        {listActions && !listActions.isOwner && <ListCloneExportControls listId={listActions.listId} />}
+        {dynamicList && <DynamicListControls personIds={dynamicList.personIds} />}
+        {listMembership && <ListMembershipControls listId={listMembership.listId} joinPolicy={listMembership.joinPolicy} initialState={listMembership.state} />}
+        {listAddOpen && listOwner ? <ListAddPeopleRail listId={listOwner.listId} onCancel={() => setListAddOpen(false)} onAdded={() => { forcePageLoadRef.current = true; setStartRank(1); setStartPosition(0); setPageReloadNonce((nonce) => nonce + 1); }} /> : <RankingsControlsRail
+          event={currentEvent}
+          eventOptions={competitionRanking === "podiums"
+            ? WCA_EVENTS.filter((event) => event.id !== "333mbf")
+            : WCA_EVENTS}
+          additionalEventOptions={showAllEventRankingOptions ? ALL_EVENT_RANKING_OPTIONS : undefined}
+          onEventChange={changeRailEvent}
           rankingType={rankingType}
+          onRankingTypeChange={changeRankingType}
+          gender={gender}
+          onGenderChange={changeGender}
           regions={regions}
           regionSelection={regionSelection}
-          onEventChange={changeEvent}
-          onRankingTypeChange={changeRankingType}
           onRegionChange={changeRegion}
-        />
-      </header>
-
-      <main>
-        <JumpControlsVisibility visible={tableReachedTop || jumpUpArmed}>
-          <JumpUpControls
-          armed={jumpUpArmed}
-          currentPosition={visibleSubRank}
-          onJump={handleJumpUp}
-          event={currentEvent}
-          onEventChange={changeEvent}
-          searchInputRef={railFindInputRef}
+          onEventPickerTrigger={(trigger) => { railEventPickerTriggerRef.current = trigger; }}
+          compactResultType={topRailProgress >= 1 || Boolean(rankingSource) && isMobileControls}
+          showResultType={!(eventId === "SOR" || eventId === "sor-kinch" || (subject === "competitions" && (competitionRanking === "podiums" || competitionRanking === "latitude" || competitionRanking === "competitor-count")))}
+          showEventPicker={!(subject === "competitions" && (competitionRanking === "latitude" || competitionRanking === "competitor-count"))}
+          showRegion
+          showGender={subject === "people" || subject === "results"}
+          showSearch
+          hemisphere={subject === "competitions" && competitionRanking === "latitude" ? latitudeHemisphere : undefined}
+          onHemisphereChange={(nextHemisphere) => {
+            setLatitudeHemisphere(nextHemisphere);
+            setStartRank(1);
+            updateQueryParams({
+              hemisphere: nextHemisphere === "south" ? "south" : null,
+            });
+          }}
+          listAddAction={listOwner ? () => setListAddOpen(true) : undefined}
+          regionDisabled={regionSelectionDisabled}
+          searchInputRef={setRailFindInputRef}
+          findOpen={findOpen}
           findQuery={findQuery}
           findError={findError}
           findLoading={findLoading}
@@ -2430,16 +3043,26 @@ export function RankingsExplorer({
           onSearchClose={closeFind}
           onSearchQueryChange={changeFindQuery}
           onSearchCycle={cycleFind}
-          />
-        </JumpControlsVisibility>
+        />}
+      </div>
 
+      <main>
         <div className="outerListWrapper" ref={listRef}>
           <div className="listContainer">
+            {listNotice && <div className="listMessage">{listNotice}</div>}
+            {focusNotice && <div className="listMessage listMessage--notice">{focusNotice}</div>}
+            {listMembershipRequests && <ListMembershipRequestRows listId={listMembershipRequests.listId} initialRequests={listMembershipRequests.requests} />}
             {loadingPrevious && (
               <div className="listMessage">Loading earlier rankings…</div>
             )}
             {error ? (
               <div className="listMessage">{error}</div>
+            ) : mockSubjectRows ? (
+              <SubjectMockRows
+                subject={subject}
+                competitionRanking={competitionRanking}
+                latitudeHemisphere={latitudeHemisphere}
+              />
             ) : (
               <ResultsTable
                 listRef={rankingListRef}
@@ -2449,35 +3072,56 @@ export function RankingsExplorer({
                 listOffset={listOffset}
                 eventId={eventId}
                 rankingType={entriesRankingType}
+                hideIdentityIds={subject === "competitions"}
                 loading={loading}
+                showLoading={showLoading}
                 preserveListDuringLoad={preserveListDuringLoad}
                 hasMore={hasMore}
                 loadingMore={loadingMore}
                 searchMatchPersonIds={searchMatchPersonIds}
                 highlightedPersonId={highlightedPersonId}
                 measureElement={rowVirtualizer.measureElement}
+                resizeRow={resizeVirtualRow}
+                onRowNavigate={handleRowNavigate}
+                memberSelectionMode={memberSelectionMode}
+                selectedMemberIds={selectedMemberIds}
+                onMemberToggle={(personId) => setSelectedMemberIds((current) => { const next = new Set(current); next.has(personId) ? next.delete(personId) : next.add(personId); return next; })}
+                onMemberContextMenu={listOwner ? (entry, position) => {
+                  setMemberContextMenu({
+                    personId: entry.personId,
+                    x: Math.max(8, Math.min(position.x, window.innerWidth - 176)),
+                    y: Math.max(8, Math.min(position.y, window.innerHeight - 56)),
+                  });
+                } : undefined}
+                enablePersonDetails={subject === "people" && WCA_EVENTS.some((event) => event.id === eventId)}
+                initialExpandedPersonId={subject === "people" ? focusedExpandedPersonId : ""}
+                onFocusedPersonChange={subject === "people" ? updateFocusedPersonParam : undefined}
               />
             )}
           </div>
         </div>
 
-        <JumpControlsVisibility
-          visible={
-            jumpDownArmed ||
-            (!atPageEnd && Number.isFinite(total) && visibleSubRank < total)
-          }
+        {!memberSelectionMode && (!rankingSource || total > PAGE_SIZE) && <JumpControlsVisibility
+          progress={pagerNavigationBusy ? 1 : bottomRailProgress}
         >
-          <JumpDownControls
-          armed={jumpDownArmed}
-          currentPosition={visibleSubRank}
-          total={total}
-          onJump={handleJumpDown}
-          searchActive={findOpen && findMatches.length > 0}
-          onSearchPrevious={() => cycleFind(-1)}
-          onSearchNext={() => cycleFind(1)}
+          <RankingsPagerRail
+            upArmed={false}
+            downArmed={false}
+            busy={pagerNavigationBusy}
+            currentPosition={visibleSubRank}
+            total={total}
+            onJumpUp={handleJumpUp}
+            onJumpDown={handleJumpDown}
+            onFocusMe={subject === "people" && showMyRank ? focusMyRanking : undefined}
+            searchActive={findOpen && findMatches.length > 0}
+            onSearchPrevious={() => cycleFind(-1)}
+            onSearchNext={() => cycleFind(1)}
           />
-        </JumpControlsVisibility>
+        </JumpControlsVisibility>}
       </main>
+      {memberSelectionMode && <div className="listMemberSelectionRail"><button type="button" onClick={() => setMemberSelectionMode(false)}>Cancel</button><span>{selectedMemberIds.size} selected</span><button type="button" disabled={!selectedMemberIds.size} onClick={() => { setMemberRemovalError(""); setMemberRemovalPersonIds([...selectedMemberIds]); setMemberRemovalOpen(true); }}>Remove</button></div>}
+      {memberContextMenu && <><div className="listMemberContextMenuBackdrop" onPointerDown={() => setMemberContextMenu(null)} /><div className="listMemberContextMenu" role="menu" style={{ left: memberContextMenu.x, top: memberContextMenu.y }} onPointerDown={(event) => event.stopPropagation()}><button type="button" role="menuitem" onClick={() => { setMemberContextMenu(null); setMemberRemovalError(""); setMemberRemovalPersonIds([memberContextMenu.personId]); setMemberRemovalOpen(true); }}>Remove</button></div></>}
+      {memberRemovalOpen && <div className="listModalBackdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !memberRemovalBusy) setMemberRemovalOpen(false); }}><section className="listModal listRemovalDialog" role="dialog" aria-modal="true" aria-label="Remove people"><h2>Remove people?</h2><p>Remove {memberRemovalPersonIds.length} {memberRemovalPersonIds.length === 1 ? "person" : "people"} from this list?</p>{memberRemovalError && <p className="listModalError" role="alert">{memberRemovalError}</p>}<div className="listRemovalActions"><button type="button" disabled={memberRemovalBusy} onClick={() => setMemberRemovalOpen(false)}>Cancel</button><button type="button" disabled={memberRemovalBusy} onClick={() => void removeSelectedMembers()}>{memberRemovalBusy ? "Removing…" : "Remove"}</button></div></section></div>}
       {(vimMode || vimSearchActive) && (
         <VimSearchInput
           inputRef={vimInputRef}
@@ -2506,9 +3150,7 @@ export function RankingsExplorer({
         <span>By Adam Walker and Cailyn Sinclair</span>
         {offlineStale && <span role="status">Offline cached rankings may be stale</span>}
         <span>
-          {fetchedAt
-            ? `fetched ${formatFetchedAgo(fetchedAt)}`
-            : "fetched time unavailable"}
+          {formatRankingsFreshness(exportDate)}
         </span>
       </footer>
     </div>

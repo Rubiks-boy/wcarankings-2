@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/artifacts
 
 # next.js
 /.next/
@@ -38,6 +39,7 @@ yarn-error.log*
 
 # typescript
 next-env.d.ts
+*.tsbuildinfo
 /dist/
 /storybook-static/
 /.playwright-mcp/

@@ -37,7 +37,70 @@ test("renders a result row without exposing internal ordering", () => {
   assert.ok(markup.indexOf('class="countryFlag"') < markup.indexOf('class="wcaId">2024WALK01'));
   assert.equal((markup.match(/class="recordBadge /g) ?? []).length, 1);
   assert.match(markup, /rank--duplicate/);
+  assert.match(markup, /tabindex="0"/);
+  assert.match(markup, /aria-label="Rank 42: Cailyn Sinclair, 12\.34"/);
   assert.doesNotMatch(markup, /sub-rank/);
+});
+
+test("can hide an identity ID for competition ranking rows", () => {
+  const markup = renderToStaticMarkup(
+    <RankingRow
+      entry={{ ...entry, personId: entry.competitionId, personName: entry.competitionName }}
+      eventId="333"
+      rankingType="single"
+      animationIndex={0}
+      hideIdentityId
+    />,
+  );
+
+  assert.match(markup, /Storybook Open 2026/);
+  assert.doesNotMatch(markup, /class="wcaId"/);
+});
+
+test("makes the full row a member selection target", () => {
+  const markup = renderToStaticMarkup(
+    <RankingRow
+      entry={entry}
+      eventId="333"
+      rankingType="single"
+      animationIndex={0}
+      selectionMode
+      selected
+      onToggleSelected={() => undefined}
+    />,
+  );
+
+  assert.match(markup, /aria-pressed="true"/);
+  assert.match(markup, /class="memberSelectionToggle"/);
+});
+
+test("enables the member context menu on a ranking row", () => {
+  const markup = renderToStaticMarkup(
+    <RankingRow
+      entry={entry}
+      eventId="333"
+      rankingType="single"
+      animationIndex={0}
+      onMemberContextMenu={() => undefined}
+    />,
+  );
+
+  assert.match(markup, /row--contextMenu/);
+});
+
+test("can show a venue beneath the row identity", () => {
+  const markup = renderToStaticMarkup(
+    <RankingRow
+      entry={{ ...entry, identitySubtitle: "Polar Hotel", competitionName: "Longyearbyen" }}
+      eventId="333"
+      rankingType="single"
+      animationIndex={0}
+      hideIdentityId
+    />,
+  );
+
+  assert.match(markup, /<span class="name">Cailyn Sinclair<\/span><span class="wcaId">Polar Hotel<\/span>/);
+  assert.match(markup, /class="competitionName" title="Longyearbyen"/);
 });
 
 test("prioritizes the strongest available record badge", () => {

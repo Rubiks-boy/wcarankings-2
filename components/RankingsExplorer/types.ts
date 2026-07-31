@@ -1,17 +1,26 @@
 import type { RecordBadgeCode, RegionScope } from "@/lib/wca";
 
 export type RankingEntry = {
+  entryKey?: string;
+  resultId?: number;
   rank: number;
   subRank: number;
   personId: string;
   personName: string;
+  profileHref?: string;
+  identitySubtitle?: string;
   countryName: string;
   countryIso2: string;
   best: number;
+  formattedValue?: string;
   competitionId: string;
   competitionName: string;
   recordBadges: RecordBadgeCode[];
 };
+
+export function rankingEntryKey(entry: Pick<RankingEntry, "entryKey" | "personId">) {
+  return entry.entryKey ?? entry.personId;
+}
 
 export type RankingPage = {
   entries: RankingEntry[];
@@ -21,9 +30,9 @@ export type RankingPage = {
   startPosition: number;
   lastRank: number | null;
   total: number;
-  fetchedAt: string | null;
   exportDate?: string | null;
   offlineStale?: boolean;
+  availableYears?: number[];
 };
 
 export type InitialRankingData = Pick<
@@ -33,7 +42,8 @@ export type InitialRankingData = Pick<
   | "nextPageStart"
   | "previousPageStart"
   | "total"
-  | "fetchedAt"
+  | "exportDate"
+  | "availableYears"
 > & {
   startRank: number;
   startPosition: number;
@@ -61,19 +71,18 @@ export function formatRankingNumber(value: number) {
   return rankingNumberFormatter.format(value);
 }
 
-export function formatFetchedAgo(value: string) {
-  const fetchedAt = new Date(value).getTime();
-  if (!Number.isFinite(fetchedAt)) return "time unavailable";
-  const elapsedMinutes = Math.max(
-    0,
-    Math.floor((Date.now() - fetchedAt) / 60_000),
-  );
-  if (elapsedMinutes < 1) return "just now";
-  if (elapsedMinutes < 60)
-    return `${elapsedMinutes} minute${elapsedMinutes === 1 ? "" : "s"} ago`;
-  const elapsedHours = Math.floor(elapsedMinutes / 60);
-  if (elapsedHours < 24)
-    return `${elapsedHours} hour${elapsedHours === 1 ? "" : "s"} ago`;
-  const elapsedDays = Math.floor(elapsedHours / 24);
-  return `${elapsedDays} day${elapsedDays === 1 ? "" : "s"} ago`;
+export function formatExportDate(value: string) {
+  const exportDate = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(exportDate.getTime())) return "date unavailable";
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(exportDate);
+}
+
+export function formatRankingsFreshness(exportDate: string | null) {
+  if (exportDate) return `WCA export dated ${formatExportDate(exportDate)}`;
+  return "WCA export date unavailable";
 }

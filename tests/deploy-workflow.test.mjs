@@ -54,6 +54,23 @@ function imageTransferRequiredFunction() {
     .join("\n");
 }
 
+function projectionExportNormalizerFunction() {
+  const start = projectionDeploy.indexOf("          normalize_export_identity() {");
+  const end = projectionDeploy.indexOf("          normalized_build_export=", start);
+  assert.ok(start >= 0 && end > start);
+  return projectionDeploy.slice(start, end).split("\n")
+    .map((line) => line.replace(/^ {10}/, ""))
+    .join("\n");
+}
+
+function exerciseProjectionExportComparison(buildExport, productionExport) {
+  return spawnSync("sh", ["-eu", "-c", `${projectionExportNormalizerFunction()}
+build=$(normalize_export_identity "$1")
+production=$(normalize_export_identity "$2")
+if [ "$build" = "$production" ]; then printf 'same\\n'; else printf 'raw-required\\n'; fi
+`, "sh", buildExport, productionExport], { encoding: "utf8" });
+}
+
 function exerciseImageTransferRequired(changed, remoteImageId, candidateImageId) {
   return spawnSync("sh", ["-eu", "-c", `${imageTransferRequiredFunction()}
 if image_transfer_required "$1" "$2" "$3"; then printf 'required\\n'; else printf 'reused\\n'; fi
@@ -309,6 +326,9 @@ test("candidate staging is monitored and the activation lock stays short", () =>
     assert.doesNotMatch(workflow, /cpu < 50|cool below 50%/);
   }
   assert.match(projectionDeploy, /verify-active/);
+  assert.match(projectionDeploy, /normalizeExportDate/);
+  assert.match(projectionDeploy, /normalized_build_export.*!=.*normalized_production_export/);
+  assert.doesNotMatch(projectionDeploy, /if \[ "\$WCA_EXPORT_VALUE" != "\$PRODUCTION_WCA_EXPORT_VALUE" \]/);
   assert.match(serverDeploy, /flyway_schema_history_results/);
   const bootstrapIndex = serverDeploy.indexOf("activate-ranking-generation.mjs bootstrap");
   const mutationLockIndex = serverDeploy.lastIndexOf("production-mutation.lock", bootstrapIndex);
@@ -418,6 +438,24 @@ test("server image transfer selection repairs missing unchanged tags", () => {
   assert.equal(exerciseImageTransferRequired("false", "", imageId).stdout, "required\n");
   assert.equal(exerciseImageTransferRequired("false", otherImageId, imageId).stdout, "required\n");
   assert.equal(exerciseImageTransferRequired("false", imageId.slice(0, 19), imageId).stdout, "required\n");
+});
+
+test("projection deploy compares normalized export identities and fails closed", () => {
+  assert.equal(
+    exerciseProjectionExportComparison("2026-07-30T00:00:30Z", "2026-07-30T00:00:30.000Z").stdout,
+    "same\n",
+  );
+  assert.equal(
+    exerciseProjectionExportComparison("2026-07-30T00:00:30Z", "2026-07-30 00:00:30 UTC").stdout,
+    "same\n",
+  );
+  assert.equal(
+    exerciseProjectionExportComparison("2026-07-30T00:00:30Z", "2026-07-31T00:00:30Z").stdout,
+    "raw-required\n",
+  );
+  const invalid = exerciseProjectionExportComparison("not-a-date", "2026-07-30T00:00:30Z");
+  assert.notEqual(invalid.status, 0);
+  assert.match(invalid.stderr, /Invalid projection export identity/);
 });
 
 test("relative MariaDB cooldown accepts a stable high production baseline", async () => {

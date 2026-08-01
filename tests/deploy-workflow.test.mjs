@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -70,23 +71,26 @@ function preSwitchConfigRecoveryFunction() {
     .join("\n");
 }
 
-async function exercisePreSwitchConfigRecovery(hasMarker) {
+async function exercisePreSwitchConfigRecovery(hasMarker, approvedSourceSha = "") {
   const directory = await mkdtemp(join(tmpdir(), "wcarankings-config-recovery-"));
   const marker = join(directory, "config-staging");
   const composeTarget = join(directory, "compose");
   const composeBackup = join(directory, "compose.previous");
   const caddyTarget = join(directory, "Caddyfile");
   const caddyBackup = join(directory, "Caddyfile.previous");
+  const releaseState = join(directory, "server-release-state.json");
+  const sourceSha = "c".repeat(40);
   await Promise.all([
     writeFile(composeTarget, "active-compose-C\n"),
     writeFile(composeBackup, "approved-compose-B\n"),
     writeFile(caddyTarget, "active-caddy-C\n"),
     writeFile(caddyBackup, "approved-caddy-B\n"),
     ...(hasMarker ? [writeFile(marker, "staged\n")] : []),
+    ...(approvedSourceSha ? [writeFile(releaseState, JSON.stringify({ sourceSha: approvedSourceSha }))] : []),
   ]);
   const result = spawnSync("sh", ["-eu", "-c", `${preSwitchConfigRecoveryFunction()}
-restore_staged_config "$1" "$2" "$3" "$4" "$5"
-`, "sh", marker, composeTarget, composeBackup, caddyTarget, caddyBackup], { encoding: "utf8" });
+restore_staged_config "$1" "$2" "$3" "$4" "$5" "$6" "$7"
+`, "sh", marker, releaseState, sourceSha, composeTarget, composeBackup, caddyTarget, caddyBackup], { encoding: "utf8" });
   const state = {
     result,
     composeTarget: await readFile(composeTarget, "utf8"),
@@ -94,9 +98,53 @@ restore_staged_config "$1" "$2" "$3" "$4" "$5"
     caddyTarget: await readFile(caddyTarget, "utf8"),
     caddyBackup: await readFile(caddyBackup, "utf8"),
     markerExists: await readFile(marker, "utf8").then(() => true, () => false),
+    sourceSha,
   };
   await rm(directory, { recursive: true, force: true });
   return state;
+}
+
+function caddyFileChecksumResolverFunction() {
+  const start = serverDeploy.indexOf("          resolve_approved_caddy_file_checksum() {");
+  const end = serverDeploy.indexOf("          current_caddy_file=$(resolve_approved_caddy_file_checksum", start);
+  assert.ok(start >= 0 && end > start);
+  return serverDeploy.slice(start, end).split("\n")
+    .map((line) => line.replace(/^ {10}/, ""))
+    .join("\n");
+}
+
+function resolveCaddyFileChecksum(rawChecksum, compositeChecksum, sourceSha) {
+  return spawnSync("bash", ["-e", "-o", "pipefail", "-c", `${caddyFileChecksumResolverFunction()}
+resolve_approved_caddy_file_checksum "$1" "$2" "$3"
+`, "bash", rawChecksum, compositeChecksum, sourceSha], {
+    cwd: new URL("..", import.meta.url),
+    encoding: "utf8",
+  });
+}
+
+function approvedConfigRecoveryFunction() {
+  const start = serverDeploy.indexOf("            recover_approved_config() {");
+  const end = serverDeploy.indexOf("            recover_approved_config \\\n", start);
+  assert.ok(start >= 0 && end > start);
+  return serverDeploy.slice(start, end).split("\n")
+    .map((line) => line.replace(/^ {12}/, ""))
+    .join("\n");
+}
+
+async function exerciseApprovedConfigRecovery(targetContents, backupContents, expectedChecksum) {
+  const directory = await mkdtemp(join(tmpdir(), "wcarankings-approved-config-"));
+  const target = join(directory, "Caddyfile");
+  const backup = join(directory, "Caddyfile.previous");
+  await Promise.all([
+    writeFile(target, targetContents),
+    writeFile(backup, backupContents),
+  ]);
+  const result = spawnSync("sh", ["-eu", "-c", `${approvedConfigRecoveryFunction()}
+recover_approved_config "$1" "$2" "$3" "Caddy configuration"
+`, "sh", target, backup, expectedChecksum], { encoding: "utf8" });
+  const finalContents = await readFile(target, "utf8");
+  await rm(directory, { recursive: true, force: true });
+  return { result, finalContents };
 }
 
 async function exerciseServerCooldown(cpuSamples) {
@@ -298,12 +346,19 @@ test("candidate staging is monitored and the activation lock stays short", () =>
   assert.ok(configMarkerPrepared < firstConfigMove && firstConfigMove < configMarkerStaged);
   assert.match(serverDeploy, /if \[ ! -f "\$marker" \][\s\S]*retaining active files/);
   assert.match(serverDeploy, /server-release-\$\{SOURCE_SHA\}\.config-staging/);
+  assert.match(serverDeploy, /current_caddy_file=.*\.caddyFileChecksum/);
+  assert.match(serverDeploy, /PREVIOUS_CADDY_FILE_CHECKSUM='\$current_caddy_file'/);
+  assert.match(serverDeploy, /"\$current_caddy" != "\$CADDY_CHECKSUM"/);
+  assert.match(serverDeploy, /caddyFileChecksum: \$caddyFileChecksum/);
+  assert.match(serverDeploy, /version: 2/);
   const recordApprovedIndex = serverDeploy.indexOf("- name: Record approved server release");
+  const recordStateTemp = serverDeploy.indexOf("/srv/wcarankings/server-release-state-${SOURCE_SHA}.json.tmp", recordApprovedIndex);
+  const recordStateMove = serverDeploy.indexOf('mv "/srv/wcarankings/server-release-state-${SOURCE_SHA}.json.tmp"', recordApprovedIndex);
   const recordMarkerRemoval = serverDeploy.indexOf('rm -f "/srv/wcarankings/server-release-${SOURCE_SHA}.config-staging"', recordApprovedIndex);
-  const recordStateMove = serverDeploy.indexOf("/srv/wcarankings/server-release-state.json", recordMarkerRemoval);
-  const recordMutationLock = serverDeploy.lastIndexOf("production-mutation.lock", recordMarkerRemoval);
-  assert.ok(recordMutationLock > recordApprovedIndex && recordMutationLock < recordMarkerRemoval);
-  assert.ok(recordMarkerRemoval < recordStateMove);
+  const recordMutationLock = serverDeploy.lastIndexOf("production-mutation.lock", recordStateMove);
+  assert.ok(recordStateTemp > recordApprovedIndex && recordStateTemp < recordMutationLock);
+  assert.ok(recordMutationLock < recordStateMove && recordStateMove < recordMarkerRemoval);
+  assert.doesNotMatch(serverDeploy.slice(recordApprovedIndex), /cat > \/tmp\/wcarankings-server-release/);
   assert.match(flywayHistoryRepair, /script NOT IN/);
   assert.match(flywayHistoryRepair, /script IN/);
   assert.match(flywayHistoryRepair, /type = 'BASELINE' AND version IN/);
@@ -375,6 +430,57 @@ test("pre-switch cleanup preserves unmarked config and restores only this run's 
   assert.equal(afterStage.caddyTarget, "approved-caddy-B\n");
   assert.equal(afterStage.caddyBackup, "approved-caddy-B\n");
   assert.equal(afterStage.markerExists, false);
+
+  const alreadyApproved = await exercisePreSwitchConfigRecovery(true, "c".repeat(40));
+  assert.equal(alreadyApproved.result.status, 0, alreadyApproved.result.stderr);
+  assert.match(alreadyApproved.result.stdout, /already approved/);
+  assert.equal(alreadyApproved.composeTarget, "active-compose-C\n");
+  assert.equal(alreadyApproved.composeBackup, "approved-compose-B\n");
+  assert.equal(alreadyApproved.caddyTarget, "active-caddy-C\n");
+  assert.equal(alreadyApproved.caddyBackup, "approved-caddy-B\n");
+  assert.equal(alreadyApproved.markerExists, false);
+});
+
+test("Caddy recovery resolves raw checksums from new and legacy release state", async () => {
+  const recordedRawChecksum = "a".repeat(64);
+  const newState = resolveCaddyFileChecksum(recordedRawChecksum, "b".repeat(64), "unavailable");
+  assert.equal(newState.status, 0, newState.stderr);
+  assert.equal(newState.stdout.trim(), recordedRawChecksum);
+
+  const head = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: new URL("..", import.meta.url),
+    encoding: "utf8",
+  }).stdout.trim();
+  const caddyContents = await readFile(new URL("../ops/Caddyfile", import.meta.url));
+  const expectedRawChecksum = createHash("sha256").update(caddyContents).digest("hex");
+  const legacyState = resolveCaddyFileChecksum("", "b".repeat(64), head);
+  assert.equal(legacyState.status, 0, legacyState.stderr);
+  assert.equal(legacyState.stdout.trim(), expectedRawChecksum);
+
+  const missingLegacySource = resolveCaddyFileChecksum("", "b".repeat(64), "unknown");
+  assert.notEqual(missingLegacySource.status, 0);
+  assert.match(missingLegacySource.stderr, /lacks a source commit/);
+});
+
+test("Caddy recovery compares raw file checksums and fails closed on a stale backup", async () => {
+  const approved = "approved-caddy-B\n";
+  const candidate = "candidate-caddy-C\n";
+  const stale = "stale-caddy-A\n";
+  const approvedChecksum = createHash("sha256").update(approved).digest("hex");
+
+  const activeApproved = await exerciseApprovedConfigRecovery(approved, stale, approvedChecksum);
+  assert.equal(activeApproved.result.status, 0, activeApproved.result.stderr);
+  assert.equal(activeApproved.finalContents, approved);
+
+  const recoverable = await exerciseApprovedConfigRecovery(candidate, approved, approvedChecksum);
+  assert.equal(recoverable.result.status, 0, recoverable.result.stderr);
+  assert.match(recoverable.result.stdout, /Recovered approved Caddy configuration/);
+  assert.equal(recoverable.finalContents, approved);
+
+  const ambiguous = await exerciseApprovedConfigRecovery(candidate, stale, approvedChecksum);
+  assert.notEqual(ambiguous.result.status, 0);
+  assert.match(ambiguous.result.stderr, /recovery copy does not match approved state/);
+  assert.equal(ambiguous.finalContents, candidate);
 });
 
 test("server smoke tests retry the emitted local stylesheet after core readiness", () => {

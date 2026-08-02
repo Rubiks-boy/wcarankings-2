@@ -87,6 +87,8 @@ test("keeps future grains registered while activating person metrics and competi
   assert.match(groups, /name: "compatibility"/);
   assert.match(groups, /name: "result-rankings"[\s\S]*dependencies: \["result-facts"\]/);
   assert.match(groups, /name: "city-rankings"[\s\S]*dependencies: \["result-facts", "competition-rankings"\]/);
+  assert.match(groups, /name: "sum-of-ranks"[\s\S]*dependencies: \["result-facts"\]/);
+  assert.match(groups, /name: "person-competition-rankings"[\s\S]*dependencies: \["result-facts"\]/);
   assert.match(groups, /name: "sum-of-ranks"[\s\S]*projectionNames: \["sum-of-ranks"\]/);
   assert.match(groups, /name: "person-competition-rankings"[\s\S]*person_competition_ranking_counts/);
   assert.match(schema, /enabledByDefault: true/);
@@ -115,6 +117,9 @@ test("keeps future grains registered while activating person metrics and competi
   assert.match(metricScores, /CREATE TABLE person_metric_counts AS/);
   assert.match(sumScores, /CREATE TEMPORARY TABLE sum_of_ranks_historical_bests/);
   assert.match(sumScores, /result\.person_country_id/);
+  assert.match(sumScores, /result\.person_continent_id/);
+  assert.match(sumScores, /result\.person_country_id, result\.person_continent_id/);
+  assert.doesNotMatch(sumScores, /result\.person_country_id, country\.continent_id/);
   assert.match(sumScores, /MIN\(CASE WHEN result\.best > 0/);
   assert.match(sumScores, /MIN\(CASE WHEN result\.average > 0/);
   assert.match(sumScores, /FROM ranks_single rank/);
@@ -170,7 +175,8 @@ test("keeps future grains registered while activating person metrics and competi
   assert.match(competitions, /idx_competition_stats_competitor_count/);
   assert.match(competitions, /idx_competition_stats_south/);
   assert.match(personCompetitionRankings, /CREATE TABLE person_competition_counts AS/);
-  assert.match(personCompetitionRankings, /COUNT\(DISTINCT result\.competition_id\)/);
+  assert.match(personCompetitionRankings, /COUNT\(DISTINCT facts\.competition_id\)/);
+  assert.match(personCompetitionRankings, /FROM result_facts/);
   assert.match(personCompetitionRankings, /CREATE TABLE person_competition_rankings AS/);
   assert.match(personCompetitionRankings, /PARTITION BY scope, region_id, gender/);
   assert.match(personCompetitionRankings, /idx_person_competition_rankings_page/);
@@ -179,9 +185,12 @@ test("keeps future grains registered while activating person metrics and competi
   assert.match(cities, /fastest_average_rank/);
   assert.match(cities, /person\.gender IN \('m', 'f'\)/);
   assert.match(cities, /SELECT base\.\*, 'all' AS gender FROM base/);
-  assert.match(cities, /COUNT\(DISTINCT scoped\.person_id\) AS competitor_count/);
-  assert.match(cities, /COUNT\(DISTINCT scoped\.competition_id\) AS competition_count/);
+  assert.match(cities, /COUNT\(DISTINCT person_id\) AS competitor_count/);
+  assert.match(cities, /COUNT\(DISTINCT competition_id\) AS competition_count/);
+  assert.match(cities, /attempt_counts AS/);
+  assert.match(cities, /comp\.country_id/);
   assert.match(cities, /official_solve_count/);
+  assert.match(cities, /LEFT JOIN winners USING \(city_name, country_id, event_id, gender\)/);
   assert.match(cities, /ADD PRIMARY KEY \(city_name, country_id, event_id, gender\)/);
   assert.match(counts, /CREATE TABLE entity_ranking_counts AS/);
   assert.match(counts, /gender = 'all' AND fastest_single IS NOT NULL/);

@@ -9,7 +9,10 @@ import {
 import { useMemo } from "react";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
 import type { GenderFilter } from "@/lib/wca";
-import { getSearchBridgePageStarts } from "./scrollEngine";
+import {
+  getNavigationWindowPageStarts,
+  getSearchBridgePageStarts,
+} from "./scrollEngine";
 import type { RankingResource } from "./helpers/rankingModes";
 import type {
   InitialRankingData,
@@ -23,6 +26,7 @@ import { rankingEntryKey } from "./types";
 const PAGE_SIZE = RESULTS_PAGE_SIZE;
 const PAGE_STALE_TIME_MS = 5 * 60 * 1000;
 const SEARCH_PREFETCH_RADIUS = 3;
+const NAVIGATION_ADJACENT_PAGE_COUNT = 2;
 
 export type RankingQueryFilters = {
   eventId: string;
@@ -288,12 +292,20 @@ export function useRankingsQueryApi(filters: RankingQueryFilters) {
       };
     };
 
-    const getNavigationWindow = async (targetSubRank: number) => {
+    const getNavigationWindow = async (
+      targetSubRank: number,
+      direction: -1 | 1,
+    ) => {
       const targetPageStart = rankingPageStart(targetSubRank);
-      const pages = (await Promise.all([
-        targetPageStart,
-        targetPageStart + PAGE_SIZE,
-      ].map((pageStart) => getPage(pageStart + 1))))
+      const pages = (await Promise.all(
+        getNavigationWindowPageStarts(
+          targetPageStart,
+          direction,
+          PAGE_SIZE,
+          NAVIGATION_ADJACENT_PAGE_COUNT,
+        )
+          .map((pageStart) => getPage(pageStart + 1)),
+      ))
         .filter((page) => page.entries.length > 0);
       const firstPage = pages[0];
       if (!firstPage) return getPage(targetPageStart + 1);

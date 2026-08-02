@@ -12,6 +12,7 @@ import {
 } from "./helpers/navigation";
 import { orderSearchMatches } from "./helpers/search";
 import { shouldFallbackToFirstPage } from "./useRankingPageLoader";
+import { getTopRailScrollProgress } from "./useRailScrollProgress";
 import { competitionRankingPath } from "./useRankingFilterActions";
 import type { RankingsFilterState } from "./rankingsUrl";
 import { serializeRankingsUrl, type RankingsUrlState } from "./rankingsUrl";
@@ -29,6 +30,11 @@ const rankingEntry: RankingEntry = {
   competitionName: "Storybook Open 2026",
   recordBadges: ["NR"],
 };
+
+test("clamps top rail progress during elastic overscroll", () => {
+  assert.equal(getTopRailScrollProgress(-80, 100), 0);
+  assert.equal(getTopRailScrollProgress(200, 100), 1);
+});
 
 function pathnameForFilters(filters: RankingsFilterState) {
   if (filters.subject === "results") return "/results";
@@ -144,6 +150,9 @@ test("renders the rankings shell with extracted components", () => {
       listName: "Pacific Northwest cubers",
     },
   });
+  assert.match(markup, /class="ViewportEdgeGradients"/);
+  assert.match(markup, /data-top-visible="false"/);
+  assert.match(markup, /data-bottom-visible="false"/);
   assert.match(markup, /WCA Lists/);
   assert.match(markup, /Avery Chen/);
   assert.doesNotMatch(markup, /sub-rank/);

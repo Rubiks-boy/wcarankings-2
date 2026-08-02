@@ -57,6 +57,20 @@ export function getNeighborPageStarts({
   return [previousPageStart, nextPageStart].filter((start): start is number => start !== null);
 }
 
+export function getNavigationWindowPageStarts(
+  targetPageStart: number,
+  direction: -1 | 1,
+  pageSize: number,
+  adjacentPageCount = 1,
+) {
+  return Array.from(
+    { length: adjacentPageCount + 1 },
+    (_, index) => targetPageStart + direction * index * pageSize,
+  )
+    .filter((pageStart) => pageStart >= 0)
+    .sort((left, right) => left - right);
+}
+
 export type SearchJumpMode = "local" | "multi-page";
 
 export function getSearchJumpMode(

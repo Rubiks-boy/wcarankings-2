@@ -3,15 +3,23 @@
 import { useMemo } from "react";
 import type { GenderFilter } from "@/lib/wca";
 import type { ExplorerSubject } from "../ExplorerSubjectSwitch/ExplorerSubjectSwitch";
-import type { CityRanking, CompetitionRanking, RankingResource } from "./helpers/rankingModes";
+import type {
+  CityRanking,
+  CompetitionRanking,
+  RankingResource,
+} from "./helpers/rankingModes";
 import {
   rankingWindowQueryKey,
   seedSavedListVersionWindow,
   useRankingsQueryApi,
 } from "./rankingsQueries";
-import type { InitialRankingData, RankingSource, RegionSelection } from "./types";
+import type {
+  InitialRankingData,
+  RankingSource,
+  RegionSelection,
+} from "./types";
 
-type DataSourceFilters = {
+type RankingsApiFilters = {
   subject: ExplorerSubject;
   competitionRanking: CompetitionRanking;
   cityRanking: CityRanking;
@@ -24,13 +32,13 @@ type DataSourceFilters = {
   regionSelection: RegionSelection;
 };
 
-function rankingResource(
-  subject: ExplorerSubject,
-  competitionRanking: CompetitionRanking,
-  cityRanking: CityRanking,
-  personCompetitionRanking: boolean,
-  latitudeHemisphere: "north" | "south",
-): RankingResource {
+function rankingResource({
+  subject,
+  competitionRanking,
+  cityRanking,
+  personCompetitionRanking,
+  latitudeHemisphere,
+}: RankingsApiFilters): RankingResource {
   if (subject === "results") return "results";
   if (subject === "cities") return `city-${cityRanking}`;
   if (subject !== "competitions") {
@@ -41,59 +49,50 @@ function rankingResource(
   return competitionRanking === "podiums" ? "podiums" : "competitions";
 }
 
-export function useRankingDataSource({
+export function useRankingsApi({
   filters,
   source,
   initialData,
 }: {
-  filters: DataSourceFilters;
+  filters: RankingsApiFilters;
   source?: RankingSource;
   initialData?: InitialRankingData;
 }) {
   const {
-    subject,
-    competitionRanking,
-    cityRanking,
-    personCompetitionRanking,
-    year,
-    latitudeHemisphere,
     eventId,
     rankingType,
-    gender,
     regionSelection,
+    gender,
+    year,
   } = filters;
-  const resource = rankingResource(
-    subject,
-    competitionRanking,
-    cityRanking,
-    personCompetitionRanking,
-    latitudeHemisphere,
-  );
-  const queryFilters = useMemo(
-    () => ({
-      eventId,
-      rankingType,
-      regionSelection,
-      resource,
-      source,
-      gender,
-      year,
-    }),
-    [
-      eventId,
-      gender,
-      rankingType,
-      regionSelection,
-      resource,
-      source,
-      year,
-    ],
-  );
+  const resource = rankingResource(filters);
+  const queryFilters = useMemo(() => ({
+    eventId,
+    rankingType,
+    regionSelection,
+    resource,
+    source,
+    gender,
+    year,
+  }), [eventId, gender, rankingType, regionSelection, resource, source, year]);
   seedSavedListVersionWindow(queryFilters, initialData);
-  const listKey = JSON.stringify(rankingWindowQueryKey(queryFilters));
-  const requests = useRankingsQueryApi(queryFilters);
 
-  return { listKey, queryFilters, requests };
+  const datasetKey = JSON.stringify(rankingWindowQueryKey(queryFilters));
+  const requests = useRankingsQueryApi(queryFilters);
+  const range = useMemo(() => ({
+    cacheKey: datasetKey,
+    fetchRange: (
+      request: { start: number; count: number },
+      signal: AbortSignal,
+    ) => requests.getRange(request.start, request.count, signal),
+  }), [datasetKey, requests]);
+
+  return useMemo(() => ({
+    datasetKey,
+    range,
+    search: requests.searchRankings,
+    locate: requests.locateRanking,
+  }), [datasetKey, range, requests]);
 }
 
-export type RankingDataSource = ReturnType<typeof useRankingDataSource>;
+export type RankingsApi = ReturnType<typeof useRankingsApi>;

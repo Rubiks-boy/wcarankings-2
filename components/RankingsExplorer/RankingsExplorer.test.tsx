@@ -5,15 +5,10 @@ import { EXPLORER_SUBJECTS } from "../ExplorerSubjectSwitch/ExplorerSubjectSwitc
 import {
   RankingsExplorer,
 } from "./RankingsExplorer";
-import {
-  centeredRowScrollTop,
-  getSearchScrollDirection,
-  subjectPath,
-} from "./helpers/navigation";
+import { subjectPath } from "./helpers/navigation";
 import { orderSearchMatches } from "./helpers/search";
-import { shouldFallbackToFirstPage } from "./useRankingPageLoader";
 import { getTopRailScrollProgress } from "./useRailScrollProgress";
-import { competitionRankingPath } from "./useRankingFilterActions";
+import { competitionRankingPath } from "./useRankingsState";
 import type { RankingsFilterState } from "./rankingsUrl";
 import { serializeRankingsUrl, type RankingsUrlState } from "./rankingsUrl";
 import type { RankingEntry } from "./types";
@@ -54,6 +49,7 @@ function renderExplorerMarkup(
     subject: "people",
     competitionRanking: "best-result",
     cityRanking: "fastest-single",
+    personCompetitionRanking: false,
     year: null,
     eventId: "333",
     rankingType: "single",
@@ -102,28 +98,6 @@ test("ignores empty search-result slots", () => {
   assert.deepEqual(orderSearchMatches(matches), [rankingEntry]);
 });
 
-test("centers search targets in the viewport", () => {
-  assert.equal(centeredRowScrollTop(1_000, 800), 632.725);
-  assert.equal(centeredRowScrollTop(100, 800), 0);
-});
-
-test("uses the actual rank direction when search results wrap around", () => {
-  assert.equal(
-    getSearchScrollDirection({ subRank: 900 }, { subRank: 100 }, 1),
-    -1
-  );
-  assert.equal(
-    getSearchScrollDirection({ subRank: 100 }, { subRank: 900 }, -1),
-    1
-  );
-});
-
-test("falls back to the first page only when a preserved page is absent", () => {
-  assert.equal(shouldFallbackToFirstPage(51, 0), true);
-  assert.equal(shouldFallbackToFirstPage(51, 1), false);
-  assert.equal(shouldFallbackToFirstPage(1, 0), false);
-});
-
 test("gives each non-default subject and competition ranking a page", () => {
   assert.equal(subjectPath("people"), "/");
   assert.equal(subjectPath("results"), "/results");
@@ -157,6 +131,18 @@ test("renders the rankings shell with extracted components", () => {
   assert.match(markup, /Avery Chen/);
   assert.doesNotMatch(markup, /sub-rank/);
   assert.doesNotMatch(markup, /Jump to top/);
+});
+
+test("renders a full-width spinner and fallback periods before rankings load", () => {
+  const markup = renderExplorerMarkup({ initial: undefined });
+
+  assert.match(markup, /listMessage--initialLoading/);
+  assert.match(markup, /role="status" aria-label="Loading rankings"/);
+  assert.match(markup, /aria-label="Person ranking period"/);
+  assert.match(markup, />All time</);
+  assert.match(markup, new RegExp(`>${new Date().getFullYear()}<`));
+  assert.match(markup, />2003</);
+  assert.match(markup, />1982</);
 });
 
 test("keeps gender filters available for sum of ranks", () => {

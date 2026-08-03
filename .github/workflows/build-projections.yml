@@ -53,6 +53,8 @@ permissions:
 jobs:
   raw-export:
     runs-on: ubuntu-latest
+    env:
+      WCA_EXPORT_CACHE_DIR: /tmp/wca-export-cache
     steps:
       - uses: actions/checkout@v4
         if: inputs.build_groups != '' || inputs.include_raw

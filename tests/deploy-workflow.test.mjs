@@ -399,6 +399,11 @@ test("Node dependency consumers use the pinned pnpm lockfile", () => {
   }
 });
 
+test("raw export downloads use the writable runner cache directory", () => {
+  const rawExport = builder.slice(builder.indexOf("  raw-export:"), builder.indexOf("  matrix:"));
+  assert.match(rawExport, /WCA_EXPORT_CACHE_DIR: \/tmp\/wca-export-cache/);
+});
+
 test("candidate staging is monitored and the activation lock stays short", () => {
   const importIndex = projectionDeploymentScript.indexOf("during_projection_import");
   const lockIndex = projectionDeploymentScript.indexOf("projection-activation.lock");

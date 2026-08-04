@@ -501,6 +501,12 @@ test("candidate staging is monitored and the activation lock stays short", () =>
   assert.match(projectionDeploymentScript, /normalized_build_export.*!=.*normalized_production_export/);
   assert.doesNotMatch(projectionDeploymentScript, /if \[ "\$WCA_EXPORT_VALUE" != "\$PRODUCTION_WCA_EXPORT_VALUE" \]/);
   assert.match(serverDeploy, /flyway_schema_history_results/);
+  for (const workflow of [serverDeploy, projectionDeploymentScript]) {
+    assert.match(workflow, /flyway_history_repair_marker=\/srv\/wcarankings\/flyway-history-repair-v1\.complete/);
+    assert.match(workflow, /if \[ ! -f "\$flyway_history_repair_marker" \]; then\n\s+(?:docker compose|dc) run --rm flyway repair\n\s+fi/);
+    assert.match(workflow, /FLYWAY_TABLE=flyway_schema_history_results[\s\S]*?flyway repair/);
+    assert.match(workflow, /flyway migrate\n\s+if \[ ! -f "\$flyway_history_repair_marker" \]; then\n\s+: > "\$flyway_history_repair_marker"/);
+  }
   const bootstrapIndex = serverDeploy.indexOf("activate-ranking-generation.mjs bootstrap");
   const mutationLockIndex = serverDeploy.lastIndexOf("production-mutation.lock", bootstrapIndex);
   const serverHistoryIndex = serverDeploy.lastIndexOf("prepare-flyway-history.mjs", bootstrapIndex);

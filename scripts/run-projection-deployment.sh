@@ -388,9 +388,12 @@ ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
   (
     exec 8>/srv/wcarankings/production-mutation.lock
     flock -w 360 8
+    flyway_history_repair_marker=/srv/wcarankings/flyway-history-repair-v1.complete
     load_or_measure_database_cpu_baseline
     dc run --rm data-tools /app/scripts/prepare-flyway-history.mjs
-    dc run --rm flyway repair
+    if [ ! -f "$flyway_history_repair_marker" ]; then
+      dc run --rm flyway repair
+    fi
     dc run --rm flyway migrate
     dc exec -T db sh -c '
       mariadb --user="$MARIADB_USER" --password="$MARIADB_PASSWORD" "$MARIADB_DATABASE" --execute="
@@ -401,11 +404,20 @@ ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
         );
       "
     '
+    if [ ! -f "$flyway_history_repair_marker" ]; then
+      dc run --rm \
+        -e FLYWAY_LOCATIONS=filesystem:/flyway/migrations/results \
+        -e FLYWAY_TABLE=flyway_schema_history_results \
+        flyway repair
+    fi
     dc run --rm \
       -e FLYWAY_LOCATIONS=filesystem:/flyway/migrations/results \
       -e FLYWAY_TABLE=flyway_schema_history_results \
       -e FLYWAY_OUT_OF_ORDER=true \
       flyway migrate
+    if [ ! -f "$flyway_history_repair_marker" ]; then
+      : > "$flyway_history_repair_marker"
+    fi
   )
   load_persisted_database_cpu_baseline
 

@@ -111,6 +111,12 @@ restore the exact prior image/configuration if a release fails or is cancelled.
 It never removes explicitly protected current/previous service tags or
 artifact-scoped data-tools/Flyway tags during cleanup.
 
+The first release after the Flyway history split repairs both copied history
+tables before migration. It writes
+`/srv/wcarankings/flyway-history-repair-v1.complete` only after both migration
+lanes finish. Later releases skip repair and fail if Flyway detects new history
+drift.
+
 The release verifies local readiness and core rankings, retries the SSR root
 request and its extracted CSS asset with bounded diagnostics, then verifies the
 public proxy. The root/CSS retries protect against startup routing races without

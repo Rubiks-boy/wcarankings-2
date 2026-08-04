@@ -469,6 +469,7 @@ test("candidate staging is monitored and the activation lock stays short", () =>
   assert.match(projectionDeploymentScript, /stop_background_jobs\(\)[\s\S]*?kill "\$heartbeat_pid"[\s\S]*?wait "\$heartbeat_pid"[\s\S]*?kill "\$monitor_pid"[\s\S]*?wait "\$monitor_pid"/);
   assert.match(projectionDeploymentScript, /rollback_on_failure\(\)[\s\S]*?trap - EXIT TERM INT HUP[\s\S]*?stop_background_jobs/);
   assert.match(projectionDeploymentScript, /import-projection-transfer\.mjs/);
+  assert.match(projectionDeploymentScript, /capture_failed_generation_diagnostics\(\) \(\n\s+set \+e/);
   assert.match(projectionDeploymentScript, /--concurrency=2/);
   assert.match(projectionDeploymentScript, /WCA_PROJECTION_INDEX_CONCURRENCY=2/);
   assert.match(projectionDeploymentScript, /candidate_work_label="wcarankings\.projection-artifact=\$\{ARTIFACT_ID\}"/);
@@ -497,6 +498,7 @@ test("candidate staging is monitored and the activation lock stays short", () =>
     assert.doesNotMatch(workflow, /cpu < 50|cool below 50%/);
   }
   assert.match(projectionDeploymentScript, /verify-active/);
+  assert.equal((projectionDeploymentScript.match(/--source-sha="\$EXPECTED_SOURCE_SHA"/g) || []).length, 1);
   assert.match(projectionDeploymentScript, /normalizeExportDate/);
   assert.match(projectionDeploymentScript, /normalized_build_export.*!=.*normalized_production_export/);
   assert.doesNotMatch(projectionDeploymentScript, /if \[ "\$WCA_EXPORT_VALUE" != "\$PRODUCTION_WCA_EXPORT_VALUE" \]/);

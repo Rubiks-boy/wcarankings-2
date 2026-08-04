@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-capture_failed_generation_diagnostics() {
+capture_failed_generation_diagnostics() (
   set +e
   ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
     'cd /srv/wcarankings && docker compose ps && docker compose logs --tail=200 app db'
-}
+)
 trap capture_failed_generation_diagnostics ERR
 
 # Validate immutable release coordinates.
@@ -171,7 +171,6 @@ ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
         --directory=/artifact \
         --groups="$group" \
         --export-id="$WCA_EXPORT_VALUE" \
-        --source-sha="$EXPECTED_SOURCE_SHA" \
         --fingerprints-file=/fingerprints.json
     metadata=$(find "$destination" -maxdepth 1 -name '*-projection-transfer.json' -print -quit)
     test -n "$metadata"

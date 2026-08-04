@@ -10,7 +10,7 @@ export const PROJECTION_ARTIFACT_FORMAT_VERSION = 4;
 export const DEPLOYMENT_PROJECTION_GROUPS = [
   {
     name: "compatibility",
-    schemaVersion: 5,
+    schemaVersion: 6,
     dependencies: ["result-facts"],
     projectionNames: [],
     tables: [

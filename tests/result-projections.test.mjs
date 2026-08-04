@@ -86,6 +86,11 @@ test("materializes attempt facts once as an index-free build stage", async () =>
   assert.doesNotMatch(listResults, /"solve_facts source"/);
   assert.match(preflight, /idx_results_single_lazy_gender/);
   assert.match(preflight, /RESULT_FACT_COLUMNS = \["result_id", "gender"\]/);
+  assert.match(preflight, /ENTRY_COLUMNS = \[[\s\S]*"gender"/);
+  assert.match(preflight, /idx_ranking_entries_gender_world_best/);
+  assert.match(preflight, /idx_ranking_entries_gender_continent_best/);
+  assert.match(preflight, /idx_ranking_entries_gender_country_best/);
+  assert.match(groups, /name: "compatibility"[\s\S]*schemaVersion: 6/);
 });
 
 test("bounds yearly Single cohorts through indexed result facts", async () => {

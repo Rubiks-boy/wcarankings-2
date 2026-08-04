@@ -484,6 +484,7 @@ jobs:
             if [ "$FLYWAY_IMAGE_CHANGED" = true ] || [ "$DATA_TOOLS_IMAGE_CHANGED" = true ]; then
               measure_database_cpu_baseline
               docker compose run --rm data-tools /app/scripts/prepare-flyway-history.mjs
+              docker compose run --rm flyway repair
               docker compose run --rm flyway migrate
               docker compose exec -T db sh -c '
                 mariadb --user="$MARIADB_USER" --password="$MARIADB_PASSWORD" "$MARIADB_DATABASE" --execute="

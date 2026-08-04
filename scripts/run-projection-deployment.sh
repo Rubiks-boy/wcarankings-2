@@ -390,6 +390,7 @@ ssh -o BatchMode=yes "$SERVER_USER@$SERVER_IP" \
     flock -w 360 8
     load_or_measure_database_cpu_baseline
     dc run --rm data-tools /app/scripts/prepare-flyway-history.mjs
+    dc run --rm flyway repair
     dc run --rm flyway migrate
     dc exec -T db sh -c '
       mariadb --user="$MARIADB_USER" --password="$MARIADB_PASSWORD" "$MARIADB_DATABASE" --execute="

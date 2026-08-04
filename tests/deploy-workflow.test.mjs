@@ -503,12 +503,15 @@ test("candidate staging is monitored and the activation lock stays short", () =>
   assert.match(serverDeploy, /flyway_schema_history_results/);
   const bootstrapIndex = serverDeploy.indexOf("activate-ranking-generation.mjs bootstrap");
   const mutationLockIndex = serverDeploy.lastIndexOf("production-mutation.lock", bootstrapIndex);
+  const serverHistoryIndex = serverDeploy.lastIndexOf("prepare-flyway-history.mjs", bootstrapIndex);
+  const serverRepairIndex = serverDeploy.lastIndexOf("flyway repair", bootstrapIndex);
   const lastFlywayIndex = serverDeploy.lastIndexOf("flyway migrate", bootstrapIndex);
   const serverBaselineIndex = serverDeploy.lastIndexOf("measure_database_cpu_baseline", lastFlywayIndex);
   const serverCooldownIndex = serverDeploy.indexOf("wait_for_database_cooldown", lastFlywayIndex);
   const migrationConditionalEndIndex = serverDeploy.lastIndexOf("            fi", bootstrapIndex);
   const serverSwitchIndex = serverDeploy.indexOf("- name: Switch production server", bootstrapIndex);
   assert.ok(mutationLockIndex >= 0 && bootstrapIndex > mutationLockIndex);
+  assert.ok(serverHistoryIndex >= 0 && serverRepairIndex > serverHistoryIndex && lastFlywayIndex > serverRepairIndex);
   assert.ok(lastFlywayIndex >= 0 && bootstrapIndex > lastFlywayIndex);
   assert.ok(serverBaselineIndex > mutationLockIndex && serverBaselineIndex < lastFlywayIndex);
   assert.ok(serverCooldownIndex > lastFlywayIndex && bootstrapIndex > serverCooldownIndex);
@@ -544,6 +547,8 @@ test("candidate staging is monitored and the activation lock stays short", () =>
   assert.match(serverDeploy, /FLYWAY_IMAGE_CHANGED.*\|\|.*DATA_TOOLS_IMAGE_CHANGED/);
   assert.match(projectionDeploymentScript, /compose_base=.*\.projection-compose-/);
   const projectionFirstMutationIndex = projectionDeploymentScript.indexOf("dc run --rm data-tools /app/scripts/prepare-flyway-history.mjs");
+  const projectionRepairIndex = projectionDeploymentScript.indexOf("dc run --rm flyway repair", projectionFirstMutationIndex);
+  const projectionMigrateIndex = projectionDeploymentScript.indexOf("dc run --rm flyway migrate", projectionRepairIndex);
   const projectionImportIndex = projectionDeploymentScript.indexOf("publish-projection-transfer.mjs");
   const projectionResetIndex = projectionDeploymentScript.indexOf("reset_candidate() {");
   const projectionBaselineIndex = projectionDeploymentScript.lastIndexOf("load_or_measure_database_cpu_baseline", projectionFirstMutationIndex);
@@ -551,6 +556,7 @@ test("candidate staging is monitored and the activation lock stays short", () =>
   const projectionCooldownIndex = projectionDeploymentScript.lastIndexOf("wait_for_database_cooldown");
   assert.ok(projectionMutationLockIndex >= 0 && projectionBaselineIndex > projectionMutationLockIndex);
   assert.ok(projectionBaselineIndex < projectionFirstMutationIndex);
+  assert.ok(projectionRepairIndex > projectionFirstMutationIndex && projectionMigrateIndex > projectionRepairIndex);
   assert.ok(projectionFirstMutationIndex < projectionResetIndex && projectionResetIndex < projectionImportIndex);
   assert.ok(projectionCooldownIndex > projectionImportIndex && lockIndex > projectionCooldownIndex);
   assert.match(projectionDeploymentScript, /projection-deploy-\$\{ARTIFACT_ID\}\.baseline/);

@@ -39,7 +39,6 @@ export function ExplorerSubjectSwitch({
     value: option.id,
     label: option.label,
   }));
-
   if (variant === "title") {
     return (
       <TextDropdown

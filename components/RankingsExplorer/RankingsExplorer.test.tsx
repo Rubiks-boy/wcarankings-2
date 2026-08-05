@@ -192,3 +192,13 @@ test("renders medal event and statistic controls", () => {
   assert.doesNotMatch(markup, />Sum of Ranks</);
   assert.doesNotMatch(markup, /Switch to average rankings/);
 });
+
+test("renders a separate person ranking picker", () => {
+  const markup = renderExplorerMarkup({ options: { showSubjectSwitch: true } });
+
+  assert.match(markup, /aria-label="Person ranking"/);
+  assert.match(
+    markup,
+    /personRankingDropdown[\s\S]*?>Rankings<\/button><button[^>]*>Medals<\/button><button[^>]*>Competitions<\/button>/,
+  );
+});

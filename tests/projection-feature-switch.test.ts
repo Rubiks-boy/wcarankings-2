@@ -8,19 +8,13 @@ test("derives the bootstrap capability snapshot from verified active tables", ()
       "ranking_entries_single",
       "ranking_entries_average",
       "ranking_counts",
-      "result_entries_single",
-      "result_counts",
       "result_rankings_single",
       "result_rankings_average",
-      "result_gender_rankings_single",
-      "result_gender_rankings_average",
       "result_ranking_counts",
-      "result_gender_ranking_counts",
       "competition_podium_members",
       "competition_event_stats",
       "competition_stats",
       "city_event_stats",
-      "entity_ranking_counts",
       "person_sum_of_ranks_scores",
       "person_year_ranking_cohorts",
       "person_year_rankings_single",
@@ -50,8 +44,6 @@ test("keeps core ranking tables available without semantic projections", () => {
     "ranking_entries_single",
     "ranking_entries_average",
     "ranking_counts",
-    "result_entries_single",
-    "result_counts",
   ]);
   assert.equal(featureSwitch.core, true);
   assert.equal(featureSwitch.resultRankings, false);
@@ -69,18 +61,10 @@ test("competition capability does not depend on city counts", () => {
   assert.equal(featureSwitch.cityEventStats, false);
 });
 
-test("city capability requires city stats and entity counts", () => {
+test("city capability requires city stats", () => {
+  assert.equal(featureSwitchFromTables([]).cityEventStats, false);
   assert.equal(
     featureSwitchFromTables(["city_event_stats"]).cityEventStats,
-    false,
-  );
-  assert.equal(
-    featureSwitchFromTables(["entity_ranking_counts"]).cityEventStats,
-    false,
-  );
-  assert.equal(
-    featureSwitchFromTables(["city_event_stats", "entity_ranking_counts"])
-      .cityEventStats,
     true,
   );
 });

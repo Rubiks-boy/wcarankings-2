@@ -26,7 +26,7 @@ export type RankingRow = {
   record_streak_weeks: number | null;
 };
 
-export type KinchOrder = "regional" | "continent";
+type KinchOrder = "regional" | "continent";
 
 export type QueryInput = {
   eventId: string;
@@ -61,22 +61,6 @@ export type PersonMetricRow = {
 
 export type FilteredPersonMetricRow = PersonMetricRow & {
   total_count?: number;
-};
-
-export type PersonRankingRow = {
-  person_id: string;
-  person_name: string;
-  country_id: string;
-  country_name: string;
-  country_iso2: string;
-  continent_id: string;
-  rank: number;
-  result_id: number;
-  result_value: number;
-  competition_id: string;
-  competition_name: string;
-  competition_start_date: string;
-  round_type_id: string;
 };
 
 export type PersonCompetitionRankingRow = {
@@ -148,22 +132,6 @@ export type PodiumRow = CompetitionRow & {
   member_result_value: number;
 };
 
-export type CityRow = {
-  rank: number;
-  city_name: string;
-  country_id: string;
-  country_name: string;
-  country_iso2: string;
-  result_id: number;
-  result_value: number;
-  person_id: string;
-  person_name: string;
-  competition_id: string;
-  competition_name: string;
-  competition_start_date: string;
-  round_type_id: string;
-};
-
 export type RankingsMetadata = {
   fetchedAt: string;
   exportDate: string | null;
@@ -200,16 +168,6 @@ export type CachePool<T extends object> = {
   misses: number;
   coalesced: number;
   evictions: number;
-};
-
-export type PersonRankingsQueryInput = {
-  eventId: string;
-  resultType: string;
-  scope: string;
-  regionId: string;
-  rankColumn: string;
-  positionColumn: string;
-  conditions: string[];
 };
 
 export type ResultRankingsQueryInput = {
@@ -271,11 +229,6 @@ export type FilteredPersonMetricQueryInput = {
   conditions: string[];
   pageConditions: string[];
 };
-export type EntityCountQueryInput = {
-  kind: string;
-  eventId: string;
-  resultType: string;
-};
 export type LatitudeQueryInput = {
   prefix: string;
   direction?: "ASC" | "DESC";
@@ -289,9 +242,3 @@ export type CompetitionEntityQueryInput = {
   positionColumn: string;
 };
 export type PodiumEntityQueryInput = { positionColumn: string };
-export type CityEntityQueryInput = {
-  valueColumn: string;
-  resultIdColumn: string;
-  rankColumn: string;
-  cursor: string;
-};

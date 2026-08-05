@@ -5,10 +5,10 @@ import { dirname, join } from "node:path";
 import { test } from "bun:test";
 import {
   projectionFingerprints,
-  projectionReleasePlan,
-  projectionSemanticPlan,
   semanticProjectionFingerprints,
-} from "../scripts/projections/planning/projection-release-plan.ts";
+} from "../data-tools/projections/release/fingerprints.ts";
+import { projectionReleasePlan } from "../data-tools/projections/release/plan.ts";
+import { projectionSemanticPlan } from "../data-tools/projections/release/semantic-plan.ts";
 
 const repositoryRoot = join(import.meta.dirname, "..");
 const exportId = "2026-07-30T00:00:30Z";
@@ -78,18 +78,12 @@ test("a new city group hydrates cached dependencies and builds only city-owned t
     exportId,
     productionExportId: exportId,
     productionState: state,
-    availableArtifacts: availableArtifacts(desired, [
-      "result-facts",
-      "competition-rankings",
-    ]),
+    availableArtifacts: availableArtifacts(desired, ["result-facts"]),
     repositoryRoot,
   });
   assert.deepEqual(plan.releaseGroups, ["city-rankings"]);
   assert.deepEqual(plan.buildGroups, ["city-rankings"]);
-  assert.deepEqual(plan.hydrateGroups, [
-    "result-facts",
-    "competition-rankings",
-  ]);
+  assert.deepEqual(plan.hydrateGroups, ["result-facts"]);
 });
 
 test("a result-facts semantic change selects only its downstream closure", async () => {
@@ -115,6 +109,7 @@ test("a result-facts semantic change selects only its downstream closure", async
     "result-facts",
     "ranking-tables",
     "result-rankings",
+    "person-event-rankings",
     "person-competition-rankings",
     "city-rankings",
     "sum-of-ranks",

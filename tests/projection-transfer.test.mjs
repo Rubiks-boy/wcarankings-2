@@ -37,6 +37,8 @@ test("defers secondary projection indexes until after bulk transfer import", () 
   assert.match(prepare, /DROP INDEX/);
   assert.match(prepare, /projection_transfer_indexes/);
   assert.match(publish, /Building \$\{deferredIndexes\.length\} deferred projection indexes/);
+  assert.match(publish, /Deferred projection index summary/);
+  assert.match(publish, /slowestTables/);
   assert.match(publish, /indexes\.map\(\(index\) => index\.index_sql\)\.join/);
   assert.match(publish, /promoteProjectionTables/);
 });

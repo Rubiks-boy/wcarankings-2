@@ -79,6 +79,8 @@ try {
 
   const deferredIndexes = (await Promise.all(indexesTables.map(async (table) => (await connection.query(`SELECT table_name, index_name, index_sql FROM \`${table}\` ORDER BY table_name, index_name`))[0]))).flat();
   process.stdout.write(`Building ${deferredIndexes.length} deferred projection indexes with concurrency ${indexConcurrency}…\n`);
+  const indexBuildStartedAt = performance.now();
+  const indexBuildTimings = [];
   const indexesByTable = new Map();
   for (const index of deferredIndexes) {
     const indexes = indexesByTable.get(index.table_name) ?? [];
@@ -97,11 +99,30 @@ try {
     } finally {
       await indexConnection.end();
     }
+    const durationMs = Math.round(performance.now() - startedAt);
+    indexBuildTimings.push({
+      table,
+      indexCount: indexes.length,
+      durationMs,
+    });
     builtIndexCount += indexes.length;
     process.stdout.write(
-      `Built ${indexes.length} indexes on ${table} in ${Math.round(performance.now() - startedAt)}ms (${builtIndexCount}/${deferredIndexes.length}).\n`,
+      `Built ${indexes.length} indexes on ${table} in ${durationMs}ms (${builtIndexCount}/${deferredIndexes.length}).\n`,
     );
   });
+  const totalIndexBuildDurationMs = Math.round(performance.now() - indexBuildStartedAt);
+  const slowestTables = [...indexBuildTimings]
+    .sort((left, right) => right.durationMs - left.durationMs)
+    .slice(0, 5);
+  process.stdout.write(
+    `Deferred projection index summary: ${JSON.stringify({
+      concurrency: indexConcurrency,
+      indexCount: deferredIndexes.length,
+      tableCount: indexBuildTimings.length,
+      totalDurationMs: totalIndexBuildDurationMs,
+      slowestTables,
+    })}\n`,
+  );
 
   if (hydrate) {
     const renames = [];

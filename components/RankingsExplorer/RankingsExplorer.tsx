@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { RESULTS_PAGE_SIZE } from "@/lib/rankings-config";
+import { formatRankingDocumentTitle } from "@/lib/ranking-document-title";
 import { FALLBACK_CONTINENTS, FALLBACK_COUNTRIES } from "@/lib/wca";
 import { ViewportEdgeGradients } from "../ViewportEdgeGradients/ViewportEdgeGradients";
 import { RankingsExplorerContext } from "./RankingsExplorerContext";
@@ -50,6 +51,31 @@ export function RankingsExplorer({
   list,
 }: RankingsExplorerProps) {
   const state = useRankingsState();
+  useEffect(() => {
+    document.title = formatRankingDocumentTitle({
+      subject: state.filters.subject,
+      eventId: state.filters.eventId,
+      rankingType: state.filters.rankingType,
+      competitionRanking: state.filters.competitionRanking,
+      cityRanking: state.filters.cityRanking,
+      year: state.filters.year,
+      personCompetitionRanking: state.filters.personCompetitionRanking,
+      personMedalRanking: state.filters.personMedalRanking,
+      medalType: state.filters.medalType,
+      listName: source?.listName,
+    });
+  }, [
+    source?.listName,
+    state.filters.cityRanking,
+    state.filters.competitionRanking,
+    state.filters.eventId,
+    state.filters.medalType,
+    state.filters.personCompetitionRanking,
+    state.filters.personMedalRanking,
+    state.filters.rankingType,
+    state.filters.subject,
+    state.filters.year,
+  ]);
   const api = useRankingsApi({
     filters: state.filters,
     initialData: initial?.data,

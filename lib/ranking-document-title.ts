@@ -125,3 +125,12 @@ export function formatRankingDocumentTitle({
   const yearSuffix = year ? ` ${year}` : "";
   return titleWithSite(`${event} ${resultType} Rankings${yearSuffix}`);
 }
+
+export function formatRankingDocumentDescription(
+  input: RankingDocumentTitleInput,
+  topResults: readonly string[] = [],
+) {
+  void input;
+  if (topResults.length === 0) return "";
+  return `${topResults.join("\n")}.`;
+}

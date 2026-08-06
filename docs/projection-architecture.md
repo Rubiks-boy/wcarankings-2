@@ -92,6 +92,26 @@ Yearly and multi-gender requests rank the compact count tables in cached,
 bounded windows. The public rank uses `RANK()` by competition count. The stable
 position orders tied rows by `person_id`.
 
+## Person activity rankings
+
+### `person_activity_counts`, `person_activity_rankings`, and `person_activity_ranking_counts`
+
+The count table has one all-time row per person. It stores host-country count,
+competed-round count, and official-solve count. Competition totals remain in
+`person_competition_counts` and are not copied into this table.
+
+An official solve is a positive `result_attempts.value`. A competed round is
+one stored `result_facts` row. The count table carries current normalized
+gender, country, and continent values for lazy cohorts.
+
+The ranking table stores World, all-gender rows for each new activity metric.
+Its public rank uses `RANK()` by descending metric value. Its stable position
+orders tied rows by `person_id`.
+
+Region and gender combinations rank the compact count table in cached,
+bounded windows. The competition metric uses the existing person-competition
+ranking tables.
+
 ## Core fact table
 
 ### `result_facts`
@@ -523,49 +543,6 @@ cohorts to numeric IDs; `person_year_ranking_counts` supplies available years
 and page totals without scanning raw results. Public rank uses `RANK()` and
 the deterministic internal position is never exposed in the UI.
 
-### `result_year_rankings`
-
-List row:
-
-```text
-year + official result + result type
-```
-
-This represents every valid result during a year.
-
-### `person_event_weekly_bests`
-
-List row:
-
-```text
-competition week + person + event + result type
-```
-
-Columns should include the retained `result_id` and `result_value`.
-
-### `person_event_rank_changes`
-
-List row:
-
-```text
-latest competition week + person + event + result type
-```
-
-This stores current and pre-week ranks or deltas for World, continent, and
-country scopes. It must reconstruct prior standings after excluding the entire
-latest week for every person.
-
-### `record_week_streaks`
-
-List row:
-
-```text
-result type + event + scope + region + record holder
-```
-
-This should remain separate from rank changes because record possession and
-ranking movement have different semantics.
-
 ## Competition and city statistics
 
 ### `competition_stats`
@@ -864,5 +841,4 @@ not make the current contract provisional:
 - #18: all-time result leaderboards
 - #19: yearly rankings
 - #25: caching and resilience
-- #39: weekly deltas and record streaks
 - #43: competition, podium, city, and geographic rankings

@@ -9,9 +9,13 @@ import {
 } from "../data-tools/projections/build/ranking-tables.ts";
 import { DEFAULT_PROJECTION_NAMES } from "../data-tools/projection-catalog/tables.ts";
 import { PROJECTION_REGISTRY } from "../data-tools/projections/build/registry.ts";
-import { createTableProgress } from "../data-tools/projections/build/progress.ts";
+import {
+  createTableProgress,
+  startBuildHeartbeat,
+} from "../data-tools/projections/build/progress.ts";
 import {
   createProjectionTaskPlan,
+  formatProjectionBuildSummary,
   projectionBuildPlan,
   projectionNamesForRefresh,
 } from "../data-tools/projections/build/plan.ts";
@@ -28,6 +32,42 @@ function fakeConnection(id, closed) {
     },
   };
 }
+
+test("build heartbeat reports long-running work and stops cleanly", async () => {
+  const messages = [];
+  const stop = startBuildHeartbeat(
+    "table result_facts",
+    performance.now(),
+    5,
+    (message) => messages.push(message),
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 15));
+  assert.ok(
+    messages.some((message) =>
+      message.includes("Still building table result_facts"),
+    ),
+  );
+
+  stop();
+  const messageCount = messages.length;
+  await new Promise((resolve) => setTimeout(resolve, 15));
+  assert.equal(messages.length, messageCount);
+});
+
+test("projection build summary explains groups, outputs, and tables", () => {
+  const summary = formatProjectionBuildSummary([
+    "result-facts",
+    "person-pr-streak-rankings",
+  ]);
+
+  assert.match(summary, /Groups to build: 2/);
+  assert.match(summary, /result-facts/);
+  assert.match(summary, /generates: result-facts/);
+  assert.match(summary, /person-pr-streak-rankings \(pr-streak\)/);
+  assert.match(summary, /person_pr_streak_counts/);
+  assert.match(summary, /Total owned tables: 5/);
+});
 
 test("projection builder bounds and overlaps independent tasks", async () => {
   const events = [];
@@ -257,10 +297,8 @@ test("a full schema refresh keeps the default semantic projections when selectio
 test("result-fact consumers never start from raw WCA tables alone", () => {
   for (const name of [
     "sum-of-ranks",
-    "person-competition-rankings",
     "person-medal-rankings",
     "person-pr-streak-rankings",
-    "person-event-rankings",
   ]) {
     const projection = PROJECTION_REGISTRY.find(
       (candidate) => candidate.name === name,
@@ -268,11 +306,21 @@ test("result-fact consumers never start from raw WCA tables alone", () => {
     assert.ok(projection, `${name} is registered`);
     assert.deepEqual(projection.dependencies, ["result-facts"]);
   }
+  for (const [name, dependency] of [
+    ["person-competition-rankings", "person-period-metrics"],
+    ["person-event-rankings", "person-event-bests"],
+  ]) {
+    const projection = PROJECTION_REGISTRY.find(
+      (candidate) => candidate.name === name,
+    );
+    assert.ok(projection, `${name} is registered`);
+    assert.deepEqual(projection.dependencies, [dependency]);
+  }
   const activity = PROJECTION_REGISTRY.find(
     (candidate) => candidate.name === "person-activity-rankings",
   );
   assert.ok(activity, "person-activity-rankings is registered");
-  assert.deepEqual(activity.dependencies, ["result-facts"]);
+  assert.deepEqual(activity.dependencies, ["person-period-metrics"]);
   assert.equal(activity.enabledByDefault, false);
   assert.equal(activity.estimatedDurationMs, 45_000);
   for (const name of [
@@ -287,6 +335,29 @@ test("result-fact consumers never start from raw WCA tables alone", () => {
   }
 });
 
+test("shared person grains build once and feed their downstream rankings", () => {
+  const period = PROJECTION_REGISTRY.find(
+    (candidate) => candidate.name === "person-period-metrics",
+  );
+  const event = PROJECTION_REGISTRY.find(
+    (candidate) => candidate.name === "person-event-bests",
+  );
+  assert.deepEqual(period.tables, ["person_period_metrics"]);
+  assert.deepEqual(event.tables, ["person_event_bests"]);
+  assert.deepEqual(
+    PROJECTION_REGISTRY.find(
+      (candidate) => candidate.name === "person-competition-rankings",
+    ).dependencies,
+    ["person-period-metrics"],
+  );
+  assert.deepEqual(
+    PROJECTION_REGISTRY.find(
+      (candidate) => candidate.name === "person-year-rankings",
+    ).dependencies,
+    ["person-event-bests"],
+  );
+});
+
 test("person activity rankings keep only the three new activity metrics", async () => {
   const sql = await readFile(
     new URL(
@@ -295,9 +366,7 @@ test("person activity rankings keep only the three new activity metrics", async 
     ),
     "utf8",
   );
-  assert.match(sql, /COUNT\(DISTINCT NULLIF\(competition\.country_id, ''\)\)/);
-  assert.match(sql, /COUNT\(\*\) AS round_count/);
-  assert.match(sql, /WHEN value > 0 THEN 1/);
+  assert.match(sql, /FROM person_period_metrics/);
   assert.match(sql, /'countries' AS metric/);
   assert.match(sql, /country_count AS metric_value/);
   assert.match(sql, /CAST\('' AS CHAR\(16\)\) AS region_id/);
@@ -376,13 +445,13 @@ test("core ranking-table build contains only active ranking tables", () => {
     ({ name }) => name === "ranking-tables-entries-average-source",
   );
   assert.deepEqual(averageSource.dependencies, ["projection:result-facts"]);
-  assert.equal(CORE_RANKING_TABLE_TASK_COUNT, 3);
+  assert.equal(CORE_RANKING_TABLE_TASK_COUNT, 2);
   const progress = createTableProgress(CORE_RANKING_TABLE_TASK_COUNT);
   let lastProgress;
   for (const task of CORE_RANKING_TABLE_TASKS) {
     if (task.table) lastProgress = progress.start(task.table);
   }
-  assert.equal(lastProgress, "[3/3]");
+  assert.equal(lastProgress, "[2/2]");
 });
 
 test("core ranking-table source views wait for result facts", async () => {

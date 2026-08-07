@@ -214,9 +214,12 @@ export async function loadResultRankingData(
   const counts =
     dynamicSingle || lazyAverage
       ? null
-      : await query<{ count: number }>(resultRankingCountsQuery(), [
+      : await query<{ count: number }>(resultRankingCountsQuery(resultType), [
           eventId,
-          resultType,
+          scope,
+          regionId,
+          scope,
+          regionId,
           scope,
           regionId,
         ]);

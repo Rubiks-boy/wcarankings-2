@@ -32,15 +32,15 @@ does not count competitions again. It reads `result_facts`, `competitions`,
 
 `person_activity_attempt_counts` is a temporary table. It scans
 `result_attempts` once and counts positive values for each result ID. The
-projection drops this table after it creates `person_activity_counts`.
+projection reads the shared `person_period_metrics` table.
 
-`person_activity_counts` stores one compact all-time row for each person. It
+`person_period_metrics` stores one compact all-time row for each person. It
 contains the three new values plus current gender, country, and continent fields.
 `person_activity_year_counts` stores the same values by competition year.
 `person_activity_event_counts` stores round and solve values by event and year.
 The event table uses year `0` for all-time event totals.
 `person_activity_rankings` stores the common World, all-gender ranking for
-each new metric. `person_activity_ranking_counts` stores its row totals.
+each new metric. The API derives row totals from the serving table.
 
 ## Request policy
 
@@ -51,10 +51,10 @@ The `year` parameter selects a yearly row. The `eventId` parameter is valid
 for `rounds` and `solves`.
 
 The `competitions` metric delegates to the existing person-competition ranking
-service. It reuses `person_competition_counts` and its stored World ranking.
+service. It reuses `person_period_metrics` and its stored World ranking.
 
 The common World, all-gender pages for the new metrics use stored positions.
-Region and gender requests rank `person_activity_counts` in a 400-row cached
+Region and gender requests rank `person_period_metrics` in a 400-row cached
 window. The cache key includes the generation, metric, scope, region, gender
 set, and window start. Equal cache misses use the shared in-flight cache.
 

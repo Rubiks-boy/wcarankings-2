@@ -215,7 +215,11 @@ export const PERSON_RANKING_SCENARIOS = [
       paged: "1",
     },
   ),
-];
+].map((entry) =>
+  entry.path === "/api/rankings/people/competitions"
+    ? { ...entry, startBase: 1 }
+    : entry,
+);
 
 export const RESULT_RANKING_SCENARIOS = [
   scenario(

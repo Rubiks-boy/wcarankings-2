@@ -103,4 +103,9 @@ test("each primary stat covers its distinct ranking modes", () => {
       ({ params }) => (params.gender?.length ?? 0) <= 1,
     ),
   );
+  assert.ok(
+    PERSON_RANKING_SCENARIOS.filter(({ path }) =>
+      path === "/api/rankings/people/competitions",
+    ).every(({ startBase }) => startBase === 1),
+  );
 });
